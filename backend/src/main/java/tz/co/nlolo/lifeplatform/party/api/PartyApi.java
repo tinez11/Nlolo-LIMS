@@ -148,6 +148,9 @@ public interface PartyApi {
      */
     PartyDetailView getPartyDetail(UUID partyId);
 
+    /** The language this client is written to in -- sw or en (2026-11-08). Staff only, like any amendment. */
+    PartyDetailView setPreferredLanguage(UUID partyId, String language, String setBy);
+
     void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy);
 
     /**

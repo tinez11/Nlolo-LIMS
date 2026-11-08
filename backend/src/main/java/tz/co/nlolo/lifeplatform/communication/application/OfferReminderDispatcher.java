@@ -148,23 +148,31 @@ public class OfferReminderDispatcher {
         }
     }
 
+    /** The tenant's own wording in a language, else the platform default's. */
+    private Optional<NotificationTemplate> lookup(NotificationDispatch dispatch, String language) {
+        return templateRepository
+            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(
+                dispatch.getTenantId(), TEMPLATE_KEY, dispatch.getChannel(), language)
+            .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
+                PLATFORM_DEFAULT_TENANT, TEMPLATE_KEY, dispatch.getChannel(), language));
+    }
+
     private void sendOne(NotificationDispatch dispatch) {
         NotificationChannel channel = NotificationChannel.valueOf(dispatch.getChannel());
 
         // Tenant's own wording, else the platform default -- the same fallback the event-driven
         // path uses. Without it a tenant that has customised nothing gets reminders that fail
         // while its offer and cover messages work, which would be a baffling thing to debug.
-        Optional<NotificationTemplate> template = templateRepository
-            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                dispatch.getTenantId(), TEMPLATE_KEY, dispatch.getChannel(), DEFAULT_LANGUAGE)
-            .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                PLATFORM_DEFAULT_TENANT, TEMPLATE_KEY, dispatch.getChannel(), DEFAULT_LANGUAGE));
+        // In the client's own language (2026-11-08), Swahili where no template exists in theirs.
+        PartyDetailView party = partyApi.getPartyDetail(dispatch.getPartyId());
+        String language = party.preferredLanguage() == null ? DEFAULT_LANGUAGE : party.preferredLanguage();
+        Optional<NotificationTemplate> template = lookup(dispatch, language)
+            .or(() -> DEFAULT_LANGUAGE.equals(language) ? Optional.empty() : lookup(dispatch, DEFAULT_LANGUAGE));
         if (template.isEmpty()) {
             dispatch.markFailed("No " + channel + "/" + DEFAULT_LANGUAGE + " template seeded for " + TEMPLATE_KEY);
             return;
         }
 
-        PartyDetailView party = partyApi.getPartyDetail(dispatch.getPartyId());
         String destination = channel == NotificationChannel.SMS ? party.phoneNumber() : party.email();
         if (destination == null || destination.isBlank()) {
             // On file when the sweep queued this, gone now. Recorded rather than dropped, like
@@ -188,11 +196,7 @@ public class OfferReminderDispatcher {
             .map(sender -> sender.send(destination, body))
             .orElseGet(() -> NotificationSender.SendResult.failed("No sender configured for " + channel));
 
-        if (result.sent()) {
-            dispatch.markSent();
-        } else {
-            dispatch.markFailed(result.detail());
-        }
+        dispatch.markOutcome(result.sent(), result.notSent(), result.detail());
     }
 
     /**

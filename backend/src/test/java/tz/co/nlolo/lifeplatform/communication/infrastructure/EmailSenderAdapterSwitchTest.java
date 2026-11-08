@@ -17,21 +17,27 @@ class EmailSenderAdapterSwitchTest {
     @Test
     void switchedOffItTriesNothingAndSaysWhy() {
         JavaMailSender mail = mock(JavaMailSender.class);
-        var adapter = new EmailSenderAdapter(mail, new SimpleMeterRegistry(), "no-reply@example.tz", false);
+        var adapter = new EmailSenderAdapter(mail, new SimpleMeterRegistry(), "no-reply@example.tz", false,
+            "smtp.example.tz");
 
         var result = adapter.send("client@example.tz", "Your cover has started.");
 
         assertThat(result.sent()).isFalse();
-        assertThat(result.detail()).isEqualTo("Email is switched off (communication.email.enabled=false)");
+        // Not in use is a setting, not a fault (2026-11-08): NOT_SENT, and the channel says it is OFF.
+        assertThat(result.notSent()).isTrue();
+        assertThat(result.detail()).isEqualTo("Email is not in use");
+        assertThat(adapter.mode()).isEqualTo(NotificationSender.Mode.OFF);
         verify(mail, never()).send(any(SimpleMailMessage.class));
     }
 
     @Test
     void switchedOnItSends() {
         JavaMailSender mail = mock(JavaMailSender.class);
-        var adapter = new EmailSenderAdapter(mail, new SimpleMeterRegistry(), "no-reply@example.tz", true);
+        var adapter = new EmailSenderAdapter(mail, new SimpleMeterRegistry(), "no-reply@example.tz", true,
+            "smtp.example.tz");
 
         assertThat(adapter.send("client@example.tz", "Your cover has started.").sent()).isTrue();
+        assertThat(adapter.mode()).isEqualTo(NotificationSender.Mode.LIVE);
         verify(mail).send(any(SimpleMailMessage.class));
     }
 }

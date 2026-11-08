@@ -190,6 +190,31 @@ paths:
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /parties/{partyId}/language:
+    put:
+      summary: The language a client is written to in -- sw or en (2026-11-08)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: partyId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [language]
+              properties:
+                language: { type: string, enum: [sw, en] }
+      responses:
+        '200':
+          description: The client, as now recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyDetailView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /parties/{partyId}:
     get:
       summary: Get party detail
@@ -561,6 +586,10 @@ components:
         registrationNumber: { type: [string, "null"] }
         phoneNumber: { type: [string, "null"], example: "+255712345678" }
         email: { type: [string, "null"] }
+        preferredLanguage:
+          description: The language this client is written to in (2026-11-08) -- sw by default, or en.
+          type: string
+          enum: [sw, en]
         kycVerifiedAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         createdBy:

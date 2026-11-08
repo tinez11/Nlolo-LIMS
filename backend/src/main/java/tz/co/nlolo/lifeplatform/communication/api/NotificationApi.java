@@ -87,6 +87,43 @@ public interface NotificationApi {
      */
     java.util.List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status, Integer limit);
 
+    // ---- 2026-11-08: the desk's view of messages, at any volume -------------------------------------------------
+
+    /** The outbox filtered in the database, newest first, never older than {@code sinceDays}. */
+    record DispatchQuery(UUID partyId, String policyNumber, String status, String channel, String templateKey,
+                         Integer sinceDays, Integer limit) {}
+
+    java.util.List<NotificationDispatchView> searchDispatches(DispatchQuery query);
+
+    /** How many messages in the last {@code sinceDays}, by channel and status, and why the ones not sent were not. */
+    record DispatchSummary(int sinceDays, java.util.List<Count> counts, java.util.List<Reason> reasons) {
+        public record Count(String channel, String status, long count) {}
+        public record Reason(String channel, String status, String reason, long count) {}
+    }
+
+    DispatchSummary summarise(int sinceDays);
+
+    /** Whether each channel reaches customers: LIVE, LIMITED (an allowlist), TEST (a local mailbox or mock), OFF. */
+    record ChannelStatus(String channel, String mode) {}
+
+    java.util.List<ChannelStatus> channels();
+
+    /** What a test send did -- SENT, NOT_SENT or FAILED -- the text it sent, and why not when it did not. */
+    record TestResult(String outcome, String detail, String body) {}
+
+    /**
+     * Renders a template with the values given and sends it to one address the staff member names -- their own
+     * phone or mailbox -- recording nothing in the outbox. The channel's own rules still hold: switched off or outside
+     * a testing allowlist, nothing goes.
+     */
+    TestResult sendTest(UUID templateId, String to, Map<String, String> values);
+
+    /**
+     * Sends a message again that failed or was not sent, with the text it was worded with, to the party's contact on
+     * file today. A new outbox row; the old one stays as it was.
+     */
+    NotificationDispatchView resend(UUID dispatchId);
+
     /** The party's messages, newest first, one per event (customer portal step 7). */
     java.util.List<InboxMessageView> inbox(UUID partyId);
 

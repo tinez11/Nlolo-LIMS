@@ -31,11 +31,13 @@ import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationDispatchView;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The send path end to end against real Postgres and a real HTTP aggregator: resolve a party's
@@ -76,7 +78,7 @@ class NotificationApiIntegrationTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
-            "db-migrations/party/V7__kyc_decided_by_name.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql", "db-migrations/party/V8__preferred_language.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",
@@ -86,6 +88,8 @@ class NotificationApiIntegrationTest {
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql",
+            "db-migrations/communication/V17__agent_cash_received_template.sql",
+            "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -146,6 +150,106 @@ class NotificationApiIntegrationTest {
         assertThat(rows.get(0).getTemplateKey()).isEqualTo("OFFER_MADE");
         assertThat(rows.get(0).getPolicyNumber()).isEqualTo("POL-NOTIFY01");
         assertThat(rows.get(0).getFailureReason()).isNull();
+    }
+
+    // 2026-11-08: the desk's view at any volume -- filtered in the database, summarised, and a failed one sent again.
+    @Test
+    void aFailedMessageIsFoundSummarisedAndSentAgainAsWordedThen() {
+        UUID partyId = registerParty("RESEND", "+255713000188", null);
+        smsGateway.resetAll();
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single")).willReturn(okJson(
+            "{\"messages\":[{\"status\":{\"groupName\":\"REJECTED\",\"name\":\"REJECTED_NOT_ENOUGH_CREDITS\"}}]}")));
+        notificationApi.notify(UUID.randomUUID(), partyId, "POL-RESEND1", "OFFER_MADE", offerValues());
+
+        var failed = notificationApi.searchDispatches(new NotificationApi.DispatchQuery(null, "pol-resend1", "FAILED",
+            "SMS", "OFFER_MADE", 1, 10));
+        assertThat(failed).singleElement().satisfies(d -> assertThat(d.body()).contains("POL-NOTIFY01"));
+        assertThat(notificationApi.summarise(1).reasons())
+            .anySatisfy(r -> assertThat(r.reason()).contains("REJECTED"));
+
+        smsGateway.resetAll();
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single")).willReturn(okJson(NEXTSMS_ACCEPTED)));
+        var again = notificationApi.resend(failed.get(0).dispatchId());
+        assertThat(again.status()).isEqualTo("SENT");
+        assertThat(again.body()).isEqualTo(failed.get(0).body());
+        assertThat(notificationApi.searchDispatches(new NotificationApi.DispatchQuery(partyId, null, null, null, null,
+            1, 10))).extracting(NotificationDispatchView::status).containsExactlyInAnyOrder("SENT", "FAILED");
+        // A message already sent is not sent twice.
+        assertThatThrownBy(() -> notificationApi.resend(again.dispatchId())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Autowired private org.springframework.context.ApplicationEventPublisher events;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
+
+    private void publish(String type, Map<String, Object> payload) {
+        TenantContext.set(SEEDED_TENANT);
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(s ->
+            events.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(type, SEEDED_TENANT, payload)));
+        TenantContext.set(SEEDED_TENANT);
+    }
+
+    // 2026-11-08, the user: a policy lapsed or reinstated, a claim received or paid -- nobody was told.
+    @Test
+    void theHolderIsToldOfAReinstatementAndAClaimantOfTheirClaimEvenWhenItIsNotTheHolder() {
+        UUID holder = registerParty("HOLDER", "+255713000161", null);
+        UUID claimant = registerParty("CLAIMANT", "+255713000162", null);
+        String policy = "POL-NOTICE" + (System.nanoTime() % 100);
+        // The policy's own events say who holds it; communication remembers.
+        publish("policy.PolicyholderChanged", Map.of("policyNumber", policy, "policyholderPartyId", holder));
+
+        publish("policy.PolicyReinstated", Map.of("policyNumber", policy, "reinstatedAt", "2026-11-08"));
+        String claimId = UUID.randomUUID().toString();
+        publish("claims.ClaimRegistered", Map.of("claimId", claimId, "policyNumber", policy, "claimantPartyId", claimant,
+            "claimType", "DEATH"));
+        publish("claims.ClaimSettled", Map.of("claimId", claimId, "policyNumber", policy,
+            "settledAmount", Map.of("amount", "2000000.00", "currencyCode", "TZS")));
+
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, holder))
+            .extracting(NotificationDispatch::getTemplateKey).containsExactly("POLICY_REINSTATED");
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, claimant))
+            .extracting(NotificationDispatch::getTemplateKey).containsExactlyInAnyOrder("CLAIM_RECEIVED", "CLAIM_PAID");
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, claimant).stream()
+            .filter(d -> "CLAIM_PAID".equals(d.getTemplateKey())).findFirst().orElseThrow().getBody())
+            .contains("TZS 2,000,000.00").contains(policy);
+    }
+
+    // 2026-11-08: every message went out in Swahili; the English templates were never used.
+    @Test
+    void aClientWhoReadsEnglishIsWrittenToInEnglishAndEveryoneElseInSwahili() {
+        UUID english = registerParty("EN", "+255713000177", null);
+        UUID swahili = registerParty("SW", "+255713000178", null);
+        TenantContext.set(SEEDED_TENANT);
+        partyApi.setPreferredLanguage(english, "en", "test-staff");
+        java.util.function.Function<String, String> template = lang -> notificationApi.listTemplates().stream()
+            .filter(t -> "OFFER_MADE".equals(t.templateKey()) && "SMS".equals(t.channel()) && lang.equals(t.language()))
+            .findFirst().orElseThrow().bodyTemplate();
+
+        notificationApi.notify(UUID.randomUUID(), english, "POL-NOTIFY01", "OFFER_MADE", offerValues());
+        notificationApi.notify(UUID.randomUUID(), swahili, "POL-NOTIFY01", "OFFER_MADE", offerValues());
+
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, english).get(0).getBody())
+            .isEqualTo(tz.co.nlolo.lifeplatform.communication.domain.TemplateRenderer.render(template.apply("en"), offerValues()));
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, swahili).get(0).getBody())
+            .isEqualTo(tz.co.nlolo.lifeplatform.communication.domain.TemplateRenderer.render(template.apply("sw"), offerValues()));
+        assertThatThrownBy(() -> partyApi.setPreferredLanguage(english, "fr", "test-staff"))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aTestSendGoesToTheNumberGivenWithTheSampleValuesAndLeavesTheOutboxAlone() {
+        TenantContext.set(SEEDED_TENANT);
+        UUID smsSw = notificationApi.listTemplates().stream()
+            .filter(t -> "OFFER_MADE".equals(t.templateKey()) && "SMS".equals(t.channel()) && "sw".equals(t.language()))
+            .findFirst().orElseThrow().templateId();
+        long before = dispatchRepository.count();
+
+        var result = notificationApi.sendTest(smsSw, "+255713000199", offerValues());
+
+        assertThat(result.outcome()).isEqualTo("SENT");
+        assertThat(result.body()).contains("POL-NOTIFY01").doesNotContain("{{");
+        assertThat(dispatchRepository.count()).isEqualTo(before);
+        assertThatThrownBy(() -> notificationApi.sendTest(smsSw, "+255713000199", Map.of()))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Give every value");
     }
 
     @Test
@@ -280,7 +384,7 @@ class NotificationApiIntegrationTest {
 
         assertThat(notificationApi.listTemplates())
             .as("the console must show what this tenant's customers would actually receive")
-            .hasSize(16);
+            .hasSize(16 + 2 + 36);   // V8 four messages, V17 agent cash (SMS only), V19 nine notices
     }
 
     /**
@@ -329,7 +433,9 @@ class NotificationApiIntegrationTest {
         // tenant, which is what lets a tenant nobody has provisioned send anything at all. Asserted
         // against PLATFORM_DEFAULT_TENANT directly, so a future change that moves them back under a
         // real tenant fails here rather than in production.
-        for (String key : List.of("OFFER_MADE", "OFFER_CLOSING", "COVER_STARTED", "OFFER_EXPIRED")) {
+        for (String key : List.of("OFFER_MADE", "OFFER_CLOSING", "COVER_STARTED", "OFFER_EXPIRED",
+                "POLICY_LAPSED", "POLICY_REINSTATED", "CLAIM_RECEIVED", "CLAIM_APPROVED", "CLAIM_DECLINED", "CLAIM_PAID",
+                "SURRENDER_PAID", "LOAN_PAID_OUT", "BENEFIT_PAID")) {
             for (String channel : List.of("SMS", "EMAIL")) {
                 for (String language : List.of("sw", "en")) {
                     assertThat(templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
@@ -342,7 +448,7 @@ class NotificationApiIntegrationTest {
         assertThat(templateRepository.findByTenantIdInOrderByTemplateKeyAscChannelAscLanguageAsc(
                 List.of(PLATFORM_DEFAULT_TENANT)))
             .extracting(NotificationTemplate::getTemplateKey)
-            .hasSize(16);
+            .hasSize(16 + 2 + 36);   // V8 four messages, V17 agent cash (SMS only), V19 nine notices
     }
 
     /** The nil uuid, mirroring NotificationApiImpl's own constant. */

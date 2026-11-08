@@ -243,7 +243,11 @@ export type NotificationStatus = NonNullable<NotificationDispatchView['status']>
  * The four the outbox can show. PENDING and CLAIMED are a queued reminder mid-flight; SENT means
  * accepted by the transport, never delivered or read.
  */
-export const NOTIFICATION_STATUSES: readonly NotificationStatus[] = ['PENDING', 'CLAIMED', 'SENT', 'FAILED'];
+export const NOTIFICATION_STATUSES: readonly NotificationStatus[] = ['PENDING', 'CLAIMED', 'SENT', 'FAILED', 'NOT_SENT'];
+// 2026-11-08: the desk's view at any volume -- the summary, each channel's status, and a test send's result.
+export type DispatchSummary = CommunicationComponents['schemas']['DispatchSummary'];
+export type ChannelStatus = CommunicationComponents['schemas']['ChannelStatus'];
+export type TestSendResult = CommunicationComponents['schemas']['TestResult'];
 export type OnboardAgentRequest = DistributionComponents['schemas']['OnboardAgentRequest'];
 
 export type CommissionPlanView = DistributionComponents['schemas']['CommissionPlanView'];

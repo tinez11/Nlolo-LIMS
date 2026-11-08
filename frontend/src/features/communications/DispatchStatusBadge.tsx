@@ -15,13 +15,21 @@ const TONES: Record<string, string> = {
   CLAIMED: 'bg-status-pending-bg text-status-pending-fg',
   SENT: 'bg-status-active-bg text-status-active-fg',
   FAILED: 'bg-status-danger-bg text-status-danger-fg',
+  // 2026-11-08: a setting, not a fault -- the channel is switched off, or the number is outside a test list.
+  NOT_SENT: 'bg-status-neutral-bg text-status-neutral-fg',
+};
+
+/** What each status reads as -- words, not codes (2026-11-08). */
+const LABELS: Record<string, string> = {
+  PENDING: 'Queued', CLAIMED: 'Sending', SENT: 'Sent', FAILED: 'Failed', NOT_SENT: 'Not sent',
 };
 
 const TITLES: Record<string, string> = {
   PENDING: 'Queued, not yet sent',
   CLAIMED: 'A sender has taken this and not yet finished',
   SENT: 'Accepted by the network — not a delivery receipt',
-  FAILED: 'Not sent. See the reason.',
+  FAILED: 'Something went wrong. See the reason.',
+  NOT_SENT: 'Not sent on purpose: the channel is switched off, or the number is outside a test list.',
 };
 
 export function DispatchStatusBadge({ status }: { status: string | undefined }) {
@@ -37,7 +45,7 @@ export function DispatchStatusBadge({ status }: { status: string | undefined }) 
           TONES[status] ?? 'bg-status-neutral-bg text-status-neutral-fg',
         )}
       >
-        {status}
+        {LABELS[status] ?? status}
         <span className="sr-only"> — {meaning}</span>
       </span>
     </Tip>

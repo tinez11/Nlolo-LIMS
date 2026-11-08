@@ -98,9 +98,15 @@ public class NotificationApiImpl implements NotificationApi {
             // an operational fact for the desk to chase, and silence would hide it completely.
             NotificationDispatch dispatch =
                 new NotificationDispatch(tenantId, partyId, templateKey, NotificationChannel.SMS.name(), policyNumber);
-            dispatch.markFailed("No phone number or email address on file for this party");
+            if (hasText(party.email())) {
+                // An address, but email is not in use (2026-11-08): a setting, not a fault -- with no phone to text.
+                dispatch.markNotSent("No phone number on file, and email is not in use");
+            } else {
+                dispatch.markFailed("No phone number or email address on file for this party");
+            }
             // Still worded and kept: the portal inbox is the one place an unreachable customer can read it.
-            dispatch.recordBody(eventId, findEffectiveTemplate(tenantId, templateKey, NotificationChannel.SMS.name())
+            dispatch.recordBody(eventId, findEffectiveTemplate(tenantId, templateKey, NotificationChannel.SMS.name(),
+                party.preferredLanguage())
                 .map(t -> {
                     try {
                         return TemplateRenderer.render(t.getBodyTemplate(), values);
@@ -117,7 +123,7 @@ public class NotificationApiImpl implements NotificationApi {
         for (Reachable target : reachable) {
             // Per channel, and a failure on one must not suppress the other: an unreachable
             // phone is no reason to withhold an email that would have arrived.
-            sendOne(eventId, tenantId, partyId, policyNumber, templateKey, values, target);
+            sendOne(eventId, tenantId, partyId, policyNumber, templateKey, values, target, party.preferredLanguage());
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
@@ -135,11 +141,7 @@ public class NotificationApiImpl implements NotificationApi {
         NotificationSender.SendResult result = senderFor(NotificationChannel.SMS)
             .map(sender -> sender.send(phoneNumber, body))
             .orElseGet(() -> NotificationSender.SendResult.failed("No sender configured for SMS"));
-        if (result.sent()) {
-            dispatch.markSent();
-        } else {
-            dispatch.markFailed(result.detail());
-        }
+        dispatch.markOutcome(result.sent(), result.notSent(), result.detail());
         dispatchRepository.save(dispatch);
         return result.sent() ? null : result.detail();
     }
@@ -157,13 +159,13 @@ public class NotificationApiImpl implements NotificationApi {
     }
 
     private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
-                          Map<String, String> values, Reachable target) {
+                          Map<String, String> values, Reachable target, String language) {
         NotificationDispatch dispatch =
             new NotificationDispatch(tenantId, partyId, templateKey, target.channel().name(), policyNumber);
         dispatch.recordBody(eventId, null);
 
         Optional<NotificationTemplate> template =
-            findEffectiveTemplate(tenantId, templateKey, target.channel().name());
+            findEffectiveTemplate(tenantId, templateKey, target.channel().name(), language);
         if (template.isEmpty()) {
             // A template nobody seeded. Recorded rather than thrown, for the same reason as
             // everything else here -- but it is a deployment fault, not a customer's problem, so
@@ -191,11 +193,7 @@ public class NotificationApiImpl implements NotificationApi {
             .orElseGet(() -> NotificationSender.SendResult.failed(
                 "No sender configured for " + target.channel()));
 
-        if (result.sent()) {
-            dispatch.markSent();
-        } else {
-            dispatch.markFailed(result.detail());
-        }
+        dispatch.markOutcome(result.sent(), result.notSent(), result.detail());
         dispatchRepository.save(dispatch);
     }
 
@@ -206,15 +204,22 @@ public class NotificationApiImpl implements NotificationApi {
      * a second chance at telling somebody their cover has not started, not a reason to skip the
      * channel most customers here actually read.
      */
-    private static List<Reachable> reachableChannels(PartyDetailView party) {
+    private List<Reachable> reachableChannels(PartyDetailView party) {
         List<Reachable> reachable = new ArrayList<>();
         if (hasText(party.phoneNumber())) {
             reachable.add(new Reachable(NotificationChannel.SMS, party.phoneNumber().trim()));
         }
-        if (hasText(party.email())) {
+        // Not while email is off (2026-11-08): a row per message saying "not in use" is clutter, not a record --
+        // the customer is reached by SMS, and the inbox keeps the text.
+        if (hasText(party.email()) && channelMode(NotificationChannel.EMAIL) != NotificationSender.Mode.OFF) {
             reachable.add(new Reachable(NotificationChannel.EMAIL, party.email().trim()));
         }
         return reachable;
+    }
+
+    /** How a channel is set up today -- OFF when no adapter handles it. */
+    public NotificationSender.Mode channelMode(NotificationChannel channel) {
+        return senderFor(channel).map(NotificationSender::mode).orElse(NotificationSender.Mode.OFF);
     }
 
     private Optional<NotificationSender> senderFor(NotificationChannel channel) {
@@ -233,10 +238,22 @@ public class NotificationApiImpl implements NotificationApi {
      */
     private Optional<NotificationTemplate> findEffectiveTemplate(UUID tenantId, String templateKey,
                                                                   String channel) {
-        return templateRepository
-            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(tenantId, templateKey, channel, DEFAULT_LANGUAGE)
+        return findEffectiveTemplate(tenantId, templateKey, channel, DEFAULT_LANGUAGE);
+    }
+
+    /**
+     * In the client's own language (2026-11-08) -- this tenant's wording, then the platform's -- and in Swahili when no
+     * template exists in theirs, so a missing translation never leaves a customer untold.
+     */
+    private Optional<NotificationTemplate> findEffectiveTemplate(UUID tenantId, String templateKey, String channel,
+                                                                  String language) {
+        String lang = hasText(language) ? language : DEFAULT_LANGUAGE;
+        Optional<NotificationTemplate> own = templateRepository
+            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(tenantId, templateKey, channel, lang)
             .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                PLATFORM_DEFAULT_TENANT, templateKey, channel, DEFAULT_LANGUAGE));
+                PLATFORM_DEFAULT_TENANT, templateKey, channel, lang));
+        return own.isPresent() || DEFAULT_LANGUAGE.equals(lang) ? own
+            : findEffectiveTemplate(tenantId, templateKey, channel, DEFAULT_LANGUAGE);
     }
 
     @Override
@@ -322,6 +339,108 @@ public class NotificationApiImpl implements NotificationApi {
     /** The most a caller may ask for at once. */
     static final int MAX_DISPATCH_LIMIT = 500;
 
+    /** How far back the register looks unless told otherwise (2026-11-08): a week, never "everything". */
+    static final int DEFAULT_SINCE_DAYS = 7;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<NotificationDispatchView> searchDispatches(DispatchQuery q) {
+        UUID tenantId = TenantContext.get();
+        int days = q.sinceDays() == null ? DEFAULT_SINCE_DAYS : Math.max(1, Math.min(q.sinceDays(), 3660));
+        java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofDays(days));
+        int cap = q.limit() == null ? 200 : Math.max(1, Math.min(q.limit(), MAX_DISPATCH_LIMIT));
+        org.springframework.data.jpa.domain.Specification<NotificationDispatch> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> where = new ArrayList<>();
+            where.add(cb.equal(root.get("tenantId"), tenantId));
+            where.add(cb.greaterThanOrEqualTo(root.get("createdAt"), since));
+            if (q.partyId() != null) where.add(cb.equal(root.get("partyId"), q.partyId()));
+            if (hasText(q.policyNumber())) where.add(cb.equal(root.get("policyNumber"), q.policyNumber().trim().toUpperCase()));
+            if (hasText(q.status())) where.add(cb.equal(root.get("status"), q.status()));
+            if (hasText(q.channel())) where.add(cb.equal(root.get("channel"), q.channel()));
+            if (hasText(q.templateKey())) where.add(cb.equal(root.get("templateKey"), q.templateKey()));
+            return cb.and(where.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return dispatchRepository.findAll(spec, org.springframework.data.domain.PageRequest.of(0, cap,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")))
+            .stream().map(NotificationApiImpl::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DispatchSummary summarise(int sinceDays) {
+        UUID tenantId = TenantContext.get();
+        int days = Math.max(1, Math.min(sinceDays, 3660));
+        java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofDays(days));
+        List<DispatchSummary.Count> counts = dispatchRepository.countSince(tenantId, since).stream()
+            .map(r -> new DispatchSummary.Count((String) r[0], (String) r[1], ((Number) r[2]).longValue())).toList();
+        List<DispatchSummary.Reason> reasons = dispatchRepository.reasonsSince(tenantId, since).stream()
+            .map(r -> new DispatchSummary.Reason((String) r[0], (String) r[1], (String) r[2], ((Number) r[3]).longValue()))
+            .toList();
+        return new DispatchSummary(days, counts, reasons);
+    }
+
+    @Override
+    public List<ChannelStatus> channels() {
+        return List.of(new ChannelStatus(NotificationChannel.SMS.name(), channelMode(NotificationChannel.SMS).name()),
+            new ChannelStatus(NotificationChannel.EMAIL.name(), channelMode(NotificationChannel.EMAIL).name()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TestResult sendTest(UUID templateId, String to, Map<String, String> values) {
+        UUID tenantId = TenantContext.get();
+        NotificationTemplate template = templateRepository.findById(templateId)
+            .filter(t -> t.getTenantId().equals(tenantId) || t.getTenantId().equals(PLATFORM_DEFAULT_TENANT))
+            .orElseThrow(() -> new NotificationTemplateNotFoundException(templateId));
+        if (!hasText(to)) {
+            throw new IllegalArgumentException("Say where to send the test: a phone number or an email address");
+        }
+        String body;
+        try {
+            body = TemplateRenderer.render(template.getBodyTemplate(), values == null ? Map.of() : values);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Give every value the message uses: " + e.getMessage());
+        }
+        NotificationChannel channel = NotificationChannel.valueOf(template.getChannel());
+        NotificationSender.SendResult result = senderFor(channel)
+            .map(sender -> sender.send(to.trim(), body))
+            .orElseGet(() -> NotificationSender.SendResult.notSent("No sender configured for " + channel));
+        String outcome = result.sent() ? "SENT" : result.notSent() ? "NOT_SENT" : "FAILED";
+        return new TestResult(outcome, result.detail(), body);
+    }
+
+    @Override
+    @Transactional
+    public NotificationDispatchView resend(UUID dispatchId) {
+        UUID tenantId = TenantContext.get();
+        NotificationDispatch old = dispatchRepository.findById(dispatchId)
+            .filter(d -> tenantId.equals(d.getTenantId()))
+            .orElseThrow(() -> new IllegalArgumentException("No message " + dispatchId));
+        if (!"FAILED".equals(old.getStatus()) && !"NOT_SENT".equals(old.getStatus())) {
+            throw new IllegalArgumentException("Only a message that failed or was not sent is sent again");
+        }
+        if (!hasText(old.getBody())) {
+            throw new IllegalArgumentException("This message's text was not kept, so it cannot be sent again");
+        }
+        NotificationChannel channel = NotificationChannel.valueOf(old.getChannel());
+        PartyDetailView party = partyApi.getPartyDetail(old.getPartyId());
+        String to = channel == NotificationChannel.SMS ? party.phoneNumber() : party.email();
+        NotificationDispatch again = new NotificationDispatch(tenantId, old.getPartyId(), old.getTemplateKey(),
+            channel.name(), old.getPolicyNumber());
+        // Its own event: the inbox shows it once more, as the customer receives it once more.
+        again.recordBody(UUID.randomUUID(), old.getBody());
+        if (!hasText(to)) {
+            again.markFailed(channel == NotificationChannel.SMS ? "No phone number on file for this party"
+                : "No email address on file for this party");
+        } else {
+            NotificationSender.SendResult result = senderFor(channel)
+                .map(sender -> sender.send(to.trim(), old.getBody()))
+                .orElseGet(() -> NotificationSender.SendResult.notSent("No sender configured for " + channel));
+            again.markOutcome(result.sent(), result.notSent(), result.detail());
+        }
+        return toView(dispatchRepository.save(again));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<tz.co.nlolo.lifeplatform.communication.api.InboxMessageView> inbox(UUID partyId) {
@@ -373,7 +492,7 @@ public class NotificationApiImpl implements NotificationApi {
         return new NotificationDispatchView(dispatch.getDispatchId(), dispatch.getPartyId(),
             dispatch.getPolicyNumber(), dispatch.getTemplateKey(), dispatch.getChannel(),
             dispatch.getStatus(), dispatch.getFailureReason(), dispatch.getDispatchedAt(),
-            dispatch.getCreatedAt());
+            dispatch.getCreatedAt(), dispatch.getBody());
     }
 
     /** A channel and the address to use on it. */

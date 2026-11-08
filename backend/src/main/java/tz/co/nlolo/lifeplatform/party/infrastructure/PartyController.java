@@ -252,6 +252,17 @@ public class PartyController {
      * <p>Refused with {@link AccessDeniedException} -> 403, matching the customer branch rather
      * than masking the party as a 404. Existence is not the secret here; the PII is.
      */
+    /** The language a client is written to in (2026-11-08): sw or en. */
+    public record PreferredLanguageRequest(String language) {}
+
+    @PutMapping("/parties/{partyId}/language")
+    @PreAuthorize("@access.can('clients.edit')")
+    public ResponseEntity<PartyDetailView> setPreferredLanguage(@PathVariable UUID partyId,
+                                                                @RequestBody PreferredLanguageRequest request,
+                                                                @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(partyApi.setPreferredLanguage(partyId, request.language(), jwt.getSubject()));
+    }
+
     @GetMapping("/parties/{partyId}")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('clients.view')")
     public ResponseEntity<PartyDetailView> getParty(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt,

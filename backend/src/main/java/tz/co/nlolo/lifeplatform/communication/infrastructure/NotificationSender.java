@@ -41,7 +41,11 @@ public interface NotificationSender {
      * separate inbound story this project does not build. The outbox says SENT, which means
      * accepted by the transport, and nothing stronger.
      */
-    record SendResult(boolean sent, String detail) {
+    record SendResult(boolean sent, String detail, boolean notSent) {
+
+        public SendResult(boolean sent, String detail) {
+            this(sent, detail, false);
+        }
 
         public static SendResult ok() {
             return new SendResult(true, null);
@@ -50,5 +54,24 @@ public interface NotificationSender {
         public static SendResult failed(String detail) {
             return new SendResult(false, detail);
         }
+
+        /**
+         * Deliberately not sent (2026-11-08): the channel is switched off, or the recipient is outside a testing
+         * allowlist. A setting, not a fault -- recorded NOT_SENT, so FAILED means something worth acting on.
+         */
+        public static SendResult notSent(String detail) {
+            return new SendResult(false, detail, true);
+        }
+    }
+
+    /**
+     * How the channel is set up (2026-11-08), for the console's one honest line about whether customers are reached:
+     * LIVE (real recipients), LIMITED (live, but only to an allowlist), TEST (a local test mailbox or mock), OFF.
+     */
+    enum Mode { LIVE, LIMITED, TEST, OFF }
+
+    /** This channel's mode; LIVE unless an adapter says otherwise. */
+    default Mode mode() {
+        return Mode.LIVE;
     }
 }

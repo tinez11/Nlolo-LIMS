@@ -95,6 +95,27 @@ public class NotificationDispatch {
         this.dispatchedAt = Instant.now();
     }
 
+    /**
+     * Deliberately not sent (2026-11-08): the channel is switched off, or the recipient is outside a testing allowlist.
+     * A setting rather than a fault, so FAILED keeps meaning something worth acting on.
+     */
+    public void markNotSent(String reason) {
+        this.status = "NOT_SENT";
+        this.failureReason = reason;
+        this.dispatchedAt = Instant.now();
+    }
+
+    /** Whatever the sender answered: sent, not sent by a setting, or failed. */
+    public void markOutcome(boolean sent, boolean notSent, String detail) {
+        if (sent) {
+            markSent();
+        } else if (notSent) {
+            markNotSent(detail);
+        } else {
+            markFailed(detail);
+        }
+    }
+
     public void recordBody(UUID eventId, String body) {
         this.eventId = eventId;
         this.body = body;

@@ -4,7 +4,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useCommunicationsStore } from '@/store/communicationsStore';
 import { DispatchStatusBadge } from './DispatchStatusBadge';
-import { humanizeTemplateKey } from './templateKeys';
+import { messageName } from './messageCatalog';
 
 /**
  * What this customer has been told about this policy.
@@ -47,7 +47,7 @@ export function MessagesPanel({ policyNumber }: { policyNumber: string }) {
       {rows.map((dispatch) => (
         <li key={dispatch.dispatchId} className="flex items-start justify-between gap-3 py-2">
           <div className="min-w-0">
-            <p className="text-sm font-medium">{humanizeTemplateKey(dispatch.templateKey)}</p>
+            <p className="text-sm font-medium">{messageName(dispatch.templateKey)}</p>
             <p className="text-xs text-muted-foreground">
               {dispatch.channel} · <span className="tabular-nums">{formatInstant(dispatch.createdAt)}</span>
             </p>

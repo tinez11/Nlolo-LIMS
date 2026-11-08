@@ -184,6 +184,8 @@ class SmsGatewayAdapterTest {
 
         assertThat(result.sent()).isFalse();
         assertThat(result.detail()).contains("switched off");
+        assertThat(result.notSent()).as("a setting, not a fault").isTrue();
+        assertThat(notLive.mode()).isEqualTo(NotificationSender.Mode.OFF);
         wireMock.verify(0, postRequestedFor(urlPathEqualTo(SEND_PATH)));
     }
 

@@ -72,4 +72,6 @@ public record PartyDetailView(
      * the client record can say "Registered by Juma Senior" rather than print a subject. Null
      * for older rows whose registrar could not be named exactly.
      */
-    String createdByName) {}
+    String createdByName,
+    /** The language this client is written to in: sw or en (2026-11-08). */
+    String preferredLanguage) {}

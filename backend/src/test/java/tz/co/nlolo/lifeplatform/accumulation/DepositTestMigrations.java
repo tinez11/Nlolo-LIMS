@@ -18,7 +18,7 @@ public final class DepositTestMigrations {
         "db-migrations/party/V4__registered_by_agent.sql",
         "db-migrations/party/V5__registered_by_name.sql",
         "db-migrations/party/V6__client_reference.sql",
-        "db-migrations/party/V7__kyc_decided_by_name.sql",
+        "db-migrations/party/V7__kyc_decided_by_name.sql", "db-migrations/party/V8__preferred_language.sql",
         "db-migrations/product/V1__create_product_schema.sql",
         "db-migrations/product/V2__base_rate_table.sql",
         "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -178,6 +178,6 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql",
     };
 }

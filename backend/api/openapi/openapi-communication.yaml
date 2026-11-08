@@ -19,6 +19,99 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /notifications/dispatches/search:
+    get:
+      summary: The outbox filtered in the database, newest first, never older than sinceDays (a week by default)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: partyId, in: query, schema: { type: string, format: uuid } }
+        - { name: policyNumber, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, CLAIMED, SENT, FAILED, NOT_SENT] } }
+        - { name: channel, in: query, schema: { type: string, enum: [SMS, EMAIL] } }
+        - { name: templateKey, in: query, schema: { type: string } }
+        - { name: sinceDays, in: query, schema: { type: integer, minimum: 1, maximum: 3660 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationDispatchView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /notifications/dispatches/summary:
+    get:
+      summary: Messages in the last sinceDays, by channel and status, and why the ones not sent were not
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: sinceDays, in: query, schema: { type: integer, minimum: 1, maximum: 3660 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DispatchSummary' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /notifications/channels:
+    get:
+      summary: Whether each channel reaches customers -- LIVE, LIMITED (an allowlist), TEST (a local mailbox or mock) or OFF
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChannelStatus' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /notifications/templates/{templateId}/test:
+    post:
+      summary: Send one template, with the values given, to the editor's own phone or mailbox -- nothing in the outbox
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string }
+                values:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        '200':
+          description: What the test did
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestResult' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /notifications/dispatches/{dispatchId}/resend:
+    post:
+      summary: Send again a message that failed or was not sent, as worded then, to the contact on file today
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: dispatchId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The new outbox row
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDispatchView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /notifications/templates:
     get:
       summary: List the message templates for this tenant
@@ -98,7 +191,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PENDING, CLAIMED, SENT, FAILED] }
+          schema: { type: string, enum: [PENDING, CLAIMED, SENT, FAILED, NOT_SENT] }
         - name: limit
           in: query
           description: >
@@ -121,6 +214,43 @@ components:
       type: openIdConnect
       openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
   schemas:
+    DispatchSummary:
+      type: object
+      required: [sinceDays, counts, reasons]
+      properties:
+        sinceDays: { type: integer }
+        counts:
+          type: array
+          items:
+            type: object
+            required: [channel, status, count]
+            properties:
+              channel: { type: string }
+              status: { type: string }
+              count: { type: integer, format: int64 }
+        reasons:
+          type: array
+          items:
+            type: object
+            required: [channel, status, count]
+            properties:
+              channel: { type: string }
+              status: { type: string }
+              reason: { type: [string, "null"] }
+              count: { type: integer, format: int64 }
+    ChannelStatus:
+      type: object
+      required: [channel, mode]
+      properties:
+        channel: { type: string, enum: [SMS, EMAIL] }
+        mode: { type: string, enum: [LIVE, LIMITED, TEST, OFF] }
+    TestResult:
+      type: object
+      required: [outcome, body]
+      properties:
+        outcome: { type: string, enum: [SENT, NOT_SENT, FAILED] }
+        detail: { type: [string, "null"] }
+        body: { type: string }
     NotificationTemplateView:
       type: object
       additionalProperties: false
@@ -164,7 +294,7 @@ components:
         channel: { type: string, enum: [SMS, EMAIL] }
         status:
           type: string
-          enum: [PENDING, CLAIMED, SENT, FAILED]
+          enum: [PENDING, CLAIMED, SENT, FAILED, NOT_SENT]
           description: >-
             SENT means accepted by the transport, never "delivered" or "read" -- neither SMTP nor
             an aggregator's 200 proves a human received anything, and this platform has no inbound
@@ -172,6 +302,9 @@ components:
             taken but not yet resolved.
         failureReason:
           type: [string, "null"]
-          description: Why a FAILED dispatch failed, in words an operator can act on.
+          description: Why a FAILED dispatch failed, or why a NOT_SENT one was not sent (its channel switched off, or outside a testing allowlist), in words an operator can act on.
         dispatchedAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
+        body:
+          type: [string, "null"]
+          description: The exact text sent, as worded then (2026-11-08); null on rows from before the text was kept.

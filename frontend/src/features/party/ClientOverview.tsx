@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
+import { MessageLanguage } from './MessageLanguage';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,8 @@ export function ClientOverview({
         <Section title="Contact">
           <Field label="Phone" value={party.phoneNumber ?? '—'} />
           <Field label="Email" value={party.email ?? '—'} />
+          {/* 2026-11-08: the language every SMS and email to this client is written in. */}
+          {isStaff && <Field label="Messages in" value={<MessageLanguage partyId={partyId} language={party.preferredLanguage} />} />}
           {isIndividual && hasAddress(party) && (
             <>
               <Field label="Street or plot" value={party.address?.line ?? '—'} />

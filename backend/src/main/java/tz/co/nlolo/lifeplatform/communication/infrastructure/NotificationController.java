@@ -63,6 +63,51 @@ public class NotificationController {
         return notificationApi.listDispatches(partyId, policyNumber, status, limit);
     }
 
+    // ---- 2026-11-08: the desk's view at any volume, the channels' honest status, a test, a second try ----------
+
+    /** Filtered in the database, newest first, and never older than {@code sinceDays} (a week by default). */
+    @GetMapping("/dispatches/search")
+    @PreAuthorize("@access.can('communications.view')")
+    public List<NotificationDispatchView> searchDispatches(
+            @RequestParam(required = false) UUID partyId,
+            @RequestParam(required = false) String policyNumber,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String templateKey,
+            @RequestParam(required = false) Integer sinceDays,
+            @RequestParam(required = false) Integer limit) {
+        return notificationApi.searchDispatches(new NotificationApi.DispatchQuery(partyId, policyNumber, status, channel,
+            templateKey, sinceDays, limit));
+    }
+
+    @GetMapping("/dispatches/summary")
+    @PreAuthorize("@access.can('communications.view')")
+    public NotificationApi.DispatchSummary summary(@RequestParam(defaultValue = "7") int sinceDays) {
+        return notificationApi.summarise(sinceDays);
+    }
+
+    @GetMapping("/channels")
+    @PreAuthorize("@access.can('communications.view')")
+    public List<NotificationApi.ChannelStatus> channels() {
+        return notificationApi.channels();
+    }
+
+    public record TestSendRequestDto(@NotBlank String to, java.util.Map<String, String> values) {}
+
+    /** To the editor's own phone or mailbox; nothing in the outbox. Same permission as rewording. */
+    @PostMapping("/templates/{templateId}/test")
+    @PreAuthorize("@access.can('communications.templates')")
+    public NotificationApi.TestResult sendTest(@PathVariable UUID templateId, @Valid @RequestBody TestSendRequestDto request) {
+        return notificationApi.sendTest(templateId, request.to(), request.values());
+    }
+
+    /** A message that failed or was not sent, sent again as worded then, to the contact on file today. */
+    @PostMapping("/dispatches/{dispatchId}/resend")
+    @PreAuthorize("@access.can('communications.templates')")
+    public NotificationDispatchView resend(@PathVariable UUID dispatchId) {
+        return notificationApi.resend(dispatchId);
+    }
+
     /**
      * Body text only.
      *
