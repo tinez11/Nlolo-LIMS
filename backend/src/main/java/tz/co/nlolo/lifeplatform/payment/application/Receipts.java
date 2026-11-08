@@ -124,8 +124,11 @@ public class Receipts {
         boolean capped = billing.isSavingsType(invoice.policyNumber());
         BigDecimal owed = invoice.balanceDue() == null ? invoice.amount() : invoice.balanceDue();
         if (capped && in.amount().compareTo(owed) > 0) {
-            throw new ReceiptRefusedException("This is more than is owed on the invoice (" + owed.toPlainString() + " "
-                + invoice.currency() + "). Record what it pays, and the rest against the next invoice");
+            // 2026-11-08: "the rest against the next invoice" -- POL-3E440FE9 is single-premium and has no next invoice.
+            // On a savings policy money beyond the premium is a savings deposit, For: Savings, once the account is open.
+            throw new ReceiptRefusedException("This is more than the premium due " + invoice.dueDate() + " owes ("
+                + owed.toPlainString() + " " + invoice.currency() + "). Record the premium here; the rest is a savings"
+                + " deposit -- For: Savings on the Deposit page, once the policy's savings account is open");
         }
         if (transactions.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId, in.method().name(),
                 reference, REJECTED)) {

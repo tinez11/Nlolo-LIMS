@@ -13,7 +13,7 @@ import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
-import { formatDate } from '@/lib/dates';
+import { formatDate, todayIso } from '@/lib/dates';
 import { compareAmounts, formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -171,6 +171,9 @@ function InvoiceRow({
   const canWaive = mayWaive && invoice.status !== 'WAIVED' && invoice.status !== 'PAID' && policyStatus !== 'PROPOSED';
   const canUndo = mayWaive && invoice.status === 'WAIVED';
   const invoiceId = invoice.invoiceId ?? '';
+  // Only on a premium already due: invoices run twelve months ahead, and a Pay on each would bury the one that matters.
+  const canPay = owesSomething(invoice) && (invoice.dueDate ?? '') <= todayIso()
+    && (can('collections.manage') || can('policies.service'));
   // What has been recorded against this invoice and still waits for a second person (2026-10-28). Without it a
   // recorded receipt showed nowhere here, the invoice still read Due, and POL-C0B3B81A was receipted twice.
   const loadWaiting = useReceiptStore((s) => s.loadWaiting);
@@ -237,11 +240,21 @@ function InvoiceRow({
 
       {/* Every deposit, mobile money included, is taken on the one Deposit page (2026-11-07): an invoice row only
           waives. Waiving is finance-gated server-side, so this only avoids offering a button that would 403. */}
-      {invoiceId && action === null && (canWaive || canUndo) && (
+      {invoiceId && action === null && (canPay || canWaive || canUndo) && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction(canUndo ? 'undo' : 'waive')}>
-            {canUndo ? 'Undo waiver' : 'Waive'}
-          </Button>
+          {/* Pay leads where something is owed (2026-11-08): the row said a premium is paid, and did not say where.
+              The Deposit page takes it -- every method -- and pays what is due oldest first. */}
+          {canPay && (
+            <Button asChild size="sm" variant="outline">
+              <Link to={`/staff/receipts/new?policy=${encodeURIComponent(policyNumber)}&from=policy`}>Pay</Link>
+            </Button>
+          )}
+          {(canWaive || canUndo) && (
+            <Button size="sm" variant="ghost" className={canPay ? undefined : '-ml-2'}
+              onClick={() => setAction(canUndo ? 'undo' : 'waive')}>
+              {canUndo ? 'Undo waiver' : 'Waive'}
+            </Button>
+          )}
         </div>
       )}
       {mayWaive && policyStatus === 'PROPOSED' && owing && (

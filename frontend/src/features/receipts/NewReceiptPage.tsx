@@ -23,7 +23,8 @@ import { Input, Select } from '@/components/ui/input';
 import { todayIso } from '@/lib/dates';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { startMutation } from '@/lib/idempotency';
-import { formatMoney } from '@/lib/money';
+import { compareAmounts, formatMoney } from '@/lib/money';
+import { keepsAccountValue } from '@/features/policies/policyValue';
 import { useReceiptStore } from '@/store/receiptStore';
 import {
   blankReceiptForm,
@@ -127,6 +128,7 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     handleSubmit,
     control,
     setValue,
+    setError,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<ReceiptFormValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(receiptFormSchema), defaultValues: prefill });
 
@@ -147,6 +149,8 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const [account, setAccount] = useState<AccountView | null>(null);
   // A unit-linked policy takes a top-up into its funds (2026-11-07).
   const [unitLinked, setUnitLinked] = useState<boolean | null>(null);
+  // A savings-type policy (2026-11-08): its premium deposit is capped at the premium; more is a savings deposit.
+  const [keepsAccount, setKeepsAccount] = useState(false);
   // Its funds, for a top-up's own split (2026-11-08), and the split typed in -- empty is the policy's split.
   const [fundCodes, setFundCodes] = useState<string[]>([]);
   const [split, setSplit] = useState<Record<string, string>>({});
@@ -191,6 +195,7 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         if (cancelled) return;
         const isUnitLinked = p.productCategory === 'UNIT_LINKED';
         setUnitLinked(isUnitLinked);
+        setKeepsAccount(keepsAccountValue(p));
         if (isUnitLinked && p.productId && p.productVersionId) {
           const terms = await getUnitLinkedTerms(p.productId, p.productVersionId);
           if (!cancelled) setFundCodes(terms?.fundCodes ?? []);
@@ -247,8 +252,15 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           ? 'No premium is owed now, so there is nothing to ask the phone for.'
           : paysFor === 'PREMIUM' ? invoiceError : null;
 
+  // A savings-type policy's premium deposit pays the oldest premium and no more (2026-11-08): the server refuses more.
+  const premiumCap = paysFor === 'PREMIUM' && keepsAccount && oldestOpen ? owed(oldestOpen) : null;
+  const beyondCap = account ? 'More than that is a savings deposit: choose For: Savings.'
+    : 'More than that is a savings deposit, For: Savings, once the policy\'s savings account is open.';
+
   const amountHint = loan
     ? `At most ${formatMoney(loan.outstandingBalance)}, what the loan owes.`
+    : premiumCap
+      ? `At most ${formatMoney(premiumCap)}, what the premium due ${oldestOpen?.dueDate ?? ''} owes. ${beyondCap}`
     : paysFor === 'SAVINGS'
       ? 'It goes into the savings account, less any charge the product takes on a deposit.'
       : paysFor === 'FUNDS'
@@ -267,6 +279,12 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       const problem = ownSplitProblem(shares);
       setSplitProblem(problem);
       if (problem) return;
+    }
+
+    if (values.method !== 'MOBILE_MONEY' && premiumCap && values.paysFor === 'PREMIUM'
+        && compareAmounts(amount, premiumCap.amount ?? '0') > 0) {
+      setError('amount', { message: `More than the premium owes (${formatMoney(premiumCap)}). Record the premium; ${beyondCap.charAt(0).toLowerCase()}${beyondCap.slice(1)}` });
+      return;
     }
 
     if (values.method !== 'MOBILE_MONEY' && !isTopUp(values.paysFor)) {
