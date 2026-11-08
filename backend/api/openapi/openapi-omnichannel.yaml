@@ -754,6 +754,197 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/consent:
+    get:
+      summary: The declaration a visitor agrees to before applying, in English and Swahili
+      description: >-
+        Word for word as the application records it, with the version an application must name. A draft awaiting the
+        insurer's compliance review (2026-11-08).
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicConsentWording' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/phone-codes:
+    post:
+      summary: Texts a six-digit code to the phone a visitor gave
+      description: >-
+        Valid 10 minutes, used once, 5 tries; at most 3 texts an hour to one phone. Needs a visit token in X-Visit.
+        422 when the number is not a mobile number, the hourly limit is reached, or the text could not go.
+      security: []
+      parameters:
+        - name: X-Visit
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneNumber]
+              properties:
+                phoneNumber: { type: string }
+                language: { type: [string, "null"], enum: [EN, SW, null] }
+      responses:
+        '204':
+          description: Texted
+        '401':
+          description: No visit, or it has ended
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Not texted
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/phone-codes/check:
+    post:
+      summary: Checks a texted code; a right one returns the proof an application carries
+      description: >-
+        The code is used once; a wrong one costs a try. The token is bound to this visit. Needs X-Visit.
+      security: []
+      parameters:
+        - name: X-Visit
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneNumber, code]
+              properties:
+                phoneNumber: { type: string }
+                code: { type: string }
+                language: { type: [string, "null"], enum: [EN, SW, null] }
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicConfirmedPhone' }
+        '401':
+          description: No visit, or it has ended
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Wrong or expired code
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/applications:
+    post:
+      summary: Applies with no login -- a new client, KYC pending, and an underwriting case "Online (public)"
+      description: >-
+        The phone is the one the code confirmed in this visit (phoneToken), never one from the body. An existing client
+        is never merged into: anyone with the same phone, or name and date of birth, is recorded for staff. 409 while an
+        application for the same product from the same phone is being reviewed; 422 as the portal answers it, or when
+        the declaration is not agreed in its current version.
+      security: []
+      parameters:
+        - name: X-Visit
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneToken, applicant, consent, request]
+              properties:
+                phoneToken: { type: string }
+                applicant:
+                  type: object
+                  required: [fullName, dateOfBirth]
+                  properties:
+                    fullName: { type: string }
+                    dateOfBirth: { type: string, format: date }
+                    sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+                    smokerStatus: { type: [string, "null"], enum: [NON_SMOKER, SMOKER, UNKNOWN, null] }
+                    email: { type: [string, "null"] }
+                consent:
+                  type: object
+                  required: [version, agreed]
+                  properties:
+                    version: { type: string }
+                    agreed: { type: boolean }
+                request: { $ref: '#/components/schemas/CustomerApplicationRequest' }
+      responses:
+        '201':
+          description: Applied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerApplication' }
+        '401':
+          description: No visit, or the phone was not confirmed in it
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Already applied
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: Cannot be applied for as given
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/public-application:
+    get:
+      summary: How a case opened through the public quote link came in -- for staff
+      description: >-
+        The confirmed phone, the declaration agreed to word for word with its version and language, and anyone already
+        on the books who may be the same person (never merged). 404 for a case opened any other way.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicApplicationView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /customer/applications:
     get:
       summary: What the customer has asked for
@@ -781,47 +972,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [productId]
-              properties:
-                productId: { type: string, format: uuid }
-                sumAssured: { type: [number, "null"] }
-                frequency: { type: [string, "null"] }
-                termYears: { type: [integer, "null"] }
-                amount: { type: [number, "null"] }
-                termMonths: { type: [integer, "null"] }
-                planCode: { type: [string, "null"] }
-                family:
-                  type: array
-                  items:
-                    type: object
-                    required: [role, name, dateOfBirth]
-                    properties:
-                      role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
-                      name: { type: string }
-                      dateOfBirth: { type: string, format: date }
-                      student: { type: boolean }
-                beneficiaries:
-                  type: array
-                  items:
-                    type: object
-                    required: [name, sharePercent]
-                    properties:
-                      name: { type: string }
-                      relationship: { type: [string, "null"] }
-                      phone: { type: [string, "null"] }
-                      sharePercent: { type: number }
-                answers:
-                  type: array
-                  items:
-                    type: object
-                    required: [code, answer]
-                    properties:
-                      code: { type: string }
-                      answer: { type: string, enum: ["YES", "NO"] }
-                      notes: { type: [string, "null"] }
-                language: { type: [string, "null"], enum: [EN, SW, null] }
+            schema: { $ref: '#/components/schemas/CustomerApplicationRequest' }
       responses:
         '201':
           description: Asked for
@@ -1417,6 +1568,78 @@ components:
             ratePercent: { type: [number, "null"], description: "Earned today, % a year: the declared rate, never below the guarantee" }
             guaranteedRatePercent: { type: [number, "null"], description: "The least it ever earns, % a year" }
             minimumBalance: { type: [number, "null"], description: "The least the account keeps; the first payment must reach it" }
+    PublicConsentWording:
+      type: object
+      required: [version, en, sw]
+      properties:
+        version: { type: string }
+        en: { type: string }
+        sw: { type: string }
+    PublicConfirmedPhone:
+      type: object
+      required: [phoneNumber, phoneToken]
+      properties:
+        phoneNumber: { type: string, description: 'As it will be recorded, +255...' }
+        phoneToken: { type: string }
+    PublicApplicationView:
+      type: object
+      required: [caseId, phoneNumber, consentVersion, consentText, language, appliedAt, possibleExistingClients]
+      properties:
+        caseId: { type: string, format: uuid }
+        phoneNumber: { type: string }
+        consentVersion: { type: string }
+        consentText: { type: string }
+        language: { type: string, enum: [en, sw] }
+        appliedAt: { type: string, format: date-time }
+        possibleExistingClients:
+          type: array
+          items:
+            type: object
+            required: [partyId]
+            properties:
+              partyId: { type: string, format: uuid }
+              displayName: { type: [string, "null"] }
+    CustomerApplicationRequest:
+      type: object
+      required: [productId]
+      properties:
+        productId: { type: string, format: uuid }
+        sumAssured: { type: [number, "null"] }
+        frequency: { type: [string, "null"] }
+        termYears: { type: [integer, "null"] }
+        amount: { type: [number, "null"] }
+        termMonths: { type: [integer, "null"] }
+        planCode: { type: [string, "null"] }
+        family:
+          type: array
+          items:
+            type: object
+            required: [role, name, dateOfBirth]
+            properties:
+              role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
+              name: { type: string }
+              dateOfBirth: { type: string, format: date }
+              student: { type: boolean }
+        beneficiaries:
+          type: array
+          items:
+            type: object
+            required: [name, sharePercent]
+            properties:
+              name: { type: string }
+              relationship: { type: [string, "null"] }
+              phone: { type: [string, "null"] }
+              sharePercent: { type: number }
+        answers:
+          type: array
+          items:
+            type: object
+            required: [code, answer]
+            properties:
+              code: { type: string }
+              answer: { type: string, enum: ["YES", "NO"] }
+              notes: { type: [string, "null"] }
+        language: { type: [string, "null"], enum: [EN, SW, null] }
     CustomerApplication:
       type: object
       additionalProperties: false

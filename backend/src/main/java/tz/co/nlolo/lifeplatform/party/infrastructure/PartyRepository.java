@@ -117,5 +117,15 @@ public interface PartyRepository extends JpaRepository<Party, UUID> {
     Set<UUID> findPartyIdsByTenantIdAndDisplayNameLike(@Param("tenantId") UUID tenantId,
                                                          @Param("q") String q);
 
+    /** Individuals with this phone, or this name (any case, any spacing) and date of birth -- see PartyApi. */
+    @Query("SELECT p FROM Party p WHERE p.tenantId = :tenantId AND p.partyType = tz.co.nlolo.lifeplatform.party.api.PartyType.INDIVIDUAL "
+        + "AND ((CAST(:phone AS string) IS NOT NULL AND p.phoneNumber = :phone) "
+        + "  OR (CAST(:name AS string) IS NOT NULL AND CAST(:dob AS LocalDate) IS NOT NULL "
+        + "      AND LOWER(p.displayName) = LOWER(:name) AND p.dateOfBirth = :dob)) "
+        + "ORDER BY p.createdAt DESC")
+    java.util.List<Party> findPossibleSamePerson(@Param("tenantId") UUID tenantId, @Param("phone") String phone,
+                                               @Param("name") String name, @Param("dob") java.time.LocalDate dob,
+                                               org.springframework.data.domain.Pageable page);
+
     boolean existsByPartyIdAndTenantIdAndCreatedBy(UUID partyId, UUID tenantId, String createdBy);
 }

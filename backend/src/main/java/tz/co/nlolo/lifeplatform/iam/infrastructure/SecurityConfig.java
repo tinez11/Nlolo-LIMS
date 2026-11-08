@@ -198,6 +198,11 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/public/visits").permitAll()
                 .requestMatchers(HttpMethod.GET, "/public/products").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/products/*/quote").permitAll()
+                // Applying (2026-11-08): the wording, a texted code to confirm the phone, and the application itself.
+                .requestMatchers(HttpMethod.GET, "/public/consent").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/phone-codes").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/phone-codes/check").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/applications").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))

@@ -261,4 +261,11 @@ public interface PartyApi {
      * single column.
      */
     boolean isRegisteredBy(UUID partyId, String createdBy);
+
+    /**
+     * People already on the books who may be the same person as a newcomer (2026-11-08, the public quote link):
+     * the same phone, or the same name and date of birth. A hint for staff, never a merge -- two people can share a
+     * phone, and two can share a name and a birthday. At most ten, newest first.
+     */
+    java.util.List<PartyView> possibleSamePerson(String phoneNumber, String fullName, LocalDate dateOfBirth);
 }

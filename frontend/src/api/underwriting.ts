@@ -27,7 +27,7 @@ import type {
  * opened, or browsing the list below.
  */
 
-export type CaseSource = 'CUSTOMER_ONLINE' | 'CALL_BACK' | 'AGENT' | 'STAFF';
+export type CaseSource = 'CUSTOMER_ONLINE' | 'PUBLIC_ONLINE' | 'CALL_BACK' | 'AGENT' | 'STAFF';
 
 export interface UnderwritingListParams {
   status?: UnderwritingCaseStatus;

@@ -155,6 +155,7 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
         "db-migrations/omnichannel/V1__portal_access.sql",
         "db-migrations/omnichannel/V2__sms_password_delivery.sql",
+        "db-migrations/omnichannel/V3__public_applications.sql",
     };
 
     /**

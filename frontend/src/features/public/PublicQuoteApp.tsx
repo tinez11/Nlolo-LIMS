@@ -20,7 +20,8 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  *
  * Three things happen before a price: Cloudflare Turnstile confirms a person (checked on the server), which starts a
  * short visit; the visitor says who they are, with the quotation form's own fields; then they choose and are priced.
- * Nothing is saved -- not the visitor, not the price. Applying from here is the next step of this work.
+ * Nothing is saved while they look. Applying (2026-11-08) confirms their phone by a texted code first -- see
+ * CustomerApplyPage, which the portal and this link share.
  */
 export function PublicQuoteApp() {
   const words = useWords();
@@ -49,7 +50,17 @@ export function PublicQuoteApp() {
       base: '/quote',
       listProducts: getPublicProducts,
       quote: (productId, request) => quotePublicProduct(productId, facts, request, visit),
-      canApply: false,
+      canApply: true,
+      publicApply: {
+        visitToken: visit,
+        person: {
+          fullName: person.fullName.trim(),
+          dateOfBirth: person.dateOfBirth,
+          sex: person.sex || null,
+          smokerStatus: person.smokerStatus || null,
+          phoneNumber: person.phoneNumber.trim(),
+        },
+      },
       showsAdviserProducts: false,
       header: <YouSummary person={person} onChange={() => setPerson(null)} />,
     };

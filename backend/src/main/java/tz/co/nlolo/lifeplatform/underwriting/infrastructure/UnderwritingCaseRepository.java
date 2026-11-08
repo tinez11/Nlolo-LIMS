@@ -81,12 +81,13 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
         // quotation or agent of record, or the office.
         + "AND (:source IS NULL "
         + "  OR (:source = 'CUSTOMER_ONLINE' AND c.sourceOfBusiness = 'CUSTOMER_PORTAL' AND c.sumAssuredAmount > 0) "
+        + "  OR (:source = 'PUBLIC_ONLINE' AND c.sourceOfBusiness = 'PUBLIC_LINK') "
         + "  OR (:source = 'CALL_BACK' AND c.sourceOfBusiness = 'CUSTOMER_PORTAL' "
         + "      AND (c.sumAssuredAmount IS NULL OR c.sumAssuredAmount = 0)) "
-        + "  OR (:source = 'AGENT' AND (c.sourceOfBusiness IS NULL OR c.sourceOfBusiness <> 'CUSTOMER_PORTAL') "
+        + "  OR (:source = 'AGENT' AND (c.sourceOfBusiness IS NULL OR c.sourceOfBusiness NOT IN ('CUSTOMER_PORTAL', 'PUBLIC_LINK')) "
         + "      AND (c.agentOfRecordId IS NOT NULL OR c.sourceOfBusiness = 'Agent quotation')) "
         + "  OR (:source = 'STAFF' AND (c.sourceOfBusiness IS NULL "
-        + "      OR (c.sourceOfBusiness <> 'CUSTOMER_PORTAL' AND c.sourceOfBusiness <> 'Agent quotation')) "
+        + "      OR c.sourceOfBusiness NOT IN ('CUSTOMER_PORTAL', 'PUBLIC_LINK', 'Agent quotation')) "
         + "      AND c.agentOfRecordId IS NULL))")
     Page<UnderwritingCase> search(@Param("tenantId") UUID tenantId,
                                    @Param("status") String status,
