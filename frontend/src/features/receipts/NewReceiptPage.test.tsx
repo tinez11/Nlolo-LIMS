@@ -158,6 +158,34 @@ describe('Deposit page', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('It buys units once a second finance person confirms it');
   });
 
+  // 2026-11-08: a fund top-up may have its own split, as the unit-linked tab's form had.
+  it('takes a fund top-up’s own split, refusing one that does not total 100%', async () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    vi.mocked(policiesApi.getPolicy).mockResolvedValue({
+      policyNumber: 'POL-1', productCategory: 'UNIT_LINKED', productId: 'p-1', productVersionId: 'v-1',
+    } as never);
+    vi.mocked(unitLinkedApi.getUnitLinkedTerms).mockResolvedValue({ fundCodes: ['EQ1', 'BD1'] } as never);
+    vi.mocked(unitLinkedApi.requestTopUp).mockResolvedValue({} as never);
+    const user = userEvent.setup();
+    renderPage('for=FUNDS&policy=POL-1');
+
+    await user.type(await screen.findByLabelText('Top-up into EQ1 (%)'), '50');
+    await user.type(screen.getByLabelText('Top-up into BD1 (%)'), '40');
+    await user.type(screen.getByLabelText('Phone number'), '+255700000002');
+    await user.type(screen.getByLabelText(/^Amount/), '200000');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('The fund split totals 90%; it must total 100%');
+    expect(unitLinkedApi.requestTopUp).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText('Top-up into BD1 (%)'));
+    await user.type(screen.getByLabelText('Top-up into BD1 (%)'), '50');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    expect(unitLinkedApi.requestTopUp).toHaveBeenCalledWith('POL-1', {
+      amount: '200000.00', payerRef: '+255700000002',
+      split: [{ fundCode: 'EQ1', percent: 50 }, { fundCode: 'BD1', percent: 50 }],
+    }, expect.anything());
+  });
+
   it('asks a phone for a savings deposit of the amount typed', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     vi.mocked(accumulationApi.getAccount).mockResolvedValue(savings);

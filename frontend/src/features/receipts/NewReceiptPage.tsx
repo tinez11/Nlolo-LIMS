@@ -4,7 +4,10 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAccount, recordReceivedTopUp, requestTopUp } from '@/api/accumulation';
 import { getPolicy, listInvoices, listLoans, requestLoanPayment, requestPaymentForInvoice } from '@/api/policies';
-import { recordReceivedTopUp as recordReceivedFundsTopUp, requestTopUp as requestFundsTopUp } from '@/api/unitlinked';
+import {
+  getUnitLinkedTerms, recordReceivedTopUp as recordReceivedFundsTopUp, requestTopUp as requestFundsTopUp,
+} from '@/api/unitlinked';
+import { ownSplit, ownSplitProblem } from '@/features/unitlinked/u2Forms';
 import type { AccountView, InvoiceView, LoanView } from '@/api/types';
 import type { Realm } from '@/auth/realms';
 import { can } from '@/auth/access';
@@ -144,6 +147,10 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const [account, setAccount] = useState<AccountView | null>(null);
   // A unit-linked policy takes a top-up into its funds (2026-11-07).
   const [unitLinked, setUnitLinked] = useState<boolean | null>(null);
+  // Its funds, for a top-up's own split (2026-11-08), and the split typed in -- empty is the policy's split.
+  const [fundCodes, setFundCodes] = useState<string[]>([]);
+  const [split, setSplit] = useState<Record<string, string>>({});
+  const [splitProblem, setSplitProblem] = useState<string | null>(null);
   useEffect(() => {
     if (!lookedUp) return;
     let cancelled = false;
@@ -180,8 +187,14 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         if (!cancelled) setAccount(null);
       });
     getPolicy(lookedUp)
-      .then((p) => {
-        if (!cancelled) setUnitLinked(p.productCategory === 'UNIT_LINKED');
+      .then(async (p) => {
+        if (cancelled) return;
+        const isUnitLinked = p.productCategory === 'UNIT_LINKED';
+        setUnitLinked(isUnitLinked);
+        if (isUnitLinked && p.productId && p.productVersionId) {
+          const terms = await getUnitLinkedTerms(p.productId, p.productVersionId);
+          if (!cancelled) setFundCodes(terms?.fundCodes ?? []);
+        }
       })
       .catch(() => {
         if (!cancelled) setUnitLinked(false);
@@ -248,6 +261,13 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     const policy = values.policyNumber.trim().toUpperCase();
     const amount = Number(values.amount || '0').toFixed(2);
     const payer = values.payerRef.trim();
+    // A fund top-up's own split, checked as every split is; nothing typed is the policy's split in force.
+    const shares = fundCodes.map((fundCode) => ({ fundCode, percent: split[fundCode] ?? '' }));
+    if (values.paysFor === 'FUNDS') {
+      const problem = ownSplitProblem(shares);
+      setSplitProblem(problem);
+      if (problem) return;
+    }
 
     if (values.method !== 'MOBILE_MONEY' && !isTopUp(values.paysFor)) {
       const saved = await record(toApiRequest(values, currency));
@@ -262,7 +282,7 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       };
       const funds = values.paysFor === 'FUNDS';
       const ok = await send(() => funds
-        ? recordReceivedFundsTopUp(policy, received, attempt)
+        ? recordReceivedFundsTopUp(policy, { ...received, split: ownSplit(shares) }, attempt)
         : recordReceivedTopUp(policy, received, attempt));
       if (ok) {
         setSent({
@@ -290,8 +310,8 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     } else if (values.paysFor === 'SAVINGS') {
       ok = await send(() => requestTopUp(policy, { amount, payerRef: payer }, attempt));
     } else if (values.paysFor === 'FUNDS') {
-      // The policy's own split: an empty one is the split in force.
-      ok = await send(() => requestFundsTopUp(policy, { amount, payerRef: payer, split: [] }, attempt));
+      // Its own split if one was typed; an empty one is the policy's split in force.
+      ok = await send(() => requestFundsTopUp(policy, { amount, payerRef: payer, split: ownSplit(shares) }, attempt));
     }
     if (ok) {
       setSent({
@@ -442,6 +462,22 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   </FormField>
                 )}
               </>
+            )}
+
+            {/* A fund top-up may have its own split (2026-11-08); left empty, the policy's split in force applies. */}
+            {paysFor === 'FUNDS' && fundCodes.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Its own split (optional; leave empty for the policy&apos;s split):</p>
+                <div className="flex flex-wrap gap-3">
+                  {fundCodes.map((code) => (
+                    <FormField key={code} label={`Top-up into ${code} (%)`}>
+                      <Input inputMode="numeric" className="w-20" value={split[code] ?? ''}
+                        onChange={(e) => setSplit((s) => ({ ...s, [code]: e.target.value.trim() }))} />
+                    </FormField>
+                  ))}
+                </div>
+                {splitProblem && <p role="alert" className="text-xs text-status-danger-fg">{splitProblem}</p>}
+              </div>
             )}
           </div>
 
