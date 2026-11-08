@@ -20,6 +20,82 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /reinsurance-statements/{id}/settlements:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: What an approved statement still has open, and the settlements against it (2026-11-08)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Open balances and settlements, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementsOpen' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Record a settlement of an approved statement -- a second person confirms it
+      description: >
+        RECEIVED (money from the reinsurer: method BANK_DEPOSIT or CHEQUE, reference, receivedOn), PAID (an EFT to the
+        reinsurer's bank account, made under Payments to make once confirmed), PROFIT_COMMISSION (received: as RECEIVED)
+        or WITHHELD_RELEASED. Each is capped at what the statement still has open.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewSettlement' }
+      responses:
+        '201':
+          description: Recorded, waiting for a second person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settlement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /reinsurance-settlements/{settlementId}/approval:
+    parameters:
+      - { name: settlementId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Confirm a settlement -- it posts, or for a payment to the reinsurer, goes to Payments to make
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settlement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /reinsurance-settlements/{settlementId}/refusal:
+    parameters:
+      - { name: settlementId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Refuse a settlement, saying why
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settlement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /treaties:
     post:
       summary: Author a reinsurance treaty
@@ -528,6 +604,64 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    SettlementKind:
+      type: string
+      enum: [RECEIVED, PAID, PROFIT_COMMISSION, WITHHELD_RELEASED]
+    SettlementStatus:
+      type: string
+      enum: [AWAITING_APPROVAL, POSTED, REQUESTED, PAID, FAILED, REFUSED]
+    NewSettlement:
+      type: object
+      required: [kind, amount]
+      properties:
+        kind: { $ref: '#/components/schemas/SettlementKind' }
+        amount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: "Decimal string, never a JSON number." }
+        method: { type: [string, "null"], enum: [BANK_DEPOSIT, CHEQUE, null] }
+        reference: { type: [string, "null"] }
+        receivedOn: { type: [string, "null"], format: date }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+    Settlement:
+      type: object
+      required: [settlementId, statementId, treatyId, kind, amount, status, recordedBy, recordedAt, actedAlone]
+      properties:
+        settlementId: { type: string, format: uuid }
+        statementId: { type: string, format: uuid }
+        treatyId: { type: string, format: uuid }
+        reinsurerName: { type: [string, "null"] }
+        quarter: { type: [string, "null"] }
+        kind: { $ref: '#/components/schemas/SettlementKind' }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        method: { type: [string, "null"] }
+        reference: { type: [string, "null"] }
+        receivedOn: { type: [string, "null"], format: date }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+        status: { $ref: '#/components/schemas/SettlementStatus' }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        actedAlone: { type: boolean }
+    SettlementsOpen:
+      type: object
+      required: [statementStatus, theyOweUs, weOweThem, profitCommissionDue, withheldHeld, settlements]
+      properties:
+        statementStatus: { type: string }
+        theyOweUs: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        weOweThem: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        profitCommissionDue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        withheldHeld: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        settlements:
+          type: array
+          items: { $ref: '#/components/schemas/Settlement' }
     TreatyType:
       type: string
       enum: [QUOTA_SHARE, SURPLUS, XOL]

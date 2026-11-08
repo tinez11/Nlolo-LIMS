@@ -26,4 +26,19 @@ class ReinsuranceApprovalSources {
                 })
                 .toList(), limit));
     }
+
+    /** A settlement of an approved statement waiting for a second finance person (2026-11-08). */
+    @Bean
+    ApprovalSource reinsuranceSettlementApprovals(tz.co.nlolo.lifeplatform.reinsurance.application.StatementSettlements settlements) {
+        return ApprovalSource.of("reinsurance-settlement", "Reinsurance settlements", "Confirm",
+            "reinsurance.approve", limit -> ApprovalSource.Pending.of(settlements.waiting().stream()
+                .map(s -> new ApprovalSource.Item(s.statementId().toString(), null,
+                    s.reinsurerName() + ", " + s.quarter() + " · " + SETTLEMENT_WORDS.getOrDefault(s.kind(), s.kind()),
+                    s.amount(), s.currency(), s.recordedBy(), s.recordedAt()))
+                .toList(), limit));
+    }
+
+    private static final java.util.Map<String, String> SETTLEMENT_WORDS = java.util.Map.of(
+        "RECEIVED", "received from them", "PAID", "to pay them", "PROFIT_COMMISSION", "profit commission received",
+        "WITHHELD_RELEASED", "funds withheld released");
 }

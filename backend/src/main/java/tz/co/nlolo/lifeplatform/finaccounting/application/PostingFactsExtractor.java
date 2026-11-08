@@ -85,6 +85,12 @@ final class PostingFactsExtractor {
         // IFRS 17 I3d: the quarterly statement (R-01, R-03, R-04). premiumNet is the premium less what is withheld.
         Map.entry("reinsurance.StatementApproved", new EventShape(Set.of("premiumNet", "withheld", "commission",
             "recoveries", "owedToUs", "owedByUs", "profitCommission"), Set.of())),
+        // Settling an approved statement (2026-11-08): money in names how it came (receiptMethod); money out names its
+        // payout (paymentRef), whose rail the engine reads; a release of funds withheld moves no money.
+        Map.entry("reinsurance.SettlementReceived", new EventShape(Set.of(AMOUNT), Set.of("receiptMethod"))),
+        Map.entry("reinsurance.ProfitCommissionReceived", new EventShape(Set.of(AMOUNT), Set.of("receiptMethod"))),
+        Map.entry("reinsurance.FundsWithheldReleased", amount()),
+        Map.entry("reinsurance.SettlementPaid", amount()),
         // The platform's own: a month's PAA premium earned (PaaEarningJob), never an event from another module.
         Map.entry(PaaEarningJob.EVENT, amount()),
         Map.entry("unitlinked.UnitsAllocated", new EventShape(Set.of("premium", "allocated", "allocationCharge"), Set.of())),
@@ -237,6 +243,16 @@ final class PostingFactsExtractor {
                         "profitCommission", amountOf(p.get("profitCommission"))),
                     Map.of("refType", "STATEMENT")));
             }
+            // Each settlement posts once, under its own id, in the month it is confirmed (or, paid out, when the EFT is made).
+            case "reinsurance.SettlementReceived", "reinsurance.ProfitCommissionReceived" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "RI_SETTLEMENT"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("settlementId")), null, p.get("amount"), today, attrs));
+            }
+            case "reinsurance.FundsWithheldReleased" -> List.of(money(type, string(p.get("settlementId")), null,
+                p.get("amount"), today, Map.of("refType", "RI_SETTLEMENT")));
+            case "reinsurance.SettlementPaid" -> List.of(money(type, string(p.get("settlementId")), null, p.get("amount"),
+                today, paid("RI_SETTLEMENT", p.get("settlementId"))));
             default -> type.startsWith("unitlinked.") ? unitLinked(type, p, policy, today) : List.of();
         };
     }

@@ -15,6 +15,7 @@ import { formatInstant } from '@/lib/dates';
 import { useReinsuranceStatementsStore } from '@/store/reinsuranceStatementsStore';
 import { ENTRY_LABEL, STATEMENT_STATUS_LABEL, settlementSide } from './statementForm';
 import { StaffName } from '@/components/StaffName';
+import { StatementSettlementPanel } from './StatementSettlementPanel';
 
 const money = (amount: string) =>
   Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -80,6 +81,8 @@ function Statement({ statement: s }: { statement: ReinsuranceStatementView }) {
         <Journal statement={s} />
         <Documents statement={s} editable={editable} />
         <Actions statement={s} isPreparer={isPreparer} mayDecide={mayDecide} />
+        {/* 2026-11-08: what an approved statement left open is settled here, one confirmed movement at a time. */}
+        {s.status === 'APPROVED' && <StatementSettlementPanel statementId={s.statementId} />}
       </div>
     </>
   );

@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceApi;
+import tz.co.nlolo.lifeplatform.reinsurance.api.SettlementView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceValidationException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.StatementNotFoundException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.StatementStateException;
@@ -87,7 +88,7 @@ class StatementIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -108,6 +109,10 @@ class StatementIntegrationTest {
         @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
         void record(DomainEventEnvelope<?> envelope) { received.add(envelope); }
 
+        List<DomainEventEnvelope<?>> of(UUID tenantId, String type) {
+            return received.stream().filter(e -> type.equals(e.eventType()) && tenantId.equals(e.tenantId())).toList();
+        }
+
         List<DomainEventEnvelope<?>> statementsOf(UUID tenantId) {
             return received.stream().filter(e -> "reinsurance.StatementApproved".equals(e.eventType())
                 && tenantId.equals(e.tenantId())).toList();
@@ -116,6 +121,7 @@ class StatementIntegrationTest {
 
     @Autowired private ReinsuranceApi api;
     @Autowired private ReinsuranceStatements statements;
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.StatementSettlements settlements;
     @Autowired private BordereauJob bordereauJob;
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private PlatformTransactionManager transactionManager;
@@ -200,6 +206,100 @@ class StatementIntegrationTest {
             assertThat(p.get("fundsWithheld")).isEqualTo(Map.of("amount", "20000.00", "currencyCode", CURRENCY));
             assertThat(p.get("profitCommission")).isEqualTo(Map.of("amount", "5000.00", "currencyCode", CURRENCY));
         });
+    }
+
+    // 2026-11-08: what the statement left in 1434, 1433 and 2550 had no way out but a free-form manual journal.
+    @Test
+    @SuppressWarnings("unchecked")
+    void anApprovedStatementIsSettledOneConfirmedMovementAtATimeNeverBeyondWhatItLeftOpen() {
+        UUID tenant = UUID.randomUUID();
+        TreatyView treaty = settleableQ1(tenant);
+        StatementView draft = statements.prepare(treaty.treatyId(), "2026-Q1", "finance-one", AFTER_Q1);
+        submitted(draft, "20000.00", "5000.00");
+        UUID statementId = draft.statementId();
+        api.approveStatement(statementId, "finance-approver");
+
+        // We owe 150,000 premium less 20,000 withheld less 30,000 commission; the 20,000 withheld and 5,000 profit
+        // commission wait on their own.
+        SettlementView.Open open = settlements.open(statementId);
+        assertThat(open.theyOweUs()).isZero();
+        assertThat(open.weOweThem()).isEqualByComparingTo("100000.00");
+        assertThat(open.withheldHeld()).isEqualByComparingTo("20000.00");
+        assertThat(open.profitCommissionDue()).isEqualByComparingTo("5000.00");
+        assertThatThrownBy(() -> settlements.record(statementId, received("RECEIVED", "1.00"), "finance-one"))
+            .isInstanceOf(ReinsuranceValidationException.class).hasMessageContaining("owes nothing more");
+
+        // Funds withheld released: confirmed by a second person, it adds to what we owe.
+        SettlementView release = settlements.record(statementId, new SettlementView.NewSettlement("WITHHELD_RELEASED",
+            new BigDecimal("20000.00"), null, null, null, null, null, null, null, "Security released at year end"),
+            "finance-one");
+        assertThat(release.status()).isEqualTo("AWAITING_APPROVAL");
+        assertThatThrownBy(() -> settlements.approve(release.settlementId(), "finance-one"))
+            .isInstanceOf(StatementStateException.class).hasMessageContaining("second person");
+        assertThat(settlements.approve(release.settlementId(), "finance-approver").status()).isEqualTo("POSTED");
+        assertThat(recorder.of(tenant, "reinsurance.FundsWithheldReleased")).hasSize(1);
+        assertThat(settlements.open(statementId).weOweThem()).isEqualByComparingTo("120000.00");
+
+        // Paying them: confirmed, an EFT to their bank account; a second payment while it waits is refused.
+        SettlementView pay = settlements.record(statementId, new SettlementView.NewSettlement("PAID",
+            new BigDecimal("120000.00"), null, null, null, "CRDB", "Kariakoo", "Africa Re", "0150123456789", null),
+            "finance-one");
+        assertThat(settlements.approve(pay.settlementId(), "finance-approver").status()).isEqualTo("REQUESTED");
+        assertThat(recorder.of(tenant, "reinsurance.SettlementPayoutRequested")).singleElement().satisfies(e -> {
+            Map<String, Object> p = (Map<String, Object>) e.payload();
+            assertThat(p.get("disbursementMethod")).isEqualTo("EFT");
+            assertThat(p.get("payeeAccountNumber")).isEqualTo("0150123456789");
+            assertThat(p.get("idempotencyKey")).isEqualTo("reinsurance-settlement:" + pay.settlementId());
+        });
+        assertThatThrownBy(() -> settlements.record(statementId, new SettlementView.NewSettlement("PAID",
+            new BigDecimal("1.00"), null, null, null, "CRDB", null, "Africa Re", "0150123456789", null), "finance-one"))
+            .isInstanceOf(ReinsuranceValidationException.class).hasMessageContaining("Nothing more is owed");
+
+        // The transfer made under Payments to make: paid, and posted.
+        publish(tenant, "payment.DisbursementCompleted", Map.of("purpose", "REINSURANCE_SETTLEMENT",
+            "sourceRef", pay.settlementId().toString()));
+        TenantContext.set(tenant);
+        assertThat(settlements.open(statementId).settlements()).filteredOn(s -> s.settlementId().equals(pay.settlementId()))
+            .singleElement().extracting(SettlementView::status).isEqualTo("PAID");
+        assertThat(recorder.of(tenant, "reinsurance.SettlementPaid")).hasSize(1);
+
+        // Profit commission received, by bank deposit -- never more than the statement booked.
+        assertThatThrownBy(() -> settlements.record(statementId, received("PROFIT_COMMISSION", "5000.01"), "finance-one"))
+            .isInstanceOf(ReinsuranceValidationException.class).hasMessageContaining("profit commission still due");
+        SettlementView pc = settlements.record(statementId, received("PROFIT_COMMISSION", "5000.00"), "finance-one");
+        settlements.approve(pc.settlementId(), "finance-approver");
+        assertThat(recorder.of(tenant, "reinsurance.ProfitCommissionReceived")).singleElement()
+            .satisfies(e -> assertThat(((Map<String, Object>) e.payload()).get("receiptMethod")).isEqualTo("BANK_DEPOSIT"));
+
+        SettlementView.Open closed = settlements.open(statementId);
+        assertThat(closed.weOweThem()).isZero();
+        assertThat(closed.theyOweUs()).isZero();
+        assertThat(closed.profitCommissionDue()).isZero();
+        assertThat(closed.withheldHeld()).isZero();
+    }
+
+    @Test
+    void aSettlementIsRefusedSayingWhyAndFreesWhatItHeld() {
+        UUID tenant = UUID.randomUUID();
+        TreatyView treaty = settleableQ1(tenant);
+        StatementView draft = statements.prepare(treaty.treatyId(), "2026-Q1", "finance-one", AFTER_Q1);
+        submitted(draft, "0.00", "5000.00");
+        assertThatThrownBy(() -> settlements.record(draft.statementId(), received("PROFIT_COMMISSION", "5000.00"),
+            "finance-one")).isInstanceOf(StatementStateException.class).hasMessageContaining("approved");
+        api.approveStatement(draft.statementId(), "finance-approver");
+
+        SettlementView pc = settlements.record(draft.statementId(), received("PROFIT_COMMISSION", "5000.00"), "finance-one");
+        assertThat(settlements.open(draft.statementId()).profitCommissionDue()).isZero();
+        assertThatThrownBy(() -> settlements.refuse(pc.settlementId(), " ", "finance-approver"))
+            .isInstanceOf(ReinsuranceValidationException.class);
+        SettlementView refused = settlements.refuse(pc.settlementId(), "Not on the bank statement", "finance-approver");
+        assertThat(refused.status()).isEqualTo("REFUSED");
+        assertThat(settlements.open(draft.statementId()).profitCommissionDue()).isEqualByComparingTo("5000.00");
+    }
+
+    private static SettlementView.NewSettlement received(String kind, String amount) {
+        return new SettlementView.NewSettlement(kind, new BigDecimal(amount), "BANK_DEPOSIT", "CRDB-TRF-0091",
+            LocalDate.of(2026, 4, 20), null, null, null, null, null);
     }
 
     @Test

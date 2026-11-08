@@ -35,6 +35,8 @@ const PURPOSES: Record<string, string> = {
   TERM_ACCOUNT_MATURITY_PAYOUT: 'Term account maturity',
   // A credit-life lender's premium paid back for a loan that ended early (2026-10-30).
   CREDIT_LIFE_PREMIUM_REFUND: 'Credit-life premium refund',
+  // What we owe a reinsurer on an approved statement (2026-11-08).
+  REINSURANCE_SETTLEMENT: 'Reinsurance settlement',
 };
 
 const METHODS: Record<string, string> = {

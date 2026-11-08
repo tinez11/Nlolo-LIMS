@@ -47,6 +47,8 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'engine-run': (r) => `/staff/ifrs17-engine/runs/${id(r)}`,
   'year-end-close': (r) => `/staff/year-end/closes/${id(r)}`,
   'reinsurance-statement': () => '/staff/reinsurance-statements',
+  // A settlement opens its statement, where it is confirmed (2026-11-08); the row's id is the statement's.
+  'reinsurance-settlement': (r) => `/staff/reinsurance-statements/${id(r)}`,
   'accounting-policy': () => '/staff/accounting-policies',
   'period-reopen': () => '/staff/periods',
 };

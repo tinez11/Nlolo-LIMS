@@ -271,6 +271,11 @@ export type CessionView = ReinsuranceComponents['schemas']['CessionView'];
 /** A treaty's own totals. Count plus two money figures, never a percentage -- see the endpoint. */
 export type TreatyUtilisationView = ReinsuranceComponents['schemas']['TreatyUtilisationView'];
 export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryView'];
+// Settling an approved statement (2026-11-08).
+export type ReinsuranceSettlement = ReinsuranceComponents['schemas']['Settlement'];
+export type ReinsuranceSettlementsOpen = ReinsuranceComponents['schemas']['SettlementsOpen'];
+export type NewReinsuranceSettlement = ReinsuranceComponents['schemas']['NewSettlement'];
+export type ReinsuranceSettlementKind = ReinsuranceComponents['schemas']['SettlementKind'];
 /** IFRS 17 I3c: one treaty's month -- the ceded premium and commission it posts, the recoveries it only matches. */
 export type BordereauView = ReinsuranceComponents['schemas']['BordereauView'];
 export type BordereauLine = ReinsuranceComponents['schemas']['BordereauLine'];
