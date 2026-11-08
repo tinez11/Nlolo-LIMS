@@ -24,6 +24,7 @@ import java.util.UUID;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.ANNUALISED_AT_SALE;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.ANNUALISED_IN_FORCE;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.CLIENT_JOIN;
+import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.COVER;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.IN_FORCE_STATUSES;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.LAST_CHANGE_CTE;
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.SINGLE_PREMIUM;
@@ -77,7 +78,7 @@ public class ReportQueries {
     public List<InForceRow> inForce(UUID tenantId, LocalDate asOf, GroupBy groupBy, ReportFilter f) {
         List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId));
         StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT " + dimension(groupBy) + " AS dim,"
-            + " p.currency, COUNT(*) AS policies, COALESCE(SUM(p.sum_assured), 0) AS sum_assured,"
+            + " p.currency, COUNT(*) AS policies, COALESCE(SUM(" + COVER + "), 0) AS sum_assured,"
             + " COALESCE(SUM(" + ANNUALISED_IN_FORCE + "), 0) AS annualised,"
             + " COALESCE(SUM(" + SINGLE_PREMIUM + "), 0) AS single_premium"
             + " FROM reporting.report_policy p JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
@@ -101,7 +102,7 @@ public class ReportQueries {
             + " COUNT(*) FILTER (WHERE " + inForce + ") AS in_force,"
             + " COUNT(*) FILTER (WHERE l.to_status = 'LAPSED') AS lapsed,"
             + " COUNT(*) FILTER (WHERE " + inForce + " AND " + ANNUALISED_IN_FORCE + " > 0) AS regular_in_force,"
-            + " COALESCE(SUM(p.sum_assured) FILTER (WHERE " + inForce + "), 0) AS sum_assured,"
+            + " COALESCE(SUM(" + COVER + ") FILTER (WHERE " + inForce + "), 0) AS sum_assured,"
             + " COALESCE(SUM(" + ANNUALISED_IN_FORCE + ") FILTER (WHERE " + inForce + "), 0) AS annualised"
             + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
             + " WHERE p.tenant_id = ? AND p.activated_on <= ?");
@@ -118,7 +119,7 @@ public class ReportQueries {
     public List<PolicyListRow> policyList(UUID tenantId, LocalDate asOf, ReportFilter f) {
         List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf));
         StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT p.policy_number,"
-            + " p.product_id::text AS product_id, c.display_name, l.to_status, p.activated_on, p.sum_assured,"
+            + " p.product_id::text AS product_id, c.display_name, l.to_status, p.activated_on, " + COVER + " AS sum_assured,"
             + " p.premium, p.premium_frequency, p.agent_id::text AS agent_id, p.branch_code, p.currency"
             + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
             + " WHERE p.tenant_id = ? AND p.activated_on <= ?");
@@ -134,7 +135,7 @@ public class ReportQueries {
     public List<NewBusinessRow> activations(UUID tenantId, LocalDate from, LocalDate to, GroupBy groupBy, ReportFilter f) {
         List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
         StringBuilder sql = new StringBuilder("SELECT to_char(p.activated_on, 'YYYY-MM') AS month, " + dimension(groupBy)
-            + " AS dim, p.currency, COUNT(*) AS policies, COALESCE(SUM(p.sum_assured), 0) AS sum_assured,"
+            + " AS dim, p.currency, COUNT(*) AS policies, COALESCE(SUM(" + COVER + "), 0) AS sum_assured,"
             + " COALESCE(SUM(" + ANNUALISED_AT_SALE + "), 0) AS annualised,"
             + " COALESCE(SUM(" + SINGLE_PREMIUM + "), 0) AS single_premium"
             + " FROM reporting.report_policy p" + CLIENT_JOIN

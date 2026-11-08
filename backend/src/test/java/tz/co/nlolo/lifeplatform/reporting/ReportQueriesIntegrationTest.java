@@ -118,6 +118,19 @@ class ReportQueriesIntegrationTest {
         assertThat(rows(run("policies-in-force", ReportFilter.asOf(d("2026-01-04"))), 0)).isEmpty();
     }
 
+    // 2026-11-08, the user: a savings account's "sum assured" is its opening deposit, so it disappears from sum assured.
+    @Test
+    void savingsAccountsAndFixedDepositsCountAsPoliciesButAddNothingToSumAssured() {
+        events.sell(tenant, Sale.of("S-TERM", product, d("2026-01-05")));
+        events.sell(tenant, Sale.of("S-SAV", product, d("2026-01-06")).portfolio("SAV").premium("SINGLE", "20000.00"));
+        events.sell(tenant, Sale.of("S-DEP", product, d("2026-01-07")).portfolio("DEP").premium("SINGLE", "500000.00"));
+
+        assertThat(rows(run("policies-in-force", ReportFilter.asOf(d("2026-03-31"))), 0)).singleElement().satisfies(row -> {
+            assertThat(row.get("policies")).isEqualTo("3");
+            assertThat(row.get("sumAssured")).isEqualTo("1000000.00");
+        });
+    }
+
     @Test
     void inForceComparesTwoDates() {
         events.sell(tenant, Sale.of("P-A", product, d("2026-01-05")));

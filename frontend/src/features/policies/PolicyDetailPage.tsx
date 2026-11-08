@@ -19,7 +19,7 @@ import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
 import { PREMIUM_FREQUENCY_SUFFIXES, type CashValueTermsView } from '@/api/types';
 import { getCashValueTerms } from '@/api/products';
-import { needsCashValueTerms, policyValueLine } from './policyValue';
+import { DEPOSIT_DEATH_NOTE, isDepositAccount, needsCashValueTerms, policyValueLine } from './policyValue';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -682,7 +682,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           {/* The figures band (the Tinezz direction): the three numbers a person opens a policy to
               read, set large on the accent, ahead of every date and party. */}
           <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl bg-hero p-5 sm:grid-cols-2 lg:grid-cols-3">
-            <Field
+            {/* A savings account or fixed deposit has no sum assured (2026-11-08): its figure is the deposit, below. */}
+            {!isDepositAccount(policy) && <Field
               label="Sum assured"
               value={formatMoney(policy.sumAssured)}
               stacked
@@ -695,8 +696,27 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                     note: 'The total of every covered member — it moves as the schedule does, and keeps its last figure once nobody is covered.',
                   }
                 : {})}
-            />
-            {policy.productCategory === 'CREDIT_LIFE' ? (
+            />}
+            {isDepositAccount(policy) ? (
+              // The deposit itself (2026-11-08): the opening deposit of a single-premium account, or what each
+              // contribution puts in. It is the premium the policy was issued on -- never the sum-assured column, which
+              // a hand-issued account could hold anything in.
+              <Field
+                stacked
+                label={policy.premiumFrequency === 'SINGLE' ? 'Opening deposit' : 'Contribution'}
+                value={
+                  <>
+                    {formatMoney(policy.premium)}
+                    {policy.premiumFrequency && policy.premiumFrequency !== 'SINGLE' && (
+                      <span className="ml-1.5 font-sans text-sm text-subtle-foreground">
+                        {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
+                      </span>
+                    )}
+                  </>
+                }
+                note={DEPOSIT_DEATH_NOTE}
+              />
+            ) : policy.productCategory === 'CREDIT_LIFE' ? (
               /*
                 NOT policy.premium. On credit life that is a figure typed at set-up; the real
                 premium is charged file by file, per borrower, at the scheme's rate. Showing
@@ -907,7 +927,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             // one humaniser on the platform, so a benefit type gains an acronym the day the
             // backend adds one without this line needing to know.
             label={c.benefitType ? humanizeStatus(c.benefitType) : 'Benefit'}
-            value={formatMoney(c.sumAssured)}
+            // A savings account or fixed deposit pays its account value on death (2026-11-08) -- the figure here
+            // was its opening deposit, read as cover.
+            value={policy && isDepositAccount(policy) && c.benefitType === 'DEATH'
+              ? 'The account value at the date of death'
+              : formatMoney(c.sumAssured)}
+            {...(policy && isDepositAccount(policy) && c.benefitType === 'DEATH' ? { note: 'No cover above it.' } : {})}
           />
         ))}
       </dl>

@@ -133,6 +133,10 @@ class FreeLookMovementTest {
      * catch blocks -- noise that looks exactly like a real failure to whoever reads the log next.
      */
     private void activate(UUID tenantId, UUID productId, String policyNumber, LocalDate issueDate) {
+        activate(tenantId, productId, policyNumber, issueDate, null);
+    }
+
+    private void activate(UUID tenantId, UUID productId, String policyNumber, LocalDate issueDate, String portfolioCode) {
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("policyNumber", policyNumber);
         payload.put("policyholderPartyId", UUID.randomUUID());
@@ -145,6 +149,7 @@ class FreeLookMovementTest {
         payload.put("agentOfRecordId", null);
         payload.put("activatedAt", LocalDate.now().toString());
         payload.put("productCategory", "TERM_LIFE");
+        payload.put("portfolioCode", portfolioCode);
         publish(tenantId, "policy.PolicyActivated", payload);
     }
 
@@ -158,6 +163,24 @@ class FreeLookMovementTest {
     private Optional<PolicyMovement> movement(UUID tenantId, String period, UUID productId) {
         TenantContext.set(tenantId);
         return policyMovementRepository.findByTenantIdAndPeriodAndProductId(tenantId, period, productId);
+    }
+
+    // 2026-11-08, the user: a savings account's "sum assured" is its opening deposit -- it disappears from the returns.
+    @Test
+    void aSavingsAccountIsNewBusinessButAddsNothingToSumAssuredAndTakesNothingOutWhenCancelled() {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        String policyNumber = newPolicyNumber();
+        LocalDate issueDate = LocalDate.now();
+
+        activate(tenantId, productId, policyNumber, issueDate, "SAV");
+        PolicyMovement afterIssue = movement(tenantId, quarterOf(issueDate), productId).orElseThrow();
+        assertThat(afterIssue.getPoliciesIssued()).isEqualTo(1);
+        assertThat(afterIssue.getSumAssuredIssued()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        cancelInFreeLook(tenantId, policyNumber);
+        assertThat(movement(tenantId, quarterOf(issueDate), productId).orElseThrow().getSumAssuredIssued())
+            .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test

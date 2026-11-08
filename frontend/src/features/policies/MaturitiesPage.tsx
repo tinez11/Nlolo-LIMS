@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate, todayIso } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
+import { CoverAmount } from './CoverAmount';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 
@@ -96,7 +96,7 @@ export function MaturitiesPage() {
       key: 'sumAssured',
       header: 'Sum assured',
       align: 'right',
-      render: (policy) => formatMoney(policy.sumAssured),
+      render: (policy) => <CoverAmount policy={policy} />,
     },
     {
       key: 'status',

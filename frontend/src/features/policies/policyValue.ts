@@ -4,6 +4,18 @@ import { formatMoney } from '@/lib/money';
 /** Portfolios whose value is a savings account's balance (product step 3; deposits; pensions before vesting). */
 const ACCOUNT_PORTFOLIOS: readonly string[] = ['SAV', 'DEP', 'PEN', 'DANN'];
 
+/**
+ * A savings account or a fixed deposit (2026-11-08, the user): what other policies hold as sum assured, these hold
+ * as the opening deposit, and they pay the account value on death with no cover above it. So no screen calls their
+ * figure "Sum assured", and no total counts it as cover.
+ */
+export function isDepositAccount(policy: Pick<PolicyView, 'portfolioCode'>): boolean {
+  return policy.portfolioCode === 'SAV' || policy.portfolioCode === 'DEP';
+}
+
+/** What a deposit account pays on death, in the words every screen uses. */
+export const DEPOSIT_DEATH_NOTE = 'Pays the account value on death — no cover above it.';
+
 /** Categories that MAY carry a cash-value table -- whether this version does is the server's answer. */
 const TABLE_CATEGORIES: readonly string[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
 

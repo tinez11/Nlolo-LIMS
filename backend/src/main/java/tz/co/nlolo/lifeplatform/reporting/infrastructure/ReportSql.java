@@ -36,6 +36,13 @@ public final class ReportSql {
 
     public static final String SINGLE_PREMIUM = "(CASE WHEN p.premium_frequency = 'SINGLE' THEN p.premium END)";
 
+    /**
+     * The cover a policy gives, for every sum-assured figure in a report (2026-11-08, the user): a savings account or
+     * a fixed deposit holds its opening deposit where others hold cover, and pays its account value on death with no
+     * cover above it -- so it is no part of a sum-assured total. NULL, so SUM skips it and a list shows nothing.
+     */
+    public static final String COVER = "(CASE WHEN COALESCE(p.portfolio_code, '') IN ('SAV', 'DEP') THEN NULL ELSE p.sum_assured END)";
+
     /** The grouping column, from a closed list -- never from request text. */
     public static String dimension(GroupBy groupBy) {
         return switch (groupBy) {

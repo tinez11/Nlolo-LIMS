@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { isDepositAccount } from './policyValue';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectDetail, usePolicyStore } from '@/store/policyStore';
 import { Field } from '@/components/Field';
@@ -68,9 +69,14 @@ export function PolicyDrawer({
 
           {policy && (
             <dl className="space-y-0">
-              <Field label="Sum assured" value={formatMoney(policy.sumAssured)} emphasis />
+              {/* A savings account or fixed deposit has no sum assured (2026-11-08): its figure is the deposit. */}
+              {isDepositAccount(policy)
+                ? <Field label="Account" value="Pays its value on death — no cover above it" emphasis />
+                : <Field label="Sum assured" value={formatMoney(policy.sumAssured)} emphasis />}
               <Field
-                label="Premium"
+                label={isDepositAccount(policy)
+                  ? (policy.premiumFrequency === 'SINGLE' ? 'Opening deposit' : 'Contribution')
+                  : 'Premium'}
                 value={
                   <>
                     {formatMoney(policy.premium)}
