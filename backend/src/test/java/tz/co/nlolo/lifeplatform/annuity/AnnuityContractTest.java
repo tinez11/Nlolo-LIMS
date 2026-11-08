@@ -29,7 +29,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
 
 /** The annuity surface against its own OpenAPI spec, every response field asserted by name (step 4 L9). */
 @Testcontainers
@@ -37,6 +36,9 @@ import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import(AnnuityTestFixtures.class)
 class AnnuityContractTest {
+
+    // Today in Dar es Salaam as this class starts (2026-11-08): never one date frozen for a whole run.
+    private static final java.time.LocalDate TODAY = tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.today();
 
     private static final String SPEC_PATH = "api/openapi/openapi-annuity.yaml";
 

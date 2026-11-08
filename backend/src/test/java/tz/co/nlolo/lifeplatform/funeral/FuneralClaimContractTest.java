@@ -31,7 +31,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
 import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 import static tz.co.nlolo.lifeplatform.funeral.FuneralTestFixtures.family;
 
@@ -44,6 +43,9 @@ import static tz.co.nlolo.lifeplatform.funeral.FuneralTestFixtures.family;
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import({FuneralTestFixtures.class, AnnuityTestFixtures.class})
 class FuneralClaimContractTest {
+
+    // Today in Dar es Salaam as this class starts (2026-11-08): never one date frozen for a whole run.
+    private static final java.time.LocalDate TODAY = tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.today();
 
     private static final String CLAIMS_SPEC = "api/openapi/openapi-claims.yaml";
     private static final String POLICY_SPEC = "api/openapi/openapi-policy.yaml";

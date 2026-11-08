@@ -195,7 +195,7 @@ class AnnuityCaseIntegrationTest {
             .hasMessage("An annuity is bought with a single premium equal to its purchase price");
         PolicyApi.IssueRequest withTerm = new PolicyApi.IssueRequest(annuitant, product.productId(), product.versionId(),
             new BigDecimal("1000000.00"), "TZS", new BigDecimal("1000000.00"), "TZS", "SINGLE", null, List.of(),
-            "migration", AnnuityTestFixtures.TODAY, 120, null, null);
+            "migration", AnnuityTestFixtures.today(), 120, null, null);
         assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.issuePolicy(UUID.randomUUID(), withTerm, "staff-one")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("An annuity has no term; it pays for life");

@@ -55,7 +55,7 @@ class VestingCloseIntegrationTest {
     }
 
     private static final UUID TENANT = UUID.randomUUID();
-    private static final LocalDate TODAY = AnnuityTestFixtures.TODAY;
+    private static final LocalDate TODAY = AnnuityTestFixtures.today();
 
     @Autowired private AnnuityTestFixtures fixtures;
     @Autowired private AccumulationApi accumulationApi;

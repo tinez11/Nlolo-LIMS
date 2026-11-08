@@ -38,7 +38,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
-import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
+import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.today;
 import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 
 /** Funeral products, families, cases and policies, through the real APIs. Later tasks add to it. */
@@ -138,7 +138,7 @@ public class FuneralTestFixtures {
     public static tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine life(String reference, FuneralRole role,
                                                                                         String name, int age) {
         return new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine(reference, role, name,
-            TODAY.minusYears(age).minusDays(30), null, null, false, null, null, null);
+            today().minusYears(age).minusDays(30), null, null, false, null, null, null);
     }
 
     /** A group funeral proposal on {@code plan}, commencing today, with {@code lives}. */
@@ -146,7 +146,7 @@ public class FuneralTestFixtures {
             List<tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine> lives) {
         return new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal(
             tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis.FUNERAL_PLAN, null, null, null, "TZS",
-            List.of(), List.of(), null, "TZS", "MONTHLY", TODAY, null, plan, lives);
+            List.of(), List.of(), null, "TZS", "MONTHLY", today(), null, plan, lives);
     }
 
     /** Opens a group funeral case for {@code association} on {@code product}. */
@@ -169,7 +169,7 @@ public class FuneralTestFixtures {
     public UUID person(UUID tenant, int age, Sex sex) {
         return asTenant(tenant, () -> {
             int n = SEQ.incrementAndGet();
-            return partyApi.registerIndividual(new IndividualRegistration("Mwanachama " + n, TODAY.minusYears(age).minusDays(30),
+            return partyApi.registerIndividual(new IndividualRegistration("Mwanachama " + n, today().minusYears(age).minusDays(30),
                 "+25571700" + String.format("%04d", n % 10000), null, sex, null, IdentityDocument.none(), null, null, null,
                 null, Address.none()), "test-agent").partyId();
         });
@@ -177,7 +177,7 @@ public class FuneralTestFixtures {
 
     /** A dependant aged {@code age} last birthday today. */
     public static FuneralApplication.Life dependant(FuneralRole role, String name, int age) {
-        return new FuneralApplication.Life(role, name, TODAY.minusYears(age).minusDays(30), null, null, false);
+        return new FuneralApplication.Life(role, name, today().minusYears(age).minusDays(30), null, null, false);
     }
 
     /** Spouse 38 and children 10, 7 and 3: the spec's family of five with a main member. */
@@ -190,7 +190,7 @@ public class FuneralTestFixtures {
     public UUID openCase(UUID tenant, Product product, UUID mainMember, String sumAssured, String frequency) {
         return asTenant(tenant, () -> underwritingApi.openCase(mainMember, product.productId(), product.versionId(),
             new BigDecimal(sumAssured), "TZS", null,
-            new ProposalDetails(null, null, null, TODAY, null, null, frequency, List.of()), "staff-opener").caseId());
+            new ProposalDetails(null, null, null, today(), null, null, frequency, List.of()), "staff-opener").caseId());
     }
 
     /** Opens a plan-B monthly case with the application recorded. */
@@ -216,7 +216,7 @@ public class FuneralTestFixtures {
                                      AnnuityTestFixtures annuityFixtures) {
         String policyNumber = issueFamily(tenant, product, mainMember, dependants);
         String premium = asTenant(tenant, () -> policyApi.getPolicy(policyNumber)).premiumAmount().toPlainString();
-        annuityFixtures.collect(tenant, policyNumber, premium, TODAY);
+        annuityFixtures.collect(tenant, policyNumber, premium, today());
         return policyNumber;
     }
 
