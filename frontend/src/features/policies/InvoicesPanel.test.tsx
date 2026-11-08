@@ -141,6 +141,19 @@ describe('InvoicesPanel waivers', () => {
     expect(screen.queryByRole('button', { name: 'Waive' })).not.toBeInTheDocument();
   });
 
+  // 2026-11-08: the row said the premium is paid, and not where.
+  it('leads a premium already due to the Deposit page, and offers no Pay on one not yet due', async () => {
+    withPolicy('PROPOSED');
+    vi.mocked(policiesApi.listInvoices).mockResolvedValue([
+      { ...due, invoiceId: 'inv-now', dueDate: '2026-01-07' },
+      { ...due, invoiceId: 'inv-later', dueDate: '2999-01-07' },
+    ]);
+    renderPanel();
+    const pay = await screen.findAllByRole('link', { name: 'Pay' });
+    expect(pay).toHaveLength(1);
+    expect(pay[0]).toHaveAttribute('href', '/staff/receipts/new?policy=POL-CL-1&from=policy');
+  });
+
   it('offers a waiver of what an in-force policy still owes, and none of a paid premium', async () => {
     withPolicy('ACTIVE');
     vi.mocked(policiesApi.listInvoices).mockResolvedValue([due, { ...invoice, invoiceId: 'inv-2' }]);

@@ -13,6 +13,14 @@ export function isDepositAccount(policy: Pick<PolicyView, 'portfolioCode'>): boo
   return policy.portfolioCode === 'SAV' || policy.portfolioCode === 'DEP';
 }
 
+/**
+ * A policy whose value is an account's balance -- savings, deposits, pensions before vesting. Its premium deposit
+ * pays the premium and no more; money beyond it is a savings deposit (2026-11-08, the Deposit page).
+ */
+export function keepsAccountValue(policy: Pick<PolicyView, 'portfolioCode'>): boolean {
+  return ACCOUNT_PORTFOLIOS.includes(policy.portfolioCode ?? '');
+}
+
 /** What a deposit account pays on death, in the words every screen uses. */
 export const DEPOSIT_DEATH_NOTE = 'Pays the account value on death — no cover above it.';
 

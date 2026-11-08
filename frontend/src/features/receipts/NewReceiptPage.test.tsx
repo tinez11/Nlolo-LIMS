@@ -186,6 +186,25 @@ describe('Deposit page', () => {
     }, expect.anything());
   });
 
+  // 2026-11-08: POL-3E440FE9's 20,000 single premium was refused for more, "against the next invoice" -- it has none.
+  it('caps a savings policy’s premium deposit at the premium, and says the rest is a savings deposit', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(policiesApi.getPolicy).mockResolvedValue({ policyNumber: 'POL-1', portfolioCode: 'SAV' } as never);
+    vi.mocked(policiesApi.listInvoices).mockResolvedValue([invoice('inv-1', '2026-11-07', '20000.00')]);
+    const user = userEvent.setup();
+    renderPage('policy=POL-1');
+
+    await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CASH');
+    expect(await screen.findByText(/At most TZS 20,000.00, what the premium due 2026-11-07 owes/)).toHaveTextContent(
+      "once the policy's savings account is open");
+    await user.type(screen.getByLabelText('Cash receipt number'), 'RC-200');
+    await user.type(screen.getByLabelText(/^Amount/), '50000');
+    await user.click(screen.getByRole('button', { name: 'Record deposit' }));
+
+    expect(await screen.findByText(/More than the premium owes \(TZS 20,000.00\)/)).toBeInTheDocument();
+    expect(useReceiptStore.getState().recording.status).toBe('idle');
+  });
+
   it('asks a phone for a savings deposit of the amount typed', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     vi.mocked(accumulationApi.getAccount).mockResolvedValue(savings);
