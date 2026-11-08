@@ -12,9 +12,9 @@ import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting'
  * `staff.underwriter` identity is enough for this whole file, unlike claims
  * adjudication or distribution.
  *
- * `PremiumInvoice.waive()` has no status guard at all server-side -- it is
- * genuinely callable on any invoice, including an already-PAID one -- so
- * there is no real 409/422 to test there. `requestPaymentForInvoice` only
+ * The server refuses a waiver of a waived or paid premium, or of a proposed
+ * policy's (2026-11-08); the panel offers none of those, so no 409 is reached
+ * from the UI. `requestPaymentForInvoice` only
  * validates payerRef/Idempotency-Key presence, both already client-enforced,
  * so there is no realistic server-side rejection path for either action to
  * exercise a reset-on-mount test against (the same category of gap already
@@ -68,15 +68,16 @@ test.describe('staff billing', () => {
     await page.getByLabel('Reason').fill('E2E goodwill waiver, hardship case');
     await page.getByRole('button', { name: 'Waive invoice' }).click();
 
-    // Waiving is one of the platform's genuinely one-way doors -- PremiumInvoice
-    // marks WAIVED with no status guard and never overwrites it, even for a
-    // payment arriving later -- so it now takes a second, deliberate click. The
+    // A waived premium is not cleared by a later payment; only finance undoing the waiver
+    // owes it again (2026-11-08) -- so it takes a second, deliberate click. The
     // confirming button deliberately does NOT repeat "Waive invoice": two
     // identical buttons a click apart would make the second one reflex.
-    await expect(page.getByText(/cannot be un-waived/)).toBeVisible();
+    await expect(page.getByText(/finance can undo the waiver/)).toBeVisible();
     await page.getByRole('button', { name: 'Write off invoice' }).click();
 
     await expect(page.getByText('Waived').first()).toBeVisible({ timeout: 15_000 });
+    // 2026-11-08: a waived premium offers no second waiver -- only its undoing.
+    await expect(page.getByRole('button', { name: 'Undo waiver' }).first()).toBeVisible();
   });
 
   test('rejects a waiver reason under 10 characters, before reaching the network', async ({

@@ -287,6 +287,29 @@ rules:
     description: An IFRS 9 contract's waived invoice -- nothing was billed to the ledger
     post: false
 
+  # A waiver taken back (2026-11-08): the exact mirror of the waiver, so the receivable stands again.
+  - id: A-14-UNDO
+    event: billing.InvoiceWaiverUndone
+    models: [GMM, VFA]
+    description: A waiver undone -- the premium is owed again
+    lines:
+      - {dr: "2122", amount: amount, movement: PRM_REN}
+      - {cr: "2121", amount: amount, movement: PRM_REN}
+
+  - id: A-14-PAA-UNDO
+    event: billing.InvoiceWaiverUndone
+    models: [PAA]
+    description: A PAA waiver undone -- the premium is owed again and earns again
+    lines:
+      - {dr: "2142", amount: amount, movement: PRM_REN}
+      - {cr: "2141", amount: amount, movement: PRM_REN}
+
+  - id: G-WAIVER-UNDONE
+    event: billing.InvoiceWaiverUndone
+    models: [IFRS9]
+    description: An IFRS 9 contract's waiver undone -- nothing was billed to the ledger
+    post: false
+
   # ---- Commission (A-04, A-09, A-05; a clawback reverses, A-14's note) ---------------------------------------------
 
   - id: A-04

@@ -312,6 +312,11 @@ export function waiveInvoice(invoiceId: string, request: WaiverRequest): Promise
   return post<void>(`/invoices/${encodeURIComponent(invoiceId)}/waiver`, request);
 }
 
+/** `POST /invoices/{invoiceId}/waiver/undo` (2026-11-08): the waiver taken back, saying why; the premium is owed again. */
+export function undoWaiver(invoiceId: string, request: WaiverRequest): Promise<void> {
+  return post<void>(`/invoices/${encodeURIComponent(invoiceId)}/waiver/undo`, request);
+}
+
 /**
  * `POST /invoices/{invoiceId}/payment-request` -- staff/customer/agent.
  * `Idempotency-Key` is hard-required (a 400 without it) -- see

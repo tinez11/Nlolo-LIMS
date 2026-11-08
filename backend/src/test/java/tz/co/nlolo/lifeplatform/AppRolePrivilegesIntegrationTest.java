@@ -241,7 +241,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its

@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
-import { decideLenderRefund } from '@/api/policies';
+import { decideLenderRefund, undoWaiver } from '@/api/policies';
 import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView, PremiumCreditView } from '@/api/types';
 import type { ApiError } from '@/lib/apiError';
 import { FilterChip } from '@/components/FilterChip';
@@ -47,12 +47,10 @@ import { useReceiptStore } from '@/store/receiptStore';
  * unlike the read-only table this replaced, an invoice is now something staff
  * can act on.
  *
- * `PremiumInvoice.waive()` has genuinely no status guard at all (confirmed by
- * reading the domain method): it unconditionally sets WAIVED regardless of
- * current status, even PAID. This is a real platform quirk, not something to
- * paper over with an invented client-side rule the backend does not enforce
- * -- the action stays enabled for every invoice, and staff judgement is the
- * only guard that exists.
+ * Since 2026-11-08 the server refuses a waiver of an invoice already waived or paid, and of a proposed
+ * policy's premium (it starts the cover, and is paid, not waived) -- POL-3E440FE9's starting premium was
+ * waived and the policy could never come on cover. A waiver can be undone, saying why, which owes the
+ * premium again. The row offers exactly what the server allows.
  */
 export function InvoicesPanel({
   policyNumber,
@@ -165,9 +163,13 @@ function InvoiceRow({
   file: EnrolmentSubmissionView | null;
   onRefundDecided: () => void;
 }) {
-  const [action, setAction] = useState<'waive' | null>(null);
+  const [action, setAction] = useState<'waive' | 'undo' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
-  const canWaive = can('collections.manage');
+  const mayWaive = can('collections.manage');
+  const policyStatus = usePolicyStore(selectDetail(policyNumber)).data?.status;
+  // What the server allows (2026-11-08): a waiver of what is still owed, once the policy is on cover; an undo of a waiver.
+  const canWaive = mayWaive && invoice.status !== 'WAIVED' && invoice.status !== 'PAID' && policyStatus !== 'PROPOSED';
+  const canUndo = mayWaive && invoice.status === 'WAIVED';
   const invoiceId = invoice.invoiceId ?? '';
   // What has been recorded against this invoice and still waits for a second person (2026-10-28). Without it a
   // recorded receipt showed nowhere here, the invoice still read Due, and POL-C0B3B81A was receipted twice.
@@ -235,12 +237,17 @@ function InvoiceRow({
 
       {/* Every deposit, mobile money included, is taken on the one Deposit page (2026-11-07): an invoice row only
           waives. Waiving is finance-gated server-side, so this only avoids offering a button that would 403. */}
-      {invoiceId && action === null && canWaive && (
+      {invoiceId && action === null && (canWaive || canUndo) && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
-            Waive
+          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction(canUndo ? 'undo' : 'waive')}>
+            {canUndo ? 'Undo waiver' : 'Waive'}
           </Button>
         </div>
+      )}
+      {mayWaive && policyStatus === 'PROPOSED' && owing && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          This premium starts the cover: it is paid, not waived.
+        </p>
       )}
 
       {action === 'waive' && invoiceId && (
@@ -249,6 +256,9 @@ function InvoiceRow({
           invoice={invoice}
           onDone={() => setAction(null)}
         />
+      )}
+      {action === 'undo' && invoiceId && (
+        <UndoWaiverForm policyNumber={policyNumber} invoice={invoice} onDone={() => setAction(null)} />
       )}
     </div>
   );
@@ -398,18 +408,11 @@ function WaiveForm({
               <strong>{pending.reason}</strong>.
             </>
           }
-          /*
-            Both halves are PremiumInvoice's real behaviour, not a caution:
-            waive() sets WAIVED with no status guard whatsoever -- it will
-            happily waive a PAID invoice -- and the payment path documents WAIVED
-            as terminal and never overwritten by a late payment. So this is one
-            of the few genuinely one-way doors in the console, and on an already
-            paid invoice it is also a silent contradiction of the money received.
-          */
+          // A payment arriving against a waived invoice does not clear it; finance can undo the waiver (2026-11-08).
           reversal={
-            invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID'
-              ? `This invoice is already ${invoice.status === 'PAID' ? 'paid' : 'partly paid'}. Waiving is still permitted and cannot be undone — the payment stays recorded against an invoice that then reads as written off.`
-              : 'Waived is permanent: it cannot be un-waived, and a payment arriving later will not clear it.'
+            invoice.status === 'PARTIALLY_PAID'
+              ? 'This invoice is partly paid: the payment stays recorded, and the rest is written off. A payment arriving later will not clear it; finance can undo the waiver, saying why.'
+              : 'A payment arriving later will not clear a waived premium; finance can undo the waiver, saying why.'
           }
           // Not "Waive invoice" again: the arming button already says that, and
           // two identical buttons a click apart defeat the point of the second.
@@ -432,6 +435,73 @@ function WaiveForm({
   );
 }
 
+/** A waiver taken back, saying why (2026-11-08): the premium is owed again and the ledger carries it again. */
+function UndoWaiverForm({ policyNumber, invoice, onDone }: { policyNumber: string; invoice: InvoiceView; onDone: () => void }) {
+  const invoiceId = invoice.invoiceId ?? '';
+  const loadInvoices = usePolicyStore((s) => s.loadInvoices);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [pending, setPending] = useState<WaiveInvoiceFormValues | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<WaiveInvoiceFormValues>({
+    ...VALIDATE_ON_TOUCH,
+    resolver: zodResolver(waiveInvoiceFormSchema),
+    defaultValues: blankWaiveInvoiceForm(),
+  });
+
+  async function commit(values: WaiveInvoiceFormValues) {
+    setBusy(true);
+    setError(null);
+    try {
+      await undoWaiver(invoiceId, toWaiverApiRequest(values));
+      await loadInvoices(policyNumber);
+      onDone();
+    } catch (cause) {
+      setError(cause as ApiError);
+      setPending(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(setPending)(e)}>
+      <FormField required label="Why is the waiver undone?" error={errors.reason?.message}>
+        <Input inputSize="sm" placeholder="Waived in error; the customer will pay" {...register('reason')} />
+      </FormField>
+      {error && <InlineError error={error} />}
+      {pending ? (
+        <ConfirmAct
+          heading="Undo this waiver?"
+          consequence={
+            <>
+              The premium due {formatDate(invoice.dueDate)} is owed again —{' '}
+              <strong>{formatMoney(invoice.amount)}</strong> charged, less anything paid — on the grounds:{' '}
+              <strong>{pending.reason}</strong>.
+            </>
+          }
+          reversal="It can be waived again later, saying why."
+          confirmLabel="Owe it again"
+          busy={busy}
+          onConfirm={() => void commit(pending)}
+          onCancel={() => setPending(null)}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <Button type="submit" size="sm">
+            Undo waiver
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </form>
+  );
+}
 
 const REFUND_WORDS: Record<NonNullable<PremiumCreditView['refundStatus']>, string> = {
   AWAITING_APPROVAL: 'waiting for a second person to approve it',

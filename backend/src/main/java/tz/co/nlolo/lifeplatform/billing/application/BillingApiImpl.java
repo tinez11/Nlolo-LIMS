@@ -12,6 +12,8 @@ import tz.co.nlolo.lifeplatform.billing.domain.PolicyBalance;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BalanceEntryRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PolicyBalanceRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
+import tz.co.nlolo.lifeplatform.billing.api.WaiverRefusedException;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
@@ -327,6 +329,16 @@ public class BillingApiImpl implements BillingApi {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        // 2026-11-08: a second waiver re-posted the reversal for nothing, and a paid premium has nothing to cancel.
+        if (invoice.isClosed()) {
+            throw new WaiverRefusedException("This premium is already " + invoice.getStatus().toLowerCase()
+                + "; there is nothing left to waive");
+        }
+        // 2026-11-08: a proposed policy comes on cover when its premium is paid; waived, it never could.
+        if (policyApi.getPolicy(invoice.getPolicyNumber()).status() == PolicyStatus.PROPOSED) {
+            throw new WaiverRefusedException("This premium starts the policy's cover; a proposed policy's premium is"
+                + " paid, not waived");
+        }
         waive(tenantId, invoice, reason, waivedBy);
         return toView(invoice);
     }
@@ -348,8 +360,35 @@ public class BillingApiImpl implements BillingApi {
             .ifPresent(ArrearsCase::resolve);
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.InvoiceWaived", tenantId,
             Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "reason", reason,
-                   "waivedBy", waivedBy,
+                   "waivedBy", waivedBy, "waiverRef", invoice.waiverRef(),
                    "amount", Map.of("amount", outstanding.toPlainString(), "currencyCode", invoice.getCurrency()))));
+    }
+
+    /**
+     * A waiver taken back (2026-11-08): POL-3E440FE9's starting premium was waived while the policy was still
+     * proposed, leaving nothing it could pay to come on cover. The invoice is owed again and
+     * billing.InvoiceWaiverUndone puts back on the ledger exactly what the waiver took off, under the waiver's own
+     * reference. An arrears case the waiver resolved stays resolved; the sweep opens a new one if it falls overdue.
+     */
+    @Override
+    @Transactional
+    public InvoiceView undoWaiver(UUID invoiceId, String reason, String undoneBy) {
+        UUID tenantId = TenantContext.get();
+        PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
+            .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        if (!"WAIVED".equals(invoice.getStatus())) {
+            throw new WaiverRefusedException("This premium is " + invoice.getStatus().toLowerCase().replace('_', ' ')
+                + ", not waived; there is no waiver to undo");
+        }
+        String waiverRef = invoice.waiverRef();
+        invoice.undoWaiver();
+        BigDecimal owedAgain = invoice.balanceDue(creditedAgainst(invoice));
+        premiumInvoiceRepository.save(invoice);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.InvoiceWaiverUndone", tenantId,
+            Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "reason", reason,
+                   "undoneBy", undoneBy, "waiverRef", waiverRef,
+                   "amount", Map.of("amount", owedAgain.toPlainString(), "currencyCode", invoice.getCurrency()))));
+        return toView(invoice);
     }
 
     /**

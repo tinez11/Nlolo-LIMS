@@ -8,6 +8,7 @@ import type { InvoiceView, PremiumCreditView } from '@/api/types';
 import { grantAccess } from '@/test/access';
 import { usePolicyStore } from '@/store/policyStore';
 import { useReceiptStore } from '@/store/receiptStore';
+import { success } from '@/store/createResourceSlice';
 import { InvoicesPanel } from './InvoicesPanel';
 
 vi.mock('@/api/policies');
@@ -91,5 +92,59 @@ describe('InvoicesPanel asks no phone itself (2026-11-07: every deposit is on th
     renderPanel();
     expect(await screen.findByText('TZS 84,000.00')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Request payment' })).not.toBeInTheDocument();
+  });
+});
+
+/** 2026-11-08: POL-3E440FE9's starting premium was waived, then offered Waive again, and could never be paid. */
+describe('InvoicesPanel waivers', () => {
+  const due: InvoiceView = {
+    ...invoice, status: 'DUE', amountPaid: TZS('0.00'), amountCredited: TZS('0.00'), balanceDue: TZS('84000.00'),
+  };
+  const waived: InvoiceView = { ...due, status: 'WAIVED', balanceDue: TZS('0.00') };
+
+  function withPolicy(status: string) {
+    usePolicyStore.setState({ detail: { 'POL-CL-1': success({ policyNumber: 'POL-CL-1', status } as never) } });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usePolicyStore.setState({ invoices: {}, detail: {} });
+    useReceiptStore.setState({ waiting: {} });
+    vi.mocked(policiesApi.listPolicyCredits).mockResolvedValue([]);
+    vi.mocked(policiesApi.getSchemeMember).mockRejectedValue(new Error('no member'));
+    vi.mocked(receiptsApi.listWaitingReceipts).mockResolvedValue([]);
+    grantAccess('collections.manage', 'collections.view');
+  });
+
+  it('offers no second waiver of a waived premium, but lets finance undo it, saying why', async () => {
+    withPolicy('PROPOSED');
+    vi.mocked(policiesApi.listInvoices).mockResolvedValueOnce([waived]).mockResolvedValue([due]);
+    vi.mocked(policiesApi.undoWaiver).mockResolvedValue();
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(await screen.findByRole('button', { name: 'Undo waiver' }));
+    expect(screen.queryByRole('button', { name: 'Waive' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Why is the waiver undone/), 'Waived in error; the customer will pay');
+    await user.click(screen.getByRole('button', { name: 'Undo waiver' }));
+    await user.click(screen.getByRole('button', { name: 'Owe it again' }));
+
+    expect(policiesApi.undoWaiver).toHaveBeenCalledWith('inv-1', { reason: 'Waived in error; the customer will pay' });
+    await waitFor(() => expect(policiesApi.listInvoices).toHaveBeenCalledTimes(2));
+  });
+
+  it("offers no waiver of a proposed policy's premium, and says it is paid", async () => {
+    withPolicy('PROPOSED');
+    vi.mocked(policiesApi.listInvoices).mockResolvedValue([due]);
+    renderPanel();
+    expect(await screen.findByText('This premium starts the cover: it is paid, not waived.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Waive' })).not.toBeInTheDocument();
+  });
+
+  it('offers a waiver of what an in-force policy still owes, and none of a paid premium', async () => {
+    withPolicy('ACTIVE');
+    vi.mocked(policiesApi.listInvoices).mockResolvedValue([due, { ...invoice, invoiceId: 'inv-2' }]);
+    renderPanel();
+    expect(await screen.findAllByRole('button', { name: 'Waive' })).toHaveLength(1);
   });
 });

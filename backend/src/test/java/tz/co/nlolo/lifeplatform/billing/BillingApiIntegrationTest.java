@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
 import tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging;
 import tz.co.nlolo.lifeplatform.billing.application.ArrearsNotificationSweep;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
@@ -196,7 +197,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -882,6 +883,72 @@ class BillingApiIntegrationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) waived.get(0).payload();
         assertThat(payload.get("amount")).isEqualTo(Map.of("amount", "15000.00", "currencyCode", "TZS"));
+    }
+
+    // 2026-11-08: POL-3E440FE9's premium was waived, and a second waiver reversed its receivable again for nothing.
+    @Test
+    void aWaivedInvoiceIsNotWaivedAgain() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-WAIVER-TWICE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.waiveInvoice(invoice.invoiceId(), "Hardship write-off", "finance-one");
+        assertThatThrownBy(() -> billingApi.waiveInvoice(invoice.invoiceId(), "Goodwill gesture, again", "finance-two"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WaiverRefusedException.class)
+            .hasMessageContaining("already waived");
+        assertThat(eventRecorder.ofType("billing.InvoiceWaived")).hasSize(1);
+    }
+
+    // 2026-11-08: a proposed policy comes on cover when its premium is paid; POL-3E440FE9's was waived, so it never could.
+    @Test
+    void aProposedPolicysStartingPremiumIsPaidNotWaived() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-WAIVER-PROPOSED-01");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("15000.00"), "TZS", "MONTHLY", null, List.of(), "Proposed, not on cover");
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.PROPOSED);
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        assertThatThrownBy(() -> billingApi.waiveInvoice(invoice.invoiceId(), "IT was testing before", "finance-one"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WaiverRefusedException.class)
+            .hasMessageContaining("starts the policy's cover");
+        assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isNotEqualTo(InvoiceStatus.WAIVED);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anUndoneWaiverOwesThePremiumAgainAndAWaiverAfterItPostsUnderItsOwnReference() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-WAIVER-UNDO-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        String id = invoice.invoiceId().toString();
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> billingApi.undoWaiver(invoice.invoiceId(), "Nothing was waived here", "finance-one"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WaiverRefusedException.class);
+
+        eventRecorder.clear();
+        billingApi.waiveInvoice(invoice.invoiceId(), "Hardship write-off", "finance-one");
+        InvoiceView undone = billingApi.undoWaiver(invoice.invoiceId(), "Waived in error, customer will pay", "finance-two");
+
+        assertThat(undone.status()).isNotEqualTo(InvoiceStatus.WAIVED);
+        assertThat(undone.balanceDue()).isEqualByComparingTo("15000.00");
+        List<DomainEventEnvelope<?>> undoes = eventRecorder.ofType("billing.InvoiceWaiverUndone");
+        assertThat(undoes).hasSize(1);
+        Map<String, Object> undo = (Map<String, Object>) undoes.get(0).payload();
+        assertThat(undo.get("waiverRef")).isEqualTo(id);
+        assertThat(undo.get("amount")).isEqualTo(Map.of("amount", "15000.00", "currencyCode", "TZS"));
+
+        // Waived again: its own reference, so the ledger posts it rather than taking it for the first waiver.
+        billingApi.waiveInvoice(invoice.invoiceId(), "Hardship write-off, confirmed", "finance-one");
+        List<DomainEventEnvelope<?>> waivers = eventRecorder.ofType("billing.InvoiceWaived");
+        assertThat(waivers).extracting(e -> ((Map<String, Object>) e.payload()).get("waiverRef")).containsExactly(id, id + ":2");
     }
 
     @Test

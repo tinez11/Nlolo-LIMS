@@ -209,6 +209,15 @@ public class BillingController {
         return ResponseEntity.ok().build();
     }
 
+    /** A waiver taken back, saying why: the premium is owed again (2026-11-08). */
+    @PostMapping("/invoices/{invoiceId}/waiver/undo")
+    @PreAuthorize("@access.can('collections.manage')")
+    public ResponseEntity<Void> undoWaiver(@PathVariable UUID invoiceId, @Valid @RequestBody WaiverRequestDto request,
+                                           @AuthenticationPrincipal Jwt jwt) {
+        billingApi.undoWaiver(invoiceId, request.reason(), jwt.getSubject());
+        return ResponseEntity.ok().build();
+    }
+
     /**
      * Review fix (I1): {@code Idempotency-Key} is REQUIRED on this one endpoint, and is genuinely
      * enforced rather than "accepted, not enforced" as it is on every other endpoint on this
