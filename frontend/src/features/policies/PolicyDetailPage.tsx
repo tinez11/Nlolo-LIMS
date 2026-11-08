@@ -927,7 +927,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             // one humaniser on the platform, so a benefit type gains an acronym the day the
             // backend adds one without this line needing to know.
             label={c.benefitType ? humanizeStatus(c.benefitType) : 'Benefit'}
-            value={formatMoney(c.sumAssured)}
+            // A savings account or fixed deposit pays its account value on death (2026-11-08) -- the figure here
+            // was its opening deposit, read as cover.
+            value={policy && isDepositAccount(policy) && c.benefitType === 'DEATH'
+              ? 'The account value at the date of death'
+              : formatMoney(c.sumAssured)}
+            {...(policy && isDepositAccount(policy) && c.benefitType === 'DEATH' ? { note: 'No cover above it.' } : {})}
           />
         ))}
       </dl>
