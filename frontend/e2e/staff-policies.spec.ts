@@ -80,7 +80,8 @@ test.describe('staff policies', () => {
     // that was actually clicked.
     const drawer = page.getByRole('dialog', { name: policyNumber });
     await expect(drawer).toBeVisible();
-    await expect(drawer.getByText('Sum assured')).toBeVisible();
+    // A savings account or fixed deposit has no sum assured (2026-11-08): its drawer leads with the account instead.
+    await expect(drawer.getByText(/^(Sum assured|Account)$/)).toBeVisible();
 
     // And it must NOT carry a mutating action -- that is the whole distinction.
     await expect(drawer.getByRole('button', { name: /surrender/i })).toHaveCount(0);

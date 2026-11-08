@@ -61,6 +61,9 @@ public class PolicyEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(PolicyEventListener.class);
 
+    /** Savings accounts and fixed deposits: an opening deposit, not cover (2026-11-08). */
+    private static final java.util.Set<String> DEPOSIT_PORTFOLIOS = java.util.Set.of("SAV", "DEP");
+
     /** Task 6 Step 6's alertable counter. Same naming convention as reinsurance's/finaccounting's
      * own {@code lifeplatform_<module>_event_processing_failed_total}. */
     private static final String EVENT_PROCESSING_FAILED_COUNTER = "lifeplatform_regreporting_event_processing_failed_total";
@@ -147,7 +150,11 @@ public class PolicyEventListener {
         UUID productId = (UUID) payload.get("productId");
         @SuppressWarnings("unchecked")
         Map<String, Object> sumAssured = (Map<String, Object>) payload.get("sumAssured");
-        BigDecimal sumAssuredAmount = new BigDecimal((String) sumAssured.get("amount"));
+        // A savings account or a fixed deposit (2026-11-08, the user): its "sum assured" is the opening deposit, and it
+        // pays its account value on death, no cover above it -- so it adds nothing to the sum assured returned.
+        // Recorded as zero on its dimension too, so its lapse or maturity takes nothing back out.
+        BigDecimal sumAssuredAmount = payload.get("portfolioCode") instanceof String portfolio && DEPOSIT_PORTFOLIOS.contains(portfolio)
+            ? BigDecimal.ZERO : new BigDecimal((String) sumAssured.get("amount"));
         String sumAssuredCurrency = (String) sumAssured.get("currencyCode");
         String issueDate = (String) payload.get("issueDate");
 

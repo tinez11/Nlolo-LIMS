@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { CoverAmount } from './CoverAmount';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { PolicyDrawer } from './PolicyDrawer';
@@ -171,7 +172,7 @@ export function PoliciesPage({
       key: 'sumAssured',
       header: 'Sum assured',
       align: 'right',
-      render: (p) => formatMoney(p.sumAssured),
+      render: (p) => <CoverAmount policy={p} />,
     },
     {
       key: 'premium',
