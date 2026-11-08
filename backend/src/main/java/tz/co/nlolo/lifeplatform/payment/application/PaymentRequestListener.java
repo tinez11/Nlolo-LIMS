@@ -131,6 +131,10 @@ public class PaymentRequestListener {
             case "billing.BalanceWithdrawalPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
                 requireKey(payload), payload, "BALANCE_WITHDRAWAL", (String) payload.get("withdrawalId"),
                 "BalanceWithdrawalPayoutRequested"));
+            // What we owe a reinsurer on an approved statement (2026-11-08): an EFT finance makes under "Payments to make".
+            case "reinsurance.SettlementPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
+                requireKey(payload), payload, "REINSURANCE_SETTLEMENT", (String) payload.get("settlementId"),
+                "SettlementPayoutRequested"));
             case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
             case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);

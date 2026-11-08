@@ -80,11 +80,18 @@ final class PostingFactsExtractor {
         Map.entry("accumulation.PayoutRequested", new EventShape(Set.of("charge"), Set.of())),
         Map.entry("accumulation.PayoutPaid", amount()),
         // IFRS 17 I3c: reinsurance held from the monthly bordereau (K-01/K-02) and a recovery at claim approval (B-05).
-        Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission"), Set.of())),
+        Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission", "premiumReversed",
+            "commissionReversed"), Set.of())),
         Map.entry("reinsurance.RecoveryCalculated", amount()),
         // IFRS 17 I3d: the quarterly statement (R-01, R-03, R-04). premiumNet is the premium less what is withheld.
         Map.entry("reinsurance.StatementApproved", new EventShape(Set.of("premiumNet", "withheld", "commission",
             "recoveries", "owedToUs", "owedByUs", "profitCommission"), Set.of())),
+        // Settling an approved statement (2026-11-08): money in names how it came (receiptMethod); money out names its
+        // payout (paymentRef), whose rail the engine reads; a release of funds withheld moves no money.
+        Map.entry("reinsurance.SettlementReceived", new EventShape(Set.of(AMOUNT), Set.of("receiptMethod"))),
+        Map.entry("reinsurance.ProfitCommissionReceived", new EventShape(Set.of(AMOUNT), Set.of("receiptMethod"))),
+        Map.entry("reinsurance.FundsWithheldReleased", amount()),
+        Map.entry("reinsurance.SettlementPaid", amount()),
         // The platform's own: a month's PAA premium earned (PaaEarningJob), never an event from another module.
         Map.entry(PaaEarningJob.EVENT, amount()),
         Map.entry("unitlinked.UnitsAllocated", new EventShape(Set.of("premium", "allocated", "allocationCharge"), Set.of())),
@@ -222,7 +229,10 @@ final class PostingFactsExtractor {
                 java.time.YearMonth month = java.time.YearMonth.parse(string(p.get("period")));
                 yield List.of(facts(type, string(p.get("bordereauId")), null, currencyOf(p.get("premium")),
                     month.atEndOfMonth(), Map.of("premium", amountOf(p.get("premium")), "commission",
-                        amountOf(p.get("commission"))), Map.of("refType", "BORDEREAU")));
+                        amountOf(p.get("commission")),
+                        // 2026-11-08: taken back for a policy cancelled in free-look; zero on a bordereau before then.
+                        "premiumReversed", amountOf(p.get("premiumReversed")),
+                        "commissionReversed", amountOf(p.get("commissionReversed"))), Map.of("refType", "BORDEREAU")));
             }
             case "reinsurance.RecoveryCalculated" ->
                 List.of(money(type, string(p.get("recoveryId")), policy, p.get("recoverableAmount"), today,
@@ -237,6 +247,16 @@ final class PostingFactsExtractor {
                         "profitCommission", amountOf(p.get("profitCommission"))),
                     Map.of("refType", "STATEMENT")));
             }
+            // Each settlement posts once, under its own id, in the month it is confirmed (or, paid out, when the EFT is made).
+            case "reinsurance.SettlementReceived", "reinsurance.ProfitCommissionReceived" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "RI_SETTLEMENT"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("settlementId")), null, p.get("amount"), today, attrs));
+            }
+            case "reinsurance.FundsWithheldReleased" -> List.of(money(type, string(p.get("settlementId")), null,
+                p.get("amount"), today, Map.of("refType", "RI_SETTLEMENT")));
+            case "reinsurance.SettlementPaid" -> List.of(money(type, string(p.get("settlementId")), null, p.get("amount"),
+                today, paid("RI_SETTLEMENT", p.get("settlementId"))));
             default -> type.startsWith("unitlinked.") ? unitLinked(type, p, policy, today) : List.of();
         };
     }

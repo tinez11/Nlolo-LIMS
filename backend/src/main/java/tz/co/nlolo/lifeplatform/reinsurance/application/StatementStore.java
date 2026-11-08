@@ -50,7 +50,9 @@ class StatementStore {   // not "Statements": unitlinked has a bean of that name
     /** The treaty's bordereaux for the quarter's months. */
     List<BordereauRow> bordereauxOf(UUID tenantId, UUID treatyId, Quarter quarter) {
         List<String> months = quarter.months().stream().map(Object::toString).toList();
-        return jdbc.query("SELECT bordereau_id, period, premium, commission FROM reinsurance.bordereau"
+        // Net of what each took back for a policy cancelled in free-look (2026-11-08): what 1430 and 1431 hold.
+        return jdbc.query("SELECT bordereau_id, period, premium - premium_reversed AS premium,"
+                + " commission - commission_reversed AS commission FROM reinsurance.bordereau"
                 + " WHERE tenant_id = ? AND treaty_id = ? AND period IN (?, ?, ?) ORDER BY period",
             (rs, i) -> new BordereauRow(rs.getObject("bordereau_id", UUID.class), rs.getString("period"),
                 rs.getBigDecimal("premium"), rs.getBigDecimal("commission")),

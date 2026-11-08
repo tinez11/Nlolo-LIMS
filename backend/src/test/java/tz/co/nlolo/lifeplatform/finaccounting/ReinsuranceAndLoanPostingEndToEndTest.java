@@ -244,7 +244,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -276,7 +276,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/payment/V22__loan_repayment_purpose.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql", "db-migrations/payment/V27__reinsurance_settlement_purpose.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -472,6 +472,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
     }
 
     @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.ReinsuranceStatements statements;
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.StatementSettlements settlements;
 
     /** Every leg the tenant has posted -- to see an account's whole balance, not one journal's movement. */
     private List<GlPosting> everyLeg(UUID tenantId) {
@@ -526,6 +527,26 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         assertThat(netFor(all, "1434")).as("the reinsurer owes the recovery and commission, less the premium")
             .isEqualByComparingTo(draft.owedToUs());
         assertThat(netFor(all, "1433")).isEqualByComparingTo("1000.00");
+
+        // 2026-11-08: settled -- the reinsurer pays what it owes and the profit commission, each confirmed by a second
+        // person; the current account and the profit commission receivable come back to nothing.
+        BigDecimal collectedBefore = netFor(all, "1120");
+        var received = settlements.record(draft.statementId(), new tz.co.nlolo.lifeplatform.reinsurance.api.SettlementView
+            .NewSettlement("RECEIVED", draft.owedToUs(), "BANK_DEPOSIT", "CRDB-RI-0001", LocalDate.now(
+                java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null, null, null), "finance-one");
+        settlements.approve(received.settlementId(), "finance-approver");
+        var pc = settlements.record(draft.statementId(), new tz.co.nlolo.lifeplatform.reinsurance.api.SettlementView
+            .NewSettlement("PROFIT_COMMISSION", new BigDecimal("1000.00"), "CHEQUE", "CHQ-RI-77", LocalDate.now(
+                java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null, null, null), "finance-one");
+        settlements.approve(pc.settlementId(), "finance-approver");
+
+        assertThat(singleEntryFor(tenantId, "reinsurance.SettlementReceived", received.settlementId().toString())
+            .getSourceType()).isEqualTo(tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource.SYSTEM);
+        List<GlPosting> settled = everyLeg(tenantId);
+        assertThat(netFor(settled, "1434")).as("the current account settled").isZero();
+        assertThat(netFor(settled, "1433")).as("the profit commission received").isZero();
+        assertThat(netFor(settled, "1120").subtract(collectedBefore)).as("both into the collection bank account")
+            .isEqualByComparingTo(draft.owedToUs().add(new BigDecimal("1000.00")));
     }
 
     @Test

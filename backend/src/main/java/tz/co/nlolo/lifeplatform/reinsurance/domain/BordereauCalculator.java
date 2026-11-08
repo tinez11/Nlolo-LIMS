@@ -39,15 +39,26 @@ public final class BordereauCalculator {
 
     public record Recovery(java.util.UUID claimId, String policyNumber, BigDecimal amount, String currency) {}
 
-    public enum LineType { PREMIUM, XOL_PREMIUM, RECOVERY }
+    /** What a policy cancelled in free-look was charged on bordereaux already posted (2026-11-08): taken back. */
+    public record Reversal(String policyNumber, BigDecimal premium, BigDecimal commission) {}
+
+    public enum LineType { PREMIUM, XOL_PREMIUM, RECOVERY, FREE_LOOK_REVERSAL }
 
     public record Line(LineType type, String policyNumber, java.util.UUID claimId, BigDecimal premiumShare,
                        BigDecimal policyPremium, BigDecimal premium, BigDecimal commission, BigDecimal recovery) {}
 
     public record Result(List<Line> lines, int policyCount, BigDecimal premium, BigDecimal commission,
-                         BigDecimal recoveries) {}
+                         BigDecimal recoveries,
+                         /** Taken back from earlier bordereaux for policies cancelled in free-look; the premium and
+                          *  commission above are this month's charge alone. */
+                         BigDecimal premiumReversed, BigDecimal commissionReversed) {}
 
     public static Result calculate(YearMonth month, Treaty treaty, List<CededPolicy> policies, List<Recovery> recoveries) {
+        return calculate(month, treaty, policies, recoveries, List.of());
+    }
+
+    public static Result calculate(YearMonth month, Treaty treaty, List<CededPolicy> policies, List<Recovery> recoveries,
+                                   List<Reversal> reversals) {
         List<Line> lines = new ArrayList<>();
         BigDecimal rate = treaty.commissionPercent() == null ? BigDecimal.ZERO : treaty.commissionPercent();
         for (CededPolicy p : policies) {
@@ -73,10 +84,25 @@ public final class BordereauCalculator {
                     BigDecimal.ZERO, r.amount()));
             }
         }
+        // This month's charge, before anything is taken back.
         BigDecimal premium = lines.stream().map(Line::premium).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal commission = lines.stream().map(Line::commission).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal recovered = lines.stream().map(Line::recovery).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new Result(List.copyOf(lines), policyCount, premium, commission, recovered);
+        // 2026-11-08: a policy cancelled in free-look after it was charged was never on risk -- its charge comes back,
+        // as its own lines whose amounts are what is taken back (every amount here is positive).
+        BigDecimal premiumReversed = BigDecimal.ZERO;
+        BigDecimal commissionReversed = BigDecimal.ZERO;
+        for (Reversal r : reversals) {
+            if (r.premium().signum() <= 0 && r.commission().signum() <= 0) {
+                continue;
+            }
+            lines.add(new Line(LineType.FREE_LOOK_REVERSAL, r.policyNumber(), null, null, null, r.premium(),
+                r.commission(), BigDecimal.ZERO));
+            premiumReversed = premiumReversed.add(r.premium());
+            commissionReversed = commissionReversed.add(r.commission());
+        }
+        return new Result(List.copyOf(lines), policyCount, premium, commission, recovered, premiumReversed,
+            commissionReversed);
     }
 
     /** What one ceded policy costs in this month: zero when it was not on risk, or no longer paying premiums. */

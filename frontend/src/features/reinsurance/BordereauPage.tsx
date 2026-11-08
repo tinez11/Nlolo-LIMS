@@ -17,7 +17,12 @@ const LINE_TYPE: Record<string, string> = {
   PREMIUM: 'Policy',
   XOL_PREMIUM: 'XOL premium',
   RECOVERY: 'Recovery (matched)',
+  // 2026-11-08: what an earlier month charged a policy since cancelled in free-look, taken back.
+  FREE_LOOK_REVERSAL: 'Taken back (free-look)',
 };
+
+/** A reversal's amounts are what is taken back: shown as minus, as they reduce the bordereau. */
+const signed = (l: { type: string }, text: string) => (l.type === 'FREE_LOOK_REVERSAL' && text !== '—' ? `−${text}` : text);
 
 /**
  * One treaty's bordereau for one month (IFRS 17 I3c): every policy charged, the XOL twelfth, and the recoveries
@@ -73,8 +78,8 @@ export function BordereauPage() {
       render: (l) => (l.premiumShare ? `${(Number(l.premiumShare) * 100).toFixed(2)}%` : '—'),
     },
     { key: 'policyPremium', header: 'Policy premium', align: 'right', secondary: true, render: (l) => money(l.policyPremium) },
-    { key: 'premium', header: 'Ceded premium', align: 'right', render: (l) => money(l.premium) },
-    { key: 'commission', header: 'Commission', align: 'right', render: (l) => money(l.commission) },
+    { key: 'premium', header: 'Ceded premium', align: 'right', render: (l) => signed(l, money(l.premium)) },
+    { key: 'commission', header: 'Commission', align: 'right', render: (l) => signed(l, money(l.commission)) },
     { key: 'recovery', header: 'Recovery', align: 'right', render: (l) => money(l.recovery) },
   ];
 

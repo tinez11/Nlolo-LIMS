@@ -11,4 +11,9 @@ public record TreatyView(UUID treatyId, String reinsurerName, TreatyType treatyT
                           BigDecimal cessionPercent, LocalDate effectiveFrom, LocalDate effectiveTo,
                           BigDecimal commissionPercent, BigDecimal xolAnnualPremium,
                           /** Where it stands today, from its dates -- see {@link TreatyStanding}. */
-                          TreatyStanding standing) {}
+                          TreatyStanding standing,
+                          /** How many policies are ceded to it (2026-11-08); null where the view does not count them. */
+                          Long cededPolicies,
+                          /** Whether a policy issued today is ceded to it: false for one in force while another, later
+                           *  one is too -- every policy goes to one treaty, so this one takes no new business. */
+                          boolean takesNewPolicies) {}

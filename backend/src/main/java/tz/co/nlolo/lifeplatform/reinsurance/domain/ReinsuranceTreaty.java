@@ -143,6 +143,40 @@ public class ReinsuranceTreaty {
             : TreatyStanding.ENDED;
     }
 
+    /**
+     * Whether this treaty, while ACTIVE, is in force on any day of {@code from}..{@code to} (open-ended when null)
+     * (2026-11-08). Every policy is ceded to ONE treaty -- the latest in force -- so two in force on the same day leave
+     * one of them with no new business, its commission never earned.
+     */
+    public boolean overlaps(LocalDate from, LocalDate to) {
+        return status == TreatyStatus.ACTIVE
+            && (to == null || !effectiveFrom.isAfter(to))
+            && (effectiveTo == null || !from.isAfter(effectiveTo));
+    }
+
+    /**
+     * Ended early (2026-11-08): the last day it takes new policies. Policies already ceded to it stay ceded. Never before
+     * today -- that would rewrite which treaty took business already written -- nor before it began, nor later than an
+     * end it already has.
+     */
+    public void endOn(LocalDate endsOn, LocalDate today, String endedBy) {
+        if (status != TreatyStatus.ACTIVE) {
+            throw new IllegalStateException("This treaty has already ended");
+        }
+        if (endsOn.isBefore(today)) {
+            throw new IllegalArgumentException("A treaty ends today at the earliest; " + endsOn + " has passed");
+        }
+        if (endsOn.isBefore(effectiveFrom)) {
+            throw new IllegalArgumentException("It cannot end (" + endsOn + ") before it begins (" + effectiveFrom + ")");
+        }
+        if (effectiveTo != null && endsOn.isAfter(effectiveTo)) {
+            throw new IllegalArgumentException("It already ends on " + effectiveTo + "; it cannot be extended here");
+        }
+        this.effectiveTo = endsOn;
+        this.updatedAt = Instant.now();
+        this.updatedBy = endedBy;
+    }
+
     public void expire(String expiredBy) {
         this.status = TreatyStatus.EXPIRED;
         this.updatedAt = Instant.now();

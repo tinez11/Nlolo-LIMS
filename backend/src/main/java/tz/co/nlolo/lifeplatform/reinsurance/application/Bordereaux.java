@@ -65,6 +65,27 @@ class Bordereaux {
             tenantId, treatyId, start(month), start(month.plusMonths(1)));
     }
 
+    /**
+     * What the treaty's posted bordereaux charged policies since cancelled in free-look (2026-11-08) -- every cover
+     * period of theirs was voided, as a free-look cancellation does -- and not yet taken back. Charged at all, a policy
+     * had cover then; none left means the contract never was.
+     */
+    List<BordereauCalculator.Reversal> reversals(UUID tenantId, UUID treatyId) {
+        return jdbc.query("SELECT l.policy_number, SUM(l.premium) AS premium, SUM(l.commission) AS commission"
+                + " FROM reinsurance.bordereau_line l JOIN reinsurance.bordereau b ON b.bordereau_id = l.bordereau_id"
+                + " WHERE b.tenant_id = ? AND b.treaty_id = ? AND l.line_type = 'PREMIUM'"
+                + "   AND NOT EXISTS (SELECT 1 FROM reinsurance.cover_period c"
+                + "                    WHERE c.tenant_id = b.tenant_id AND c.policy_number = l.policy_number)"
+                + "   AND NOT EXISTS (SELECT 1 FROM reinsurance.bordereau_line r JOIN reinsurance.bordereau rb"
+                + "                     ON rb.bordereau_id = r.bordereau_id"
+                + "                    WHERE rb.tenant_id = b.tenant_id AND rb.treaty_id = b.treaty_id"
+                + "                      AND r.line_type = 'FREE_LOOK_REVERSAL' AND r.policy_number = l.policy_number)"
+                + " GROUP BY l.policy_number ORDER BY l.policy_number",
+            (rs, i) -> new BordereauCalculator.Reversal(rs.getString("policy_number"), rs.getBigDecimal("premium"),
+                rs.getBigDecimal("commission")),
+            tenantId, treatyId);
+    }
+
     boolean exists(UUID tenantId, UUID treatyId, YearMonth month) {
         Integer n = jdbc.queryForObject("SELECT count(*) FROM reinsurance.bordereau"
             + " WHERE tenant_id = ? AND treaty_id = ? AND period = ?", Integer.class, tenantId, treatyId, month.toString());
@@ -76,10 +97,11 @@ class Bordereaux {
                           BordereauCalculator.Result result, String by) {
         UUID id = UUID.randomUUID();
         int inserted = jdbc.update("INSERT INTO reinsurance.bordereau (bordereau_id, tenant_id, treaty_id, period, currency,"
-                + " policy_count, premium, commission, recoveries, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                + " policy_count, premium, commission, recoveries, premium_reversed, commission_reversed, created_by)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 + " ON CONFLICT (tenant_id, treaty_id, period) DO NOTHING",
             id, tenantId, treatyId, month.toString(), currency, result.policyCount(), result.premium(),
-            result.commission(), result.recoveries(), by);
+            result.commission(), result.recoveries(), result.premiumReversed(), result.commissionReversed(), by);
         if (inserted == 0) {
             return Optional.empty();
         }

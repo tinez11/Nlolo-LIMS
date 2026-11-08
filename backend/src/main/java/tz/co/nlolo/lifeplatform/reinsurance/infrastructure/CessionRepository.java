@@ -63,6 +63,15 @@ public interface CessionRepository extends JpaRepository<Cession, UUID> {
     TreatyTotals totalsForTreaty(@Param("tenantId") UUID tenantId, @Param("treatyId") UUID treatyId);
 
     /** The shape {@link #totalsForTreaty} returns. */
+    /** How many policies each treaty holds (2026-11-08), one grouped query for the whole treaties list. */
+    @Query("select c.treatyId as treatyId, count(c) as policies from Cession c where c.tenantId = :tenantId group by c.treatyId")
+    List<TreatyPolicies> policiesByTreaty(@Param("tenantId") UUID tenantId);
+
+    interface TreatyPolicies {
+        UUID getTreatyId();
+        long getPolicies();
+    }
+
     interface TreatyTotals {
         long getCessionCount();
         BigDecimal getCededAmount();

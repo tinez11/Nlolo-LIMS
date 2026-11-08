@@ -3,6 +3,7 @@ import { asAdmin } from './admin';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy, todayIso } from './dates';
 import { expectNavItemsHidden, expectRouteDenied } from './guards';
+import { firstFreeDay, treatyForToday } from './treaties';
 
 /**
  * Reinsurance e2e coverage against the real backend.
@@ -13,32 +14,17 @@ import { expectNavItemsHidden, expectRouteDenied } from './guards';
  * at all, so every test here runs under the real `staff.finance` identity
  * (auth-finance.setup.ts), reused from the distribution suite.
  *
- * A treaty's `effectiveFrom` is TODAY, and that is load-bearing.
- * `ReinsuranceApiImpl.selectApplicableTreaty` keeps every ACTIVE treaty that
- * `isActiveOn(issueDate)` (so `effectiveFrom <= today`, inclusive) and takes the
- * `max` by `effectiveFrom`, tie-broken by `createdAt`. Today's date is therefore
- * the LATEST value that still qualifies, which makes this test's own treaty the
- * winner, with `createdAt` settling any same-day tie in its favour.
- *
- * This file used to fix `effectiveFrom` at 2020-01-01, reasoning that it was
- * "safely before any real policy issue date". That reasoned about the wrong
- * comparison: what decides the winner is not the policy's issue date but OTHER
- * TREATIES' `effectiveFrom`, and every treaty this file created shared the same
- * one. The moment a treaty existed with any later date, it outranked all of them
- * permanently. That is exactly what happened -- someone authored a SURPLUS treaty
- * through the console dated a week earlier than today, with a retention limit of
- * 57,888,888, so the applicable treaty for every cession test became one that
- * correctly cedes nothing on a 2,000,000 policy. The suite reported no cession and
- * the product was behaving properly.
- *
- * A future-dated treaty cannot break this, because `isActiveOn` excludes it from
- * the candidates for a policy issued today.
+ * Only one treaty is in force on any day (2026-11-08): each policy is ceded to one treaty, and a second in force
+ * beside it took no business. So this file no longer creates a treaty effective today on every run -- see
+ * e2e/treaties.ts: the cession test uses the treaty that takes today's policies, and the authoring test starts its
+ * treaty on the first day nothing else is in force.
  */
 
 async function createRealQuotaShareTreaty(
   page: Page,
   cessionPercent: string,
-  commissionPercent = '0',
+  commissionPercent: string,
+  effectiveFrom: string,
 ): Promise<{ treatyId: string; reinsurerName: string }> {
   const reinsurerName = `E2E Re ${Date.now()}`;
   await page.goto('/staff/treaties/new');
@@ -48,9 +34,8 @@ async function createRealQuotaShareTreaty(
   await page.getByLabel('Cession percent').fill(cessionPercent);
   // IFRS 17 I3c: every treaty states its commission not contingent on claims; 0 is an answer.
   await page.getByLabel('Reinsurance commission').fill(commissionPercent);
-  // Today: the latest effectiveFrom that still applies to a policy issued today.
-  // See the file header for why a fixed past date was the wrong choice.
-  await page.getByLabel('Effective from').fill(dmy(todayIso()));
+  // The first day no other treaty is in force (2026-11-08: only one is, at a time) -- see e2e/treaties.ts.
+  await page.getByLabel('Effective from').fill(dmy(effectiveFrom));
   await page.getByRole('button', { name: 'Create treaty' }).click();
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   const treatyId = page.url().split('/').pop() as string;
@@ -60,26 +45,27 @@ async function createRealQuotaShareTreaty(
 test.describe('staff reinsurance', () => {
   test('creates a QUOTA_SHARE treaty, and it is readable from the list and detail page', async ({
     browser,
+    request,
   }) => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const page = await financeContext.newPage();
 
-    const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50');
+    // The first day no other treaty is in force: only one is, at a time (2026-11-08).
+    const from = await firstFreeDay(request);
+    const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50', from);
     await expect(page.getByRole('heading', { name: reinsurerName })).toBeVisible();
     await expect(page.getByText('Quota share', { exact: true })).toBeVisible();
     // A quota share is described by what it takes, not by the 0.00 retention it stores.
     await expect(page.getByText('25.00% of each policy')).toBeVisible();
     await expect(page.getByText('12.50%')).toBeVisible();
-    // IFRS 17 I3c: the monthly bordereaux. A treaty effective today has no closed month yet, and its current month
-    // is shown as it would be written now.
+    // IFRS 17 I3c: the monthly bordereaux. A new treaty has no closed month yet.
     await expect(page.getByRole('heading', { name: 'Bordereaux' })).toBeVisible();
     await expect(page.getByText('No month closed yet')).toBeVisible();
-    await expect(page.getByText(/so far$/)).toBeVisible();
 
     await page.goto('/staff/treaties');
     await expect(page.getByText(reinsurerName)).toBeVisible();
-    // Effective today, so it stands in force -- read from its dates, not the stored flag.
-    await page.getByRole('button', { name: 'In force' }).click();
+    // Its standing is read from its dates, not the stored flag: in force from today, not started from a later day.
+    await page.getByRole('button', { name: from === todayIso() ? 'In force' : 'Not started' }).click();
     await expect(page.getByText(reinsurerName)).toBeVisible();
     // Found by name: the register is searchable now, and the search narrows to this one treaty.
     await page.getByLabel('Search reinsurers').fill(reinsurerName);
@@ -101,11 +87,17 @@ test.describe('staff reinsurance', () => {
    */
   test('issuing a policy against an ACTIVE treaty produces a real cession, visible on the policy', async ({
     browser,
+    request,
   }) => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const page = await financeContext.newPage();
 
-    const { treatyId } = await createRealQuotaShareTreaty(page, '50.00');
+    // The treaty that takes today's policies -- created as a 50% quota share only when none is in force (2026-11-08).
+    const treaty = await treatyForToday(request);
+    test.skip(treaty.treatyType !== 'QUOTA_SHARE' || !treaty.cessionPercent,
+      `the treaty in force today (${treaty.reinsurerName}) is a ${treaty.treatyType}; this test measures a quota share`);
+    const { treatyId } = treaty;
+    const ceded = (2_000_000 * Number(treaty.cessionPercent)) / 100;
 
     // Manual issue names a real, unissued case now. The policyholder and product
     // come from it by prefill, so this no longer picks them by hand. The sum assured
@@ -141,11 +133,12 @@ test.describe('staff reinsurance', () => {
     // absent. It was a poll that could not fail, and it hid a genuinely missing
     // cession behind a green step for as long as the real assertion below held.
     //
-    // 50% of a 2,000,000.00 TZS sum assured, exactly what CessionCalculator's
+    // The treaty's share of a 2,000,000.00 TZS sum assured, exactly what CessionCalculator's
     // QUOTA_SHARE branch computes.
+    const cededText = `TZS ${ceded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     await expect(async () => {
       await page.reload();
-      await expect(page.getByText('TZS 1,000,000.00')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText(cededText)).toBeVisible({ timeout: 5_000 });
     }).toPass({ timeout: 30_000 });
     await expect(page.getByText(new RegExp(`treaty ${treatyId.slice(0, 8)}`))).toBeVisible();
 

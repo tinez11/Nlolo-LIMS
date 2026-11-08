@@ -38,6 +38,9 @@ public interface ReinsuranceApi {
     }
 
     TreatyView createTreaty(CreateTreatyRequest request, String createdBy);
+
+    /** Ends a treaty early (2026-11-08): no new policies after {@code endsOn}; policies already ceded stay ceded. */
+    TreatyView endTreaty(UUID treatyId, java.time.LocalDate endsOn, String endedBy);
     TreatyView getTreaty(UUID treatyId);
     List<TreatyView> listTreaties(TreatyStatus status);
 

@@ -821,6 +821,11 @@ rules:
       - {cr: "1430", amount: premium}
       - {dr: "1431", amount: commission}
       - {cr: "1436", amount: commission}
+      # 2026-11-08: what earlier bordereaux charged a policy since cancelled in free-look, taken back -- the mirror.
+      - {dr: "1430", amount: premiumReversed}
+      - {cr: "1436", amount: premiumReversed}
+      - {dr: "1436", amount: commissionReversed}
+      - {cr: "1431", amount: commissionReversed}
 
   - id: B-05
     event: reinsurance.RecoveryCalculated
@@ -849,6 +854,44 @@ rules:
       - {cr: "1434", amount: owedByUs}
       - {dr: "1433", amount: profitCommission}
       - {cr: "6120", amount: profitCommission}
+
+  # Settling an approved statement (2026-11-08): what R-STMT left in 1434, 1433 and 2550 leaves through these, one
+  # settlement at a time, each confirmed by a second finance person. SYSTEM journals: 1433, 1434 and 2550 are MAN.
+  - id: R-02
+    event: reinsurance.SettlementReceived
+    models: [NONE]
+    source: SYSTEM
+    description: Received from the reinsurer against the current account
+    lines:
+      - {dr: RECEIPT, amount: amount}
+      - {cr: "1434", amount: amount}
+
+  - id: R-02-PAID
+    event: reinsurance.SettlementPaid
+    models: [NONE]
+    source: SYSTEM
+    description: Paid to the reinsurer against the current account, out of the account the transfer left by
+    lines:
+      - {dr: "1434", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  - id: R-03-RECEIVED
+    event: reinsurance.ProfitCommissionReceived
+    models: [NONE]
+    source: SYSTEM
+    description: Profit commission received from the reinsurer
+    lines:
+      - {dr: RECEIPT, amount: amount}
+      - {cr: "1433", amount: amount}
+
+  - id: R-04-RELEASED
+    event: reinsurance.FundsWithheldReleased
+    models: [NONE]
+    source: SYSTEM
+    description: Funds withheld released to the reinsurer -- owed to it on the current account until paid
+    lines:
+      - {dr: "2550", amount: amount}
+      - {cr: "1434", amount: amount}
 
   # ---- Unit-linked (the guide's F entries; units in issue x price always equals 2131) -------------------------------
 

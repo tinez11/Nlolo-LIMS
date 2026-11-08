@@ -63,6 +63,16 @@ public class TreatyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(TreatyResponseDto.from(view));
     }
 
+    /** The last day a treaty takes new policies (2026-11-08); those already ceded stay ceded. */
+    public record EndTreatyRequestDto(java.time.LocalDate endsOn) {}
+
+    @PostMapping("/treaties/{treatyId}/end")
+    @PreAuthorize("@access.can('reinsurance.manage')")
+    public ResponseEntity<TreatyResponseDto> endTreaty(@PathVariable UUID treatyId, @RequestBody EndTreatyRequestDto request,
+                                                       @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(TreatyResponseDto.from(reinsuranceApi.endTreaty(treatyId, request.endsOn(), jwt.getSubject())));
+    }
+
     @GetMapping("/treaties/{treatyId}")
     @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<TreatyResponseDto> getTreaty(@PathVariable UUID treatyId) {

@@ -5,7 +5,10 @@ import type {
   CessionView,
   ClaimRecoveryView,
   CreateTreatyRequest,
+  NewReinsuranceSettlement,
   Page,
+  ReinsuranceSettlement,
+  ReinsuranceSettlementsOpen,
   ReinsuranceStatementStatus,
   ReinsuranceStatementView,
   TreatyStatus,
@@ -29,6 +32,11 @@ export function createTreaty(
   attempt: MutationAttempt,
 ): Promise<TreatyView> {
   return post<TreatyView>('/treaties', request, { headers: attempt.headers() });
+}
+
+/** `POST /treaties/{id}/end` (2026-11-08): the last day the treaty takes new policies. */
+export function endTreaty(treatyId: string, endsOn: string): Promise<TreatyView> {
+  return post<TreatyView>(`/treaties/${encodeURIComponent(treatyId)}/end`, { endsOn });
 }
 
 export function getTreaty(treatyId: string): Promise<TreatyView> {
@@ -125,6 +133,26 @@ export function prepareStatement(treatyId: string, quarter: string): Promise<Rei
 
 export function getStatement(id: string): Promise<ReinsuranceStatementView> {
   return get<ReinsuranceStatementView>(stmt(id));
+}
+
+// ---- Settling an approved statement (2026-11-08) ----
+
+/** What the statement still has open, and the settlements against it, newest first. */
+export function getSettlements(statementId: string): Promise<ReinsuranceSettlementsOpen> {
+  return get<ReinsuranceSettlementsOpen>(`${stmt(statementId)}/settlements`);
+}
+
+/** Recorded by one finance person; a second confirms it. */
+export function recordSettlement(statementId: string, body: NewReinsuranceSettlement): Promise<ReinsuranceSettlement> {
+  return post<ReinsuranceSettlement>(`${stmt(statementId)}/settlements`, body);
+}
+
+export function approveSettlement(settlementId: string): Promise<ReinsuranceSettlement> {
+  return post<ReinsuranceSettlement>(`/reinsurance-settlements/${encodeURIComponent(settlementId)}/approval`, {});
+}
+
+export function refuseSettlement(settlementId: string, reason: string): Promise<ReinsuranceSettlement> {
+  return post<ReinsuranceSettlement>(`/reinsurance-settlements/${encodeURIComponent(settlementId)}/refusal`, { reason });
 }
 
 /** What the reinsurer's statement states -- funds withheld and profit commission as decimal strings -- and why. */
