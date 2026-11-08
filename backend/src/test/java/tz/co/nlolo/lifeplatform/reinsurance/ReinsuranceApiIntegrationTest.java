@@ -97,6 +97,48 @@ class ReinsuranceApiIntegrationTest {
         assertThat(reloaded.reinsurerName()).isEqualTo("Africa Re");
     }
 
+    private static ReinsuranceApi.CreateTreatyRequest quotaShare(LocalDate from, LocalDate to) {
+        return new ReinsuranceApi.CreateTreatyRequest("Munich Re", TreatyType.QUOTA_SHARE,
+            new BigDecimal("0.00"), "TZS", new BigDecimal("25.00"), from, to);
+    }
+
+    // 2026-11-08: each policy is ceded to one treaty; on dev a 12.5% commission treaty sat at 0 policies beside a 0% one.
+    @Test
+    void refusesATreatyInForceOverDatesAnotherAlreadyIsUntilThatOneIsEnded() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        TreatyView first = reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer");
+
+        ReinsuranceValidationException refused = assertThrows(ReinsuranceValidationException.class,
+            () -> reinsuranceApi.createTreaty(quotaShare(today.plusMonths(2), null), "finance-officer"));
+        assertThat(refused.getMessage()).contains("Africa Re").contains("End that treaty first");
+
+        // Ended, it takes no business after its last day, and the next may start the day after.
+        TreatyView ended = reinsuranceApi.endTreaty(first.treatyId(), today.plusMonths(1), "finance-officer");
+        assertThat(ended.effectiveTo()).isEqualTo(today.plusMonths(1));
+        TreatyView next = reinsuranceApi.createTreaty(quotaShare(today.plusMonths(1).plusDays(1), null), "finance-officer");
+
+        assertThat(reinsuranceApi.listTreaties(null)).extracting(TreatyView::treatyId, TreatyView::cededPolicies,
+                TreatyView::takesNewPolicies)
+            .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple(first.treatyId(), 0L, true),
+                org.assertj.core.groups.Tuple.tuple(next.treatyId(), 0L, false));
+    }
+
+    @Test
+    void aTreatyEndsTodayAtTheEarliestAndIsNeverExtendedByEnding() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        TreatyView treaty = reinsuranceApi.createTreaty(quotaShare(today.minusMonths(1), today.plusMonths(6)), "finance-officer");
+
+        assertThrows(ReinsuranceValidationException.class,
+            () -> reinsuranceApi.endTreaty(treaty.treatyId(), today.minusDays(1), "finance-officer"));
+        assertThrows(ReinsuranceValidationException.class,
+            () -> reinsuranceApi.endTreaty(treaty.treatyId(), today.plusMonths(7), "finance-officer"));
+        assertThat(reinsuranceApi.endTreaty(treaty.treatyId(), today, "finance-officer").effectiveTo()).isEqualTo(today);
+    }
+
     @Test
     void rejectsAQuotaShareTreatyWithNoCessionPercent() {
         UUID tenantId = UUID.randomUUID();

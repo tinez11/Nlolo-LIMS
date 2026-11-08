@@ -70,6 +70,32 @@ paths:
                 items: { $ref: '#/components/schemas/TreatyView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /treaties/{treatyId}/end:
+    post:
+      summary: End a treaty early -- the last day it takes new policies (2026-11-08)
+      description: Policies already ceded to it stay ceded. Today at the earliest, never before it begins, never later than an end it already has.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endsOn]
+              properties:
+                endsOn: { type: string, format: date }
+      responses:
+        '200':
+          description: The treaty, ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TreatyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /treaties/{treatyId}:
     get:
       summary: Get treaty detail
@@ -548,7 +574,7 @@ components:
           description: "XOL only: the flat yearly premium in the treaty's currency, charged one twelfth a month."
     TreatyView:
       type: object
-      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom, commissionPercent, standing]
+      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom, commissionPercent, standing, takesNewPolicies]
       properties:
         treatyId: { type: string, format: uuid }
         reinsurerName: { type: string }
@@ -571,6 +597,13 @@ components:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
           nullable: true
           description: "An XOL treaty's flat yearly premium, charged one twelfth a month; null otherwise."
+        cededPolicies:
+          type: [integer, "null"]
+          format: int64
+          description: "Policies ceded to it, on the treaties list (2026-11-08); null on other responses."
+        takesNewPolicies:
+          type: boolean
+          description: "Whether a policy issued today is ceded to it. False for a treaty in force while a later one is: each policy goes to one treaty."
     BordereauView:
       type: object
       required: [treatyId, period, currency, policyCount, premium, commission, recoveries, lines]

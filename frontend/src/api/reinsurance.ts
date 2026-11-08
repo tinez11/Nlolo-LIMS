@@ -31,6 +31,11 @@ export function createTreaty(
   return post<TreatyView>('/treaties', request, { headers: attempt.headers() });
 }
 
+/** `POST /treaties/{id}/end` (2026-11-08): the last day the treaty takes new policies. */
+export function endTreaty(treatyId: string, endsOn: string): Promise<TreatyView> {
+  return post<TreatyView>(`/treaties/${encodeURIComponent(treatyId)}/end`, { endsOn });
+}
+
 export function getTreaty(treatyId: string): Promise<TreatyView> {
   return get<TreatyView>(`/treaties/${encodeURIComponent(treatyId)}`);
 }

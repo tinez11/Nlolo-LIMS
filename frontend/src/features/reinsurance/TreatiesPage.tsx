@@ -86,13 +86,28 @@ export function TreatiesPage() {
     {
       key: 'standing',
       header: 'Status',
-      render: (t) => <StatusBadge kind="treatyStanding" value={t.standing} />,
+      render: (t) => (
+        <span className="flex flex-col items-start gap-0.5">
+          <StatusBadge kind="treatyStanding" value={t.standing} />
+          {/* 2026-11-08: each policy is ceded to one treaty, the latest in force -- another in force beside it gets none. */}
+          {t.standing === 'IN_FORCE' && !t.takesNewPolicies && (
+            <span className="text-xs text-status-danger-fg">Takes no new policies: a later treaty in force takes them</span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'cedes',
       header: 'Cedes',
       align: 'right',
       render: (t) => treatyCedes(t),
+    },
+    {
+      key: 'cededPolicies',
+      header: 'Policies',
+      align: 'right',
+      secondary: true,
+      render: (t) => <span className="tabular-nums">{t.cededPolicies ?? '—'}</span>,
     },
     {
       key: 'effectiveFrom',

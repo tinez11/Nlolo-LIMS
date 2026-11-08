@@ -43,6 +43,9 @@ import java.util.UUID;
 @Service
 public class ReinsuranceApiImpl implements ReinsuranceApi {
 
+    /** The civil day cession selection reads, in Dar es Salaam. */
+    private static final java.time.ZoneId DAR = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
     private final ReinsuranceTreatyRepository treatyRepository;
     private final CessionRepository cessionRepository;
     private final ClaimRecoveryRepository claimRecoveryRepository;
@@ -176,10 +179,41 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
                 + " is before effective-from " + request.effectiveFrom());
         }
 
+        // 2026-11-08: every policy is ceded to ONE treaty, the latest in force. Two in force on the same day leave the
+        // other with no new business -- on dev a 12.5% commission treaty sat at 0 policies beside a 0% one.
+        treatyRepository.findByTenantIdAndStatusOrderByEffectiveFromDesc(tenantId, TreatyStatus.ACTIVE).stream()
+            .filter(t -> t.overlaps(request.effectiveFrom(), request.effectiveTo()))
+            .findFirst()
+            .ifPresent(t -> {
+                throw new ReinsuranceValidationException("The treaty with " + t.getReinsurerName() + " is in force from "
+                    + t.getEffectiveFrom() + (t.getEffectiveTo() == null ? " with no end" : " to " + t.getEffectiveTo())
+                    + ". Each policy is ceded to one treaty, so two in force at once leave one with no new business. "
+                    + "End that treaty first, or start this one after it ends");
+            });
+
         ReinsuranceTreaty treaty = new ReinsuranceTreaty(tenantId, request.reinsurerName().trim(),
             request.treatyType(), request.retentionLimitAmount(), request.retentionLimitCurrency(),
             request.cessionPercent(), request.commissionPercent(), request.xolAnnualPremium(),
             request.effectiveFrom(), request.effectiveTo(), createdBy);
+        treatyRepository.save(treaty);
+        return toTreatyView(treaty);
+    }
+
+    /** A treaty ended early (2026-11-08): it takes no new policies after {@code endsOn}; those ceded stay ceded. */
+    @Override
+    @Transactional
+    public TreatyView endTreaty(UUID treatyId, LocalDate endsOn, String endedBy) {
+        UUID tenantId = TenantContext.get();
+        ReinsuranceTreaty treaty = treatyRepository.findByTreatyIdAndTenantId(treatyId, tenantId)
+            .orElseThrow(() -> new TreatyNotFoundException("Treaty " + treatyId + " not found"));
+        if (endsOn == null) {
+            throw new ReinsuranceValidationException("Say the last day the treaty takes new policies");
+        }
+        try {
+            treaty.endOn(endsOn, LocalDate.now(DAR), endedBy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new ReinsuranceValidationException(e.getMessage());
+        }
         treatyRepository.save(treaty);
         return toTreatyView(treaty);
     }
@@ -198,7 +232,10 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
         List<ReinsuranceTreaty> treaties = status == null
             ? treatyRepository.findByTenantIdOrderByEffectiveFromDesc(tenantId)
             : treatyRepository.findByTenantIdAndStatusOrderByEffectiveFromDesc(tenantId, status);
-        return treaties.stream().map(this::toTreatyView).toList();
+        // How many policies each holds, in one grouped query (2026-11-08) -- the list says which treaty is getting the business.
+        java.util.Map<UUID, Long> policies = new java.util.HashMap<>();
+        cessionRepository.policiesByTreaty(tenantId).forEach(r -> policies.put(r.getTreatyId(), r.getPolicies()));
+        return treaties.stream().map(t -> toTreatyView(t, policies.getOrDefault(t.getTreatyId(), 0L))).toList();
     }
 
     @Override
@@ -311,11 +348,18 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     }
 
     private TreatyView toTreatyView(ReinsuranceTreaty t) {
+        return toTreatyView(t, null);
+    }
+
+    private TreatyView toTreatyView(ReinsuranceTreaty t, Long cededPolicies) {
+        LocalDate today = LocalDate.now(DAR);
+        boolean takesNew = selectApplicableTreaty(t.getTenantId(), today).map(s -> s.getTreatyId().equals(t.getTreatyId()))
+            .orElse(false);
         return new TreatyView(t.getTreatyId(), t.getReinsurerName(), t.getTreatyType(), t.getStatus(),
             t.getRetentionLimitAmount(), t.getRetentionLimitCurrency(), t.getCessionPercent(),
             t.getEffectiveFrom(), t.getEffectiveTo(), t.getCommissionPercent(), t.getXolAnnualPremium(),
             // Read against today's civil date in Dar es Salaam, the same day cession selection uses.
-            t.standingOn(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))));
+            t.standingOn(today), cededPolicies, takesNew);
     }
 
     private CessionView toCessionView(Cession c) {

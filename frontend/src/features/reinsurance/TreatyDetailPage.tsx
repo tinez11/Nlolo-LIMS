@@ -16,6 +16,8 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { formatPeriod } from './formatPeriod';
 import { treatyCedes, treatyTypeLabel } from './treatyTerms';
+import { EndTreaty } from './EndTreaty';
+import { can } from '@/auth/access';
 import { idle, isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectBordereauPreview,
@@ -88,8 +90,8 @@ export function TreatyDetailPage() {
           The split follows `DetailLayout`'s own rule rather than a preference: `record` is
           facts you need WHILE working in the other column, `children` is the work. A treaty's
           terms are the definition of what its cessions mean, which is as close to that rule as
-          a page gets. Nothing mutating goes in the rail, and nothing here mutates anyway --
-          no endpoint updates or retires a treaty once created.
+          a page gets. The one thing that changes a treaty -- ending it early (2026-11-08) -- sits under its
+          terms, because its end date is one of them.
         */
         <DetailLayout
           record={
@@ -124,6 +126,10 @@ export function TreatyDetailPage() {
                   />
                 )}
               </dl>
+              {/* 2026-11-08: a treaty can be ended early, so the next one can start -- only one is in force at a time. */}
+              {can('reinsurance.manage') && treaty.status === 'ACTIVE' && treaty.standing !== 'ENDED' && (
+                <EndTreaty treaty={treaty} onEnded={() => void loadDetail(treatyId)} />
+              )}
             </Panel>
           }
         >
