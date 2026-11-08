@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { messageName, placeholdersIn, previewText, smsParts, whenSent } from './messageCatalog';
+import { journeyOrder, messageName, placeholdersIn, previewText, smsParts, whenSent } from './messageCatalog';
 
 /** 2026-11-08, the user: the templates screen showed OFFER_MADE and {{policyNumber}} and nothing a person reads. */
 describe('the message catalogue', () => {
@@ -7,6 +7,14 @@ describe('the message catalogue', () => {
     expect(messageName('ACCOUNT_STATEMENT')).toBe('Yearly savings statement');
     expect(whenSent('COVER_STARTED')).toMatch(/first premium clears/);
     expect(messageName('SOMETHING_NEW')).toBe('Something new');
+  });
+
+  // 2026-11-08, the user: onboarding, policies, savings, claims -- and the frequent ones first.
+  it('orders messages by the customer journey, the most frequent first within each stage', () => {
+    const keys = ['CLAIM_PAID', 'ACCOUNT_STATEMENT', 'POLICY_LAPSED', 'PAYMENT_RECEIVED', 'OFFER_EXPIRED', 'OFFER_MADE',
+      'CLAIM_RECEIVED', 'SOMETHING_NEW'];
+    expect([...keys].sort(journeyOrder)).toEqual(['OFFER_MADE', 'OFFER_EXPIRED', 'PAYMENT_RECEIVED', 'POLICY_LAPSED',
+      'ACCOUNT_STATEMENT', 'CLAIM_RECEIVED', 'CLAIM_PAID', 'SOMETHING_NEW']);
   });
 
   it('reads a template as the customer will, with realistic values', () => {

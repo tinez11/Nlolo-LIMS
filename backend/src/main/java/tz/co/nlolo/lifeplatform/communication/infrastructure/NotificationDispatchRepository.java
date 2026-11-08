@@ -25,6 +25,12 @@ public interface NotificationDispatchRepository extends JpaRepository<Notificati
         + " GROUP BY channel, status, failure_reason ORDER BY count(*) DESC LIMIT 20", nativeQuery = true)
     List<Object[]> reasonsSince(@Param("tenantId") UUID tenantId, @Param("since") java.time.Instant since);
 
+    /** How many of each message since a time, most first (2026-11-08). */
+    @Query(value = "SELECT template_key, count(*) FROM communication.notification_dispatch"
+        + " WHERE tenant_id = :tenantId AND created_at >= :since GROUP BY template_key ORDER BY count(*) DESC",
+        nativeQuery = true)
+    List<Object[]> countByMessageSince(@Param("tenantId") UUID tenantId, @Param("since") java.time.Instant since);
+
     /**
      * The reminder queue, oldest first, across every tenant.
      *

@@ -96,9 +96,12 @@ public interface NotificationApi {
     java.util.List<NotificationDispatchView> searchDispatches(DispatchQuery query);
 
     /** How many messages in the last {@code sinceDays}, by channel and status, and why the ones not sent were not. */
-    record DispatchSummary(int sinceDays, java.util.List<Count> counts, java.util.List<Reason> reasons) {
+    record DispatchSummary(int sinceDays, java.util.List<Count> counts, java.util.List<Reason> reasons,
+                           /** How many of each message went out, every status (2026-11-08): the templates screen's report. */
+                           java.util.List<ByMessage> byMessage) {
         public record Count(String channel, String status, long count) {}
         public record Reason(String channel, String status, String reason, long count) {}
+        public record ByMessage(String templateKey, long count) {}
     }
 
     DispatchSummary summarise(int sinceDays);

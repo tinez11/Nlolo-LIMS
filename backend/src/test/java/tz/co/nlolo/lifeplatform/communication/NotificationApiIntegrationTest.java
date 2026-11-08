@@ -198,7 +198,7 @@ class NotificationApiIntegrationTest {
         publish("policy.PolicyholderChanged", Map.of("policyNumber", policy, "policyholderPartyId", holder));
 
         publish("policy.PolicyReinstated", Map.of("policyNumber", policy, "reinstatedAt", "2026-11-08"));
-        String claimId = UUID.randomUUID().toString();
+        UUID claimId = UUID.randomUUID();   // a UUID, as claims publishes it
         publish("claims.ClaimRegistered", Map.of("claimId", claimId, "policyNumber", policy, "claimantPartyId", claimant,
             "claimType", "DEATH"));
         publish("claims.ClaimSettled", Map.of("claimId", claimId, "policyNumber", policy,

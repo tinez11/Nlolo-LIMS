@@ -4,12 +4,13 @@
  * preview shows -- lives here, so the screens never show OFFER_MADE or {{policyNumber}} unexplained.
  */
 
-export type Topic = 'Offers' | 'Cover & payments' | 'Claims & payouts' | 'Savings & statements' | 'Funeral cover' | 'Unit-linked'
-  | 'Pensions';
+/**
+ * The customer's journey (2026-11-08, the user: "onboarding, policies, savings, claims"): becoming a customer, the
+ * policy's life, money saved or invested, then claims and money paid out.
+ */
+export type Topic = 'Onboarding' | 'Policies & premiums' | 'Savings & investments' | 'Claims & payouts';
 
-export const TOPICS: readonly Topic[] = [
-  'Offers', 'Cover & payments', 'Claims & payouts', 'Savings & statements', 'Funeral cover', 'Unit-linked', 'Pensions',
-];
+export const TOPICS: readonly Topic[] = ['Onboarding', 'Policies & premiums', 'Savings & investments', 'Claims & payouts'];
 
 interface Entry {
   name: string;
@@ -18,34 +19,53 @@ interface Entry {
   when: string;
 }
 
+/**
+ * In the journey's order, and within each stage by how often it goes out: a monthly payment receipt before a yearly
+ * statement, an offer before its reminder. The order of this map IS the order of the screen.
+ */
 const CATALOG: Record<string, Entry> = {
-  OFFER_MADE: { name: 'Offer made', topic: 'Offers', when: 'When a proposal is accepted and the offer is waiting for its first premium.' },
-  OFFER_CLOSING: { name: 'Offer closing soon', topic: 'Offers', when: 'A few days before an unpaid offer closes.' },
-  OFFER_EXPIRED: { name: 'Offer closed unpaid', topic: 'Offers', when: 'When an offer closes without its first premium.' },
-  COVER_STARTED: { name: 'Cover started', topic: 'Cover & payments', when: 'When the first premium clears and the policy comes on cover.' },
-  PAYMENT_RECEIVED: { name: 'Payment received', topic: 'Cover & payments', when: 'When a premium payment is confirmed and its receipt issued.' },
-  AGENT_CASH_RECEIVED: { name: 'Cash collected by an agent', topic: 'Cover & payments', when: 'When an agent records cash collected from the customer, before it reaches the bank.' },
-  ACCOUNT_STATEMENT: { name: 'Yearly savings statement', topic: 'Savings & statements', when: 'Once a year, after interest is credited to a savings account.' },
-  FUNERAL_LIFE_ADDED: { name: 'Family member added', topic: 'Funeral cover', when: 'When a life is added to a family funeral policy.' },
-  FUNERAL_LIFE_ENDED: { name: 'Family member removed', topic: 'Funeral cover', when: 'When a life’s cover ends on a family funeral policy.' },
-  FUNERAL_PREMIUM_CHANGED: { name: 'Funeral premium changed', topic: 'Funeral cover', when: 'When adding or removing a life, or the yearly review, changes the premium.' },
-  UNIT_LINKED_ALLOCATED: { name: 'Units bought', topic: 'Unit-linked', when: 'When the first premium buys fund units.' },
-  UNIT_LINKED_LOW_FUND: { name: 'Fund running low', topic: 'Unit-linked', when: 'When the fund will cover only a few more months of charges.' },
-  UNIT_LINKED_LAPSED_EXHAUSTED: { name: 'Lapsed: fund used up', topic: 'Unit-linked', when: 'When the fund can no longer pay the charges and cover lapses.' },
-  UNIT_LINKED_PROCEEDS: { name: 'Units sold, payment coming', topic: 'Unit-linked', when: 'When units are sold for a withdrawal, surrender or claim.' },
-  UNIT_LINKED_STATEMENT: { name: 'Yearly fund statement', topic: 'Unit-linked', when: 'Once a year, with the value of the units.' },
-  PENSION_VESTING_REMINDER: { name: 'Pension starting soon', topic: 'Pensions', when: 'Ahead of the date a pension starts paying, to choose how it is paid.' },
-  // 2026-11-08: the messages a customer expected and never got.
-  POLICY_LAPSED: { name: 'Policy lapsed', topic: 'Cover & payments', when: 'When a policy lapses for unpaid premiums.' },
-  POLICY_REINSTATED: { name: 'Policy reinstated', topic: 'Cover & payments', when: 'When a lapsed policy is reinstated and cover resumes.' },
+  // Onboarding: from the offer to cover starting.
+  OFFER_MADE: { name: 'Offer made', topic: 'Onboarding', when: 'When a proposal is accepted and the offer is waiting for its first premium.' },
+  COVER_STARTED: { name: 'Cover started', topic: 'Onboarding', when: 'When the first premium clears and the policy comes on cover.' },
+  OFFER_CLOSING: { name: 'Offer closing soon', topic: 'Onboarding', when: 'A few days before an unpaid offer closes.' },
+  OFFER_EXPIRED: { name: 'Offer closed unpaid', topic: 'Onboarding', when: 'When an offer closes without its first premium.' },
+  // Policies & premiums: what happens every month, then what changes now and then.
+  PAYMENT_RECEIVED: { name: 'Payment received', topic: 'Policies & premiums', when: 'When a premium payment is confirmed and its receipt issued.' },
+  AGENT_CASH_RECEIVED: { name: 'Cash collected by an agent', topic: 'Policies & premiums', when: 'When an agent records cash collected from the customer, before it reaches the bank.' },
+  POLICY_LAPSED: { name: 'Policy lapsed', topic: 'Policies & premiums', when: 'When a policy lapses for unpaid premiums.' },
+  POLICY_REINSTATED: { name: 'Policy reinstated', topic: 'Policies & premiums', when: 'When a lapsed policy is reinstated and cover resumes.' },
+  FUNERAL_LIFE_ADDED: { name: 'Family member added', topic: 'Policies & premiums', when: 'When a life is added to a family funeral policy.' },
+  FUNERAL_PREMIUM_CHANGED: { name: 'Funeral premium changed', topic: 'Policies & premiums', when: 'When adding or removing a life, or the yearly review, changes the premium.' },
+  FUNERAL_LIFE_ENDED: { name: 'Family member removed', topic: 'Policies & premiums', when: 'When a life’s cover ends on a family funeral policy.' },
+  // Savings & investments: money kept and grown.
+  UNIT_LINKED_ALLOCATED: { name: 'Units bought', topic: 'Savings & investments', when: 'When the first premium buys fund units.' },
+  ACCOUNT_STATEMENT: { name: 'Yearly savings statement', topic: 'Savings & investments', when: 'Once a year, after interest is credited to a savings account.' },
+  UNIT_LINKED_STATEMENT: { name: 'Yearly fund statement', topic: 'Savings & investments', when: 'Once a year, with the value of the units.' },
+  UNIT_LINKED_LOW_FUND: { name: 'Fund running low', topic: 'Savings & investments', when: 'When the fund will cover only a few more months of charges.' },
+  UNIT_LINKED_LAPSED_EXHAUSTED: { name: 'Lapsed: fund used up', topic: 'Savings & investments', when: 'When the fund can no longer pay the charges and cover lapses.' },
+  PENSION_VESTING_REMINDER: { name: 'Pension starting soon', topic: 'Savings & investments', when: 'Ahead of the date a pension starts paying, to choose how it is paid.' },
+  // Claims & payouts: a claim's steps, then money paid out.
   CLAIM_RECEIVED: { name: 'Claim received', topic: 'Claims & payouts', when: 'When a claim is registered — sent to the claimant.' },
   CLAIM_APPROVED: { name: 'Claim approved', topic: 'Claims & payouts', when: 'When a claim is approved, with the amount — sent to the claimant.' },
-  CLAIM_DECLINED: { name: 'Claim declined', topic: 'Claims & payouts', when: 'When a claim is declined — sent to the claimant, without the internal reason.' },
   CLAIM_PAID: { name: 'Claim paid', topic: 'Claims & payouts', when: 'When a claim is paid — sent to the claimant.' },
+  CLAIM_DECLINED: { name: 'Claim declined', topic: 'Claims & payouts', when: 'When a claim is declined — sent to the claimant, without the internal reason.' },
+  BENEFIT_PAID: { name: 'Benefit paid', topic: 'Claims & payouts', when: 'When a one-off benefit is paid: maturity, survival, a premium return or a pension lump sum.' },
+  UNIT_LINKED_PROCEEDS: { name: 'Units sold, payment coming', topic: 'Claims & payouts', when: 'When units are sold for a withdrawal, surrender or claim.' },
   SURRENDER_PAID: { name: 'Surrender paid', topic: 'Claims & payouts', when: 'When a surrender is paid and the policy ends.' },
   LOAN_PAID_OUT: { name: 'Loan paid out', topic: 'Claims & payouts', when: 'When a policy loan is paid out to the customer.' },
-  BENEFIT_PAID: { name: 'Benefit paid', topic: 'Claims & payouts', when: 'When a one-off benefit is paid: maturity, survival, a premium return or a pension lump sum.' },
 };
+
+const ORDER = Object.keys(CATALOG);
+
+/** Journey stage first, then the catalogue's order within it; a message not catalogued goes last. */
+export function journeyOrder(a: string, b: string): number {
+  const stage = (k: string) => {
+    const t = CATALOG[k]?.topic;
+    return t ? TOPICS.indexOf(t) : TOPICS.length;
+  };
+  const pos = (k: string) => (ORDER.includes(k) ? ORDER.indexOf(k) : ORDER.length);
+  return stage(a) - stage(b) || pos(a) - pos(b) || a.localeCompare(b);
+}
 
 /** A readable name for any key, catalogued or not. */
 export function messageName(key: string | undefined | null): string {
