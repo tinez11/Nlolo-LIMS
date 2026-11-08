@@ -221,7 +221,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",

@@ -51,6 +51,8 @@ final class PostingFactsExtractor {
         Map.entry("billing.DepositReversed", amount()),
         Map.entry("billing.PremiumPaidReversed", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
+        // A waiver taken back (2026-11-08): the mirror of the waiver it undoes.
+        Map.entry("billing.InvoiceWaiverUndone", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
         // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
         Map.entry("billing.PremiumRefundPaid", amount()),
@@ -159,8 +161,15 @@ final class PostingFactsExtractor {
             }
             case "billing.PremiumPaidReversed" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
                 today, Map.of("refType", "INVOICE")));
-            case "billing.InvoiceWaived" ->
-                List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
+            // Keyed on the WAIVER (2026-11-08): the invoice id for its first, as always; a waiver after an undone one
+            // has its own reference. The undo is keyed on the waiver it takes back.
+            case "billing.InvoiceWaived", "billing.InvoiceWaiverUndone" -> {
+                String waiverRef = p.get("waiverRef") != null ? string(p.get("waiverRef")) : string(p.get("invoiceId"));
+                String ref = type.equals("billing.InvoiceWaived") ? waiverRef : "UNDO:" + waiverRef;
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "INVOICE"));
+                putIfPresent(attrs, "invoiceRef", p.get("invoiceId"));
+                yield List.of(money(type, ref, policy, p.get("amount"), today, attrs));
+            }
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.
             case "billing.PremiumRefundDue" -> {
                 Map<String, String> attrs = new HashMap<>(Map.of("refType", "CREDIT"));

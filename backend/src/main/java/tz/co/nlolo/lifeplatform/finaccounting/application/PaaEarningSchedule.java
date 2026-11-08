@@ -47,7 +47,8 @@ class PaaEarningSchedule {
         switch (facts.eventType()) {
             case PaaEarningJob.EVENT -> earned(tenantId, facts, journalEntryId);
             case "billing.PremiumInvoiceGenerated" -> record(tenantId, facts, classification, amount);
-            case "billing.InvoiceWaived" -> reduce(tenantId, facts.sourceRef(), null, amount);
+            case "billing.InvoiceWaived" -> reduce(tenantId, invoiceRef(facts), null, amount);
+            case "billing.InvoiceWaiverUndone" -> restore(tenantId, invoiceRef(facts), amount);
             case "billing.PremiumRefundDue" -> reduce(tenantId, facts.attribute("invoiceRef"), facts.attribute("memberRef"), amount);
             case "billing.PremiumInvoiceReduced" -> reduce(tenantId, facts.attribute("invoiceRef"), null, amount);
             case "billing.PremiumInvoiceIncreased" -> increase(tenantId, facts.attribute("invoiceRef"), amount);
@@ -101,6 +102,33 @@ class PaaEarningSchedule {
             allocated = allocated.add(share);
             jdbc.update("UPDATE finaccounting.paa_earning SET reduced = reduced + ? WHERE earning_id = ?",
                 share, rows.get(i).get("earning_id"));
+        }
+    }
+
+    /** The invoice a waiver names: its own attribute, or the source ref of a waiver posted before 2026-11-08. */
+    private static String invoiceRef(PostingFacts facts) {
+        String ref = facts.attribute("invoiceRef");
+        return ref != null ? ref : facts.sourceRef();
+    }
+
+    /**
+     * A waiver undone (2026-11-08): what it stopped from earning earns again, row by row, never past what each row
+     * had reduced -- the waiver's reduction taken back, not a new amount added.
+     */
+    private void restore(UUID tenantId, String invoiceRef, BigDecimal amount) {
+        if (invoiceRef == null || amount.signum() <= 0) {
+            return;
+        }
+        BigDecimal left = amount;
+        for (Map<String, Object> row : jdbc.queryForList("SELECT earning_id, reduced FROM finaccounting.paa_earning"
+                + " WHERE tenant_id = ? AND invoice_ref = ? AND reduced > 0 ORDER BY member_ref", tenantId, invoiceRef)) {
+            if (left.signum() <= 0) {
+                break;
+            }
+            BigDecimal back = left.min((BigDecimal) row.get("reduced"));
+            jdbc.update("UPDATE finaccounting.paa_earning SET reduced = reduced - ? WHERE earning_id = ?",
+                back, row.get("earning_id"));
+            left = left.subtract(back);
         }
     }
 

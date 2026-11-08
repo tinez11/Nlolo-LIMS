@@ -226,7 +226,7 @@ class ProjectionEndToEndTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",

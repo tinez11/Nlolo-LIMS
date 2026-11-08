@@ -210,7 +210,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.

@@ -190,7 +190,7 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             // payment: a refund paid back to the lender is a bank transfer (2026-10-30).
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",

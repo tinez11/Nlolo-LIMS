@@ -168,7 +168,7 @@ class BillingContractTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
-            "db-migrations/billing/V17__lender_refund_approval.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -187,6 +187,7 @@ class BillingContractTest {
     @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
     @Autowired private tz.co.nlolo.lifeplatform.distribution.api.DistributionApi distributionApi;
     @Autowired private FieldReceiptRepository fieldReceiptRepository;
+    @Autowired private tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -276,6 +277,17 @@ class BillingContractTest {
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 
         return new Fixture(tenantId, policyNumber, applicantId, agent.agentId(), agentParty.partyId());
+    }
+
+    /** On cover, as its first premium would put it: a proposed policy's premium is paid, not waived (2026-11-08). */
+    private Fixture onCover(Fixture fixture) {
+        TenantContext.set(fixture.tenantId());
+        try {
+            policyApi.activateOnFirstPremium(fixture.policyNumber());
+        } finally {
+            TenantContext.clear();
+        }
+        return fixture;
     }
 
 /**
@@ -741,7 +753,7 @@ class BillingContractTest {
 
     @Test
     void getNextDueInvoiceReturns404WhenEveryInvoiceHasBeenWaived() throws Exception {
-        Fixture fixture = issuePolicy("BILLING-CONTRACT-NEXTDUE-02");
+        Fixture fixture = onCover(issuePolicy("BILLING-CONTRACT-NEXTDUE-02"));
 
         String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
                 .with(staffOf(fixture.tenantId())))
@@ -769,7 +781,7 @@ class BillingContractTest {
 
     @Test
     void waiveInvoiceMatchesOpenApiContract() throws Exception {
-        Fixture fixture = issuePolicy("BILLING-CONTRACT-WAIVER-01");
+        Fixture fixture = onCover(issuePolicy("BILLING-CONTRACT-WAIVER-01"));
         String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
                 .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -788,6 +800,28 @@ class BillingContractTest {
                 .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].status").value("WAIVED"));
+
+        // A second waiver is refused (2026-11-08); undoing the first owes the premium again.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
+                .with(financeOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Contract test second waiver"}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("WAIVER_REFUSED"));
+        mockMvc.perform(post("/invoices/" + invoiceId + "/waiver/undo")
+                .with(financeOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Contract test: waived in error"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].status").value("DUE"));
     }
 
     @Test
@@ -1137,7 +1171,7 @@ class BillingContractTest {
      */
     @Test
     void waiveInvoiceIsRefusedForAStaffMemberWhoIsNotFinance() throws Exception {
-        Fixture fixture = issuePolicy("BILLING-CONTRACT-WAIVER-GATE");
+        Fixture fixture = onCover(issuePolicy("BILLING-CONTRACT-WAIVER-GATE"));
         String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
                 .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

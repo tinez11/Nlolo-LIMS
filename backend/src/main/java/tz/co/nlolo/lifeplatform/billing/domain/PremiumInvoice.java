@@ -57,6 +57,13 @@ public class PremiumInvoice {
     @Column(name = "reopened_count", nullable = false)
     private int reopenedCount;
 
+    /**
+     * How many times this invoice was waived (billing V18, 2026-11-08): a waiver can be undone, and the invoice
+     * waived again, so each waiver posts under its own reference -- the first under the invoice's id, as always.
+     */
+    @Column(name = "waiver_count", nullable = false)
+    private int waiverCount;
+
     @Version
     private long version;
 
@@ -172,7 +179,30 @@ public class PremiumInvoice {
     // billing.sweep_billing_state()'s own SQL UPDATE statements, which write these columns
     // directly and bypass the JPA entity layer entirely (it runs SECURITY DEFINER, outside any
     // request's Hibernate session). A Java-side setter for either transition would be dead code.
-    public void waive(String reason) { this.status = "WAIVED"; this.waiverReason = reason; }
+    public void waive(String reason) { this.status = "WAIVED"; this.waiverReason = reason; this.waiverCount++; }
+
+    /** Whether this invoice is waived or already paid -- nothing left that a waiver could cancel. */
+    public boolean isClosed() { return "WAIVED".equals(status) || "PAID".equals(status); }
+
+    /**
+     * The reference the current waiver posts under: the invoice's id for its first waiver, as every waiver before
+     * undo existed; {@code id:n} for the n-th, so a waiver after an undone one is not taken for a duplicate.
+     */
+    public String waiverRef() {
+        return waiverCount <= 1 ? invoiceId.toString() : invoiceId + ":" + waiverCount;
+    }
+
+    /**
+     * A waiver taken back (2026-11-08): the invoice is owed again -- PARTIALLY_PAID if something of it was paid
+     * before the waiver, DUE otherwise; the billing sweep moves it on to grace and overdue from its dates.
+     */
+    public void undoWaiver() {
+        if (!"WAIVED".equals(status)) {
+            throw new IllegalStateException("Invoice " + invoiceId + " is " + status + ", not waived");
+        }
+        this.status = amountPaid != null && amountPaid.signum() > 0 ? "PARTIALLY_PAID" : "DUE";
+        this.waiverReason = null;
+    }
 
     /** Untouched: still DUE and nothing paid against it -- the only instalment a premium change may restate (plan R4). */
     public boolean isUntouched() { return "DUE".equals(status) && amountPaid.signum() == 0; }

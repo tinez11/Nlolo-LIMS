@@ -278,6 +278,9 @@ paths:
   /invoices/{invoiceId}/waiver:
     post:
       summary: Waive an invoice (staff only — reason is mandatory and audit-relevant)
+      description: >
+        409 WAIVER_REFUSED when the invoice is already waived or paid, or its policy is still proposed (that premium
+        starts the cover and is paid, not waived).
       security:
         - staffAuth: []
       parameters:
@@ -299,6 +302,35 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /invoices/{invoiceId}/waiver/undo:
+    post:
+      summary: Undo a waiver (staff only — reason is mandatory); the premium is owed again
+      description: >
+        Publishes billing.InvoiceWaiverUndone, which finaccounting posts as the mirror of the waiver, so the
+        receivable stands again. The invoice returns to DUE (PARTIALLY_PAID if something was paid before the waiver). 409 WAIVER_REFUSED when the invoice is not waived.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 10 }
+      responses:
+        '200': { description: Waiver undone }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /invoices/{invoiceId}/payment-request:
     post:
       summary: Request collection of an invoice's premium through payment (staff/agent)

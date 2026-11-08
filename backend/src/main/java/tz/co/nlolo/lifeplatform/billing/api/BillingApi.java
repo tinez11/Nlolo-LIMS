@@ -106,7 +106,14 @@ public interface BillingApi {
      */
     InvoiceView getInvoice(UUID invoiceId);
 
+    /**
+     * A staff waiver. Refused (WaiverRefusedException) when the invoice is already waived or paid, or when its
+     * policy is still proposed -- that premium starts the cover and is paid, not waived (2026-11-08).
+     */
     InvoiceView waiveInvoice(UUID invoiceId, String reason, String waivedBy);
+
+    /** A waiver taken back: the invoice is owed again and the ledger carries its receivable again (2026-11-08). */
+    InvoiceView undoWaiver(UUID invoiceId, String reason, String undoneBy);
 
     /**
      * Requests collection of an invoice's premium through payment (M5). Publishes
