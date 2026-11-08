@@ -4,10 +4,11 @@
  * preview shows -- lives here, so the screens never show OFFER_MADE or {{policyNumber}} unexplained.
  */
 
-export type Topic = 'Offers' | 'Cover & payments' | 'Savings & statements' | 'Funeral cover' | 'Unit-linked' | 'Pensions';
+export type Topic = 'Offers' | 'Cover & payments' | 'Claims & payouts' | 'Savings & statements' | 'Funeral cover' | 'Unit-linked'
+  | 'Pensions';
 
 export const TOPICS: readonly Topic[] = [
-  'Offers', 'Cover & payments', 'Savings & statements', 'Funeral cover', 'Unit-linked', 'Pensions',
+  'Offers', 'Cover & payments', 'Claims & payouts', 'Savings & statements', 'Funeral cover', 'Unit-linked', 'Pensions',
 ];
 
 interface Entry {
@@ -34,6 +35,16 @@ const CATALOG: Record<string, Entry> = {
   UNIT_LINKED_PROCEEDS: { name: 'Units sold, payment coming', topic: 'Unit-linked', when: 'When units are sold for a withdrawal, surrender or claim.' },
   UNIT_LINKED_STATEMENT: { name: 'Yearly fund statement', topic: 'Unit-linked', when: 'Once a year, with the value of the units.' },
   PENSION_VESTING_REMINDER: { name: 'Pension starting soon', topic: 'Pensions', when: 'Ahead of the date a pension starts paying, to choose how it is paid.' },
+  // 2026-11-08: the messages a customer expected and never got.
+  POLICY_LAPSED: { name: 'Policy lapsed', topic: 'Cover & payments', when: 'When a policy lapses for unpaid premiums.' },
+  POLICY_REINSTATED: { name: 'Policy reinstated', topic: 'Cover & payments', when: 'When a lapsed policy is reinstated and cover resumes.' },
+  CLAIM_RECEIVED: { name: 'Claim received', topic: 'Claims & payouts', when: 'When a claim is registered — sent to the claimant.' },
+  CLAIM_APPROVED: { name: 'Claim approved', topic: 'Claims & payouts', when: 'When a claim is approved, with the amount — sent to the claimant.' },
+  CLAIM_DECLINED: { name: 'Claim declined', topic: 'Claims & payouts', when: 'When a claim is declined — sent to the claimant, without the internal reason.' },
+  CLAIM_PAID: { name: 'Claim paid', topic: 'Claims & payouts', when: 'When a claim is paid — sent to the claimant.' },
+  SURRENDER_PAID: { name: 'Surrender paid', topic: 'Claims & payouts', when: 'When a surrender is paid and the policy ends.' },
+  LOAN_PAID_OUT: { name: 'Loan paid out', topic: 'Claims & payouts', when: 'When a policy loan is paid out to the customer.' },
+  BENEFIT_PAID: { name: 'Benefit paid', topic: 'Claims & payouts', when: 'When a one-off benefit is paid: maturity, survival, a premium return or a pension lump sum.' },
 };
 
 /** A readable name for any key, catalogued or not. */

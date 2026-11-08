@@ -178,6 +178,6 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql",
     };
 }
