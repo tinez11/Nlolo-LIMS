@@ -56,6 +56,10 @@ public class Party {
     @Column(name = "email")
     private String email;
 
+    /** The language this client is written to in: sw (the default) or en (party V8, 2026-11-08). */
+    @Column(name = "preferred_language", nullable = false)
+    private String preferredLanguage = "sw";
+
     // The individual person record (V2). Flat columns on purpose: the API groups these
     // into IdentityDocument and Address because that is the shape a caller wants, but
     // the table is flat and there is no reason to make persistence more elaborate than
@@ -310,6 +314,15 @@ public class Party {
     public LocalDate getDateOfBirth() { return dateOfBirth; }
     public String getPhoneNumber() { return phoneNumber; }
     public String getEmail() { return email; }
+    public String getPreferredLanguage() { return preferredLanguage; }
+
+    /** Swahili or English; anything else is refused. */
+    public void setPreferredLanguage(String language) {
+        if (!"sw".equals(language) && !"en".equals(language)) {
+            throw new IllegalArgumentException("A client is written to in Swahili (sw) or English (en)");
+        }
+        this.preferredLanguage = language;
+    }
 
     // The V2 person record. Read by getPartyDetail, and -- once Build 5 wires the quote
     // into issuance -- by whoever prices a proposal: sex and smokerStatus together with

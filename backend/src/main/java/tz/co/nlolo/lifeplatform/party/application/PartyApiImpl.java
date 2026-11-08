@@ -211,6 +211,14 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
+    @Transactional
+    public PartyDetailView setPreferredLanguage(UUID partyId, String language, String setBy) {
+        Party party = findPartyOrThrow(partyId);
+        party.setPreferredLanguage(language == null ? null : language.trim().toLowerCase(java.util.Locale.ROOT));
+        return getPartyDetail(partyId);
+    }
+
+    @Override
     public PartyDetailView getPartyDetail(UUID partyId) {
         Party party = findPartyOrThrow(partyId);
         return new PartyDetailView(party.getPartyId(), party.getPartyType(), party.getKycStatus(),
@@ -221,7 +229,7 @@ public class PartyApiImpl implements PartyApi {
             party.getOccupation(), party.getOccupationClass(), party.getEmployerName(),
             party.getNationality(), party.getAddress(), party.getClientReference(),
             party.getRegisteredByPartyId(),
-            party.getCreatedByName());
+            party.getCreatedByName(), party.getPreferredLanguage());
     }
 
     @Override

@@ -78,7 +78,7 @@ class NotificationApiIntegrationTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
-            "db-migrations/party/V7__kyc_decided_by_name.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql", "db-migrations/party/V8__preferred_language.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",
@@ -174,6 +174,28 @@ class NotificationApiIntegrationTest {
             1, 10))).extracting(NotificationDispatchView::status).containsExactlyInAnyOrder("SENT", "FAILED");
         // A message already sent is not sent twice.
         assertThatThrownBy(() -> notificationApi.resend(again.dispatchId())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // 2026-11-08: every message went out in Swahili; the English templates were never used.
+    @Test
+    void aClientWhoReadsEnglishIsWrittenToInEnglishAndEveryoneElseInSwahili() {
+        UUID english = registerParty("EN", "+255713000177", null);
+        UUID swahili = registerParty("SW", "+255713000178", null);
+        TenantContext.set(SEEDED_TENANT);
+        partyApi.setPreferredLanguage(english, "en", "test-staff");
+        java.util.function.Function<String, String> template = lang -> notificationApi.listTemplates().stream()
+            .filter(t -> "OFFER_MADE".equals(t.templateKey()) && "SMS".equals(t.channel()) && lang.equals(t.language()))
+            .findFirst().orElseThrow().bodyTemplate();
+
+        notificationApi.notify(UUID.randomUUID(), english, "POL-NOTIFY01", "OFFER_MADE", offerValues());
+        notificationApi.notify(UUID.randomUUID(), swahili, "POL-NOTIFY01", "OFFER_MADE", offerValues());
+
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, english).get(0).getBody())
+            .isEqualTo(tz.co.nlolo.lifeplatform.communication.domain.TemplateRenderer.render(template.apply("en"), offerValues()));
+        assertThat(dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(SEEDED_TENANT, swahili).get(0).getBody())
+            .isEqualTo(tz.co.nlolo.lifeplatform.communication.domain.TemplateRenderer.render(template.apply("sw"), offerValues()));
+        assertThatThrownBy(() -> partyApi.setPreferredLanguage(english, "fr", "test-staff"))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

@@ -105,7 +105,8 @@ public class NotificationApiImpl implements NotificationApi {
                 dispatch.markFailed("No phone number or email address on file for this party");
             }
             // Still worded and kept: the portal inbox is the one place an unreachable customer can read it.
-            dispatch.recordBody(eventId, findEffectiveTemplate(tenantId, templateKey, NotificationChannel.SMS.name())
+            dispatch.recordBody(eventId, findEffectiveTemplate(tenantId, templateKey, NotificationChannel.SMS.name(),
+                party.preferredLanguage())
                 .map(t -> {
                     try {
                         return TemplateRenderer.render(t.getBodyTemplate(), values);
@@ -122,7 +123,7 @@ public class NotificationApiImpl implements NotificationApi {
         for (Reachable target : reachable) {
             // Per channel, and a failure on one must not suppress the other: an unreachable
             // phone is no reason to withhold an email that would have arrived.
-            sendOne(eventId, tenantId, partyId, policyNumber, templateKey, values, target);
+            sendOne(eventId, tenantId, partyId, policyNumber, templateKey, values, target, party.preferredLanguage());
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
@@ -158,13 +159,13 @@ public class NotificationApiImpl implements NotificationApi {
     }
 
     private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
-                          Map<String, String> values, Reachable target) {
+                          Map<String, String> values, Reachable target, String language) {
         NotificationDispatch dispatch =
             new NotificationDispatch(tenantId, partyId, templateKey, target.channel().name(), policyNumber);
         dispatch.recordBody(eventId, null);
 
         Optional<NotificationTemplate> template =
-            findEffectiveTemplate(tenantId, templateKey, target.channel().name());
+            findEffectiveTemplate(tenantId, templateKey, target.channel().name(), language);
         if (template.isEmpty()) {
             // A template nobody seeded. Recorded rather than thrown, for the same reason as
             // everything else here -- but it is a deployment fault, not a customer's problem, so
@@ -237,10 +238,22 @@ public class NotificationApiImpl implements NotificationApi {
      */
     private Optional<NotificationTemplate> findEffectiveTemplate(UUID tenantId, String templateKey,
                                                                   String channel) {
-        return templateRepository
-            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(tenantId, templateKey, channel, DEFAULT_LANGUAGE)
+        return findEffectiveTemplate(tenantId, templateKey, channel, DEFAULT_LANGUAGE);
+    }
+
+    /**
+     * In the client's own language (2026-11-08) -- this tenant's wording, then the platform's -- and in Swahili when no
+     * template exists in theirs, so a missing translation never leaves a customer untold.
+     */
+    private Optional<NotificationTemplate> findEffectiveTemplate(UUID tenantId, String templateKey, String channel,
+                                                                  String language) {
+        String lang = hasText(language) ? language : DEFAULT_LANGUAGE;
+        Optional<NotificationTemplate> own = templateRepository
+            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(tenantId, templateKey, channel, lang)
             .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                PLATFORM_DEFAULT_TENANT, templateKey, channel, DEFAULT_LANGUAGE));
+                PLATFORM_DEFAULT_TENANT, templateKey, channel, lang));
+        return own.isPresent() || DEFAULT_LANGUAGE.equals(lang) ? own
+            : findEffectiveTemplate(tenantId, templateKey, channel, DEFAULT_LANGUAGE);
     }
 
     @Override
