@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { getOwnSupervisor, type AgentSupervisor } from '@/api/distribution';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -23,6 +24,52 @@ import { DetailLayout } from '@/components/DetailLayout';
  * <p>What the agent has EARNED is no longer duplicated here: it is a screen of its
  * own ("My commission"), which this page links to (spec 2026-10-12).
  */
+/**
+ * Who the agent reports to, by name and how to reach them (2026-11-08, the user: the supervisor showed as a raw id
+ * with "No drill-in yet"). An agent cannot open its supervisor's record -- that would read up the hierarchy -- so
+ * `GET /agents/me/supervisor` gives contact details only.
+ */
+export function ReportsTo({ supervisorId }: { supervisorId: string }) {
+  const [result, setResult] = useState<{ for: string; supervisor: AgentSupervisor | null; failed: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOwnSupervisor()
+      .then((supervisor) => !cancelled && setResult({ for: supervisorId, supervisor, failed: false }))
+      .catch(() => !cancelled && setResult({ for: supervisorId, supervisor: null, failed: true }));
+    return () => {
+      cancelled = true;
+    };
+  }, [supervisorId]);
+
+  const current = result?.for === supervisorId ? result : null;
+  if (!current) return <Field label="Reports to" value="Loading…" />;
+  const s = current.supervisor;
+  if (!s) {
+    return current.failed ? (
+      <Field label="Reports to" value="Your supervisor" note="Their name could not be loaded just now" />
+    ) : (
+      <Field label="Reports to" value="Your supervisor" />
+    );
+  }
+  return (
+    <Field
+      label="Reports to"
+      value={
+        <span>
+          {s.displayName ?? 'Your supervisor'} <span className="font-mono text-xs text-muted-foreground">{s.licenseNumber}</span>
+          {s.phoneNumber && (
+            <>
+              <br />
+              <a href={`tel:${s.phoneNumber}`} className="underline">{s.phoneNumber}</a>
+            </>
+          )}
+        </span>
+      }
+    />
+  );
+}
+
 export function AgentProfilePage() {
   const own = useDistributionStore(selectOwnAgent);
   const loadOwnAgent = useDistributionStore((s) => s.loadOwnAgent);
@@ -67,18 +114,13 @@ export function AgentProfilePage() {
               <Field label="Agent id" value={<span className="font-mono text-xs">{agent.agentId}</span>} />
               <Field label="License expiry" value={formatDate(agent.licenseExpiryDate)} />
               {agent.hierarchyParentId ? (
-                <Field
-                  label="Reports to"
-                  value={<span className="font-mono text-xs">{agent.hierarchyParentId}</span>}
-                  note="No drill-in yet — your supervisor's own profile is not reachable from here"
-                />
+                <ReportsTo supervisorId={agent.hierarchyParentId} />
               ) : (
-                <Field label="Reports to" value="Top of hierarchy" />
+                <Field label="Reports to" value="No one — you are at the top" />
               )}
               <Field
-                label="Own plan override"
-                value={agent.commissionPlanId ?? '—'}
-                note="Null means the product's active plan applies instead"
+                label="Commission plan"
+                value={agent.commissionPlanId ? 'Your own plan, shown below' : 'The product’s plan, shown below'}
               />
             </dl>
           </Panel>

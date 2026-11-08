@@ -153,6 +153,27 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /agents/me/supervisor:
+    get:
+      summary: Who the caller reports to
+      description: >
+        Agents-realm only. The supervisor of the token's own agent record: name, licence number and
+        phone, so the agent can reach them. Contact details only; the supervisor's own figures stay
+        closed. 204 when the caller is at the top of the hierarchy; 404 if the token's party is not
+        an agent in this tenant.
+      security:
+        - agentsAuth: [agent, supervisor]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentSupervisor' }
+        '204':
+          description: The caller reports to no one
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /agents/{agentId}:
     get:
       summary: Get agent detail
@@ -703,6 +724,14 @@ components:
         displayName:
           type: [string, "null"]
           description: The agent's own name, from party. Null when it cannot be resolved.
+    AgentSupervisor:
+      type: object
+      required: [agentId, licenseNumber]
+      properties:
+        agentId: { type: string, format: uuid }
+        displayName: { type: [string, "null"] }
+        licenseNumber: { type: string }
+        phoneNumber: { type: [string, "null"] }
     CreateCommissionPlanRequest:
       type: object
       required: [productId, rules]

@@ -76,9 +76,13 @@ public class AgentController {
     private final DistributionApi distributionApi;
     private final AgentProfileRepository agentProfileRepository;
 
-    public AgentController(DistributionApi distributionApi, AgentProfileRepository agentProfileRepository) {
+    private final tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
+
+    public AgentController(DistributionApi distributionApi, AgentProfileRepository agentProfileRepository,
+            tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi) {
         this.distributionApi = distributionApi;
         this.agentProfileRepository = agentProfileRepository;
+        this.partyApi = partyApi;
     }
 
     /**
@@ -178,6 +182,24 @@ public class AgentController {
         UUID agentId = resolveOwnAgentId(jwt);
         AgentView view = distributionApi.getAgent(agentId);
         return ResponseEntity.ok(AgentResponseDto.from(view));
+    }
+
+    /**
+     * The agent's own supervisor, by name and how to reach them (2026-11-08): the profile showed a raw id, and
+     * {@code GET /agents/{agentId}} is rightly closed to an agent reading UP its hierarchy. Scoped by construction to
+     * the token's own parent; 204 at the top of the hierarchy.
+     */
+    @GetMapping("/agents/me/supervisor")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<AgentSupervisorDto> getOwnSupervisor(@AuthenticationPrincipal Jwt jwt) {
+        AgentView own = distributionApi.getAgent(resolveOwnAgentId(jwt));
+        if (own.hierarchyParentId() == null) {
+            return ResponseEntity.noContent().build();
+        }
+        AgentView parent = distributionApi.getAgent(own.hierarchyParentId());
+        tz.co.nlolo.lifeplatform.party.api.PartyDetailView party = partyApi.getPartyDetail(parent.partyId());
+        return ResponseEntity.ok(new AgentSupervisorDto(parent.agentId(), party.displayName(), parent.licenseNumber(),
+            party.phoneNumber()));
     }
 
     /**
