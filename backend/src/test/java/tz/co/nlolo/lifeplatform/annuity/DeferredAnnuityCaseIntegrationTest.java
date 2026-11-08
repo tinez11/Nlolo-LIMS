@@ -102,7 +102,7 @@ class DeferredAnnuityCaseIntegrationTest {
     @Test
     void aRetirementAgeAlreadyReachedIsRefused() {
         // Fifty-five last birthday, two days ago at most a year back: 55 is in the window but behind them.
-        UUID saver = fixtures.personBorn(TENANT, AnnuityTestFixtures.TODAY.minusYears(55).minusDays(2), null);
+        UUID saver = fixtures.personBorn(TENANT, AnnuityTestFixtures.today().minusYears(55).minusDays(2), null);
         UUID caseId = openDeferredCase(saver, null);
         assertThatThrownBy(() -> asTenant(TENANT, () -> underwritingApi.recordDeferredAnnuityChoice(caseId, 55, "staff-opener")))
             .isInstanceOf(UnderwritingValidationException.class)

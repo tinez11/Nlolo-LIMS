@@ -41,7 +41,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
 import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 
 /**
@@ -54,6 +53,9 @@ import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 @SpringBootTest(classes = Application.class)
 @Import(AnnuityTestFixtures.class)
 class VestingIntegrationTest {
+
+    // Today in Dar es Salaam as this class starts (2026-11-08): never one date frozen for a whole run.
+    private static final java.time.LocalDate TODAY = tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.today();
 
     @Container
     static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");

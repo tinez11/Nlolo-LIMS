@@ -29,7 +29,14 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 @TestComponent
 public class AnnuityTestFixtures {
 
-    public static final LocalDate TODAY = LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam"));
+    /**
+     * Today in Dar es Salaam, read when asked (2026-11-08). This was a constant computed once per test run, so a run that
+     * crossed midnight kept yesterday while the application moved on, and four funeral tests failed on the date. A test
+     * class takes its own copy as it starts; fixtures ask at the moment they need it.
+     */
+    public static LocalDate today() {
+        return LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam"));
+    }
     private static final AtomicInteger SEQ = new AtomicInteger();
 
     private final PartyApi partyApi;
@@ -275,7 +282,7 @@ public class AnnuityTestFixtures {
      * the policy number.
      */
     public String issueDeferred(UUID tenant, Product product, UUID saver, int retirementAge) {
-        UUID caseId = openDeferredCase(tenant, product, saver, "200000.00", "MONTHLY", TODAY, retirementAge);
+        UUID caseId = openDeferredCase(tenant, product, saver, "200000.00", "MONTHLY", today(), retirementAge);
         asTenant(tenant, () -> underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null,
                 "Age proven by passport", true), "senior-two", true));
@@ -303,7 +310,7 @@ public class AnnuityTestFixtures {
     public UUID person(UUID tenant, int age, Sex sex) {
         return asTenant(tenant, () -> {
             int n = SEQ.incrementAndGet();
-            return partyApi.registerIndividual(new IndividualRegistration("Annuitant " + n, TODAY.minusYears(age).minusDays(30),
+            return partyApi.registerIndividual(new IndividualRegistration("Annuitant " + n, today().minusYears(age).minusDays(30),
                 "+25571800" + String.format("%04d", n % 10000), null, sex, null, IdentityDocument.none(), null, null, null,
                 null, Address.none()), "test-agent").partyId();
         });

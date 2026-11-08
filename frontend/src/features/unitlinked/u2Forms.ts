@@ -44,6 +44,21 @@ function checkSplit(rows: ShareRow[], path: string, ctx: z.RefinementCtx) {
 const toShares = (rows: ShareRow[]): FundShare[] =>
   filled(rows).map((r) => ({ fundCode: r.fundCode, percent: Number(r.percent) }));
 
+/**
+ * A top-up's own split, on the Deposit page (2026-11-08): optional -- none typed in is the policy's split in force;
+ * otherwise whole percents totalling 100, as every split. The problem in words, or null when it may be sent.
+ */
+export function ownSplitProblem(rows: ShareRow[]): string | null {
+  const chosen = filled(rows);
+  if (chosen.length === 0) return null;
+  if (chosen.some((r) => !isWholePercent(r.percent))) return "Each fund's share is a whole percent from 1 to 100";
+  const total = chosen.reduce((sum, r) => sum + Number(r.percent), 0);
+  return total === 100 ? null : `The fund split totals ${total}%; it must total 100%`;
+}
+
+/** The split sent with a top-up: the funds given a share; empty is the policy's split in force. */
+export const ownSplit = (rows: ShareRow[]): FundShare[] => toShares(rows);
+
 // ---- Premium redirection ----
 
 export const splitSchema = z

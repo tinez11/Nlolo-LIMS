@@ -109,7 +109,7 @@ class FuneralPolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"role":"CHILD","fullName":"Imani","dateOfBirth":"%s","sex":"FEMALE","student":false}
-                    """.formatted(AnnuityTestFixtures.TODAY.minusMonths(2))))
+                    """.formatted(AnnuityTestFixtures.today().minusMonths(2))))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.role").value("CHILD"))
             .andExpect(jsonPath("$.fullName").value("Imani"))
