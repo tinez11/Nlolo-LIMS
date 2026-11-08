@@ -40,6 +40,11 @@ export function getParty(partyId: string): Promise<PartyDetailView> {
   return get<PartyDetailView>(`/parties/${encodeURIComponent(partyId)}`);
 }
 
+/** `PUT /parties/{id}/language` (2026-11-08): the language a client's messages are written in -- sw or en. */
+export function setPreferredLanguage(partyId: string, language: 'sw' | 'en'): Promise<PartyDetailView> {
+  return put<PartyDetailView>(`/parties/${encodeURIComponent(partyId)}/language`, { language });
+}
+
 /**
  * `GET /parties/{partyId}/documents` -- metadata only, newest first.
  *

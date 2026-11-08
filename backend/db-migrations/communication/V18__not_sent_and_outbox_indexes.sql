@@ -21,6 +21,12 @@ UPDATE communication.notification_dispatch
         OR failure_reason LIKE 'Email is switched off%'
         OR failure_reason LIKE 'Recipient % is not on the SMS testing allowlist');
 
+-- The same words the platform now writes, rather than the setting's name.
+UPDATE communication.notification_dispatch SET failure_reason = 'SMS sending is switched off'
+ WHERE failure_reason = 'SMS sending is switched off (communication.sms-gateway.live=false)';
+UPDATE communication.notification_dispatch SET failure_reason = 'Email is not in use'
+ WHERE failure_reason = 'Email is switched off (communication.email.enabled=false)';
+
 CREATE INDEX IF NOT EXISTS idx_notification_dispatch_tenant_created
     ON communication.notification_dispatch (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_dispatch_tenant_status_created
