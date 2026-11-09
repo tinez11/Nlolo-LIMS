@@ -261,8 +261,14 @@ class AccountingReportsTest {
             .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels);
 
         assertEquals("500.00", sections.get(0).totals().get("balance"), "500, not 1500");
-        assertEquals(1, sections.get(0).rows().size(), "the leaf alone, not the two summaries above it");
-        assertEquals("1140", sections.get(0).rows().get(0).get("accountCode"));
+        // One line, the chart's group 1100 -- which opens to the leaf 1140; never the summary beside its leaf.
+        assertEquals(1, sections.get(0).rows().size(), "one group, not the summaries listed with their leaves");
+        assertEquals("acct:1100", sections.get(0).rows().get(0).get("_lineId"));
+        assertEquals("500.00", sections.get(0).rows().get(0).get("current"));
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts cash = new BalanceSheetReport(finaccounting)
+            .parts(tenantId, "acct:1100", ReportFilter.month(YearMonth.of(2026, 9)), 0, labels);
+        assertEquals("acct:1140", cash.rows().get(0).get("_lineId"));
+        assertEquals("500.00 = 500.00", cash.check());
         assertTrue(sections.get(3).rows().get(0).get("check").contains("the sheet balances"));
     }
 
@@ -428,9 +434,27 @@ class AccountingReportsTest {
             ReportFilter.month(YearMonth.of(2026, 9)).withCompareAsOf(LocalDate.of(2026, 6, 30)), labels);
 
         Map<String, String> cash = sections.get(0).rows().get(0);
-        assertEquals("500.00", cash.get("balance"));
-        assertEquals("450.00", cash.get("comparison"));
-        assertEquals("50.00", cash.get("movement"));
+        assertEquals("500.00", cash.get("current"));
+        assertEquals("450.00", cash.get("prior"));
+        assertEquals("50.00", cash.get("change"));
+    }
+
+    /** 2026-11-09: against the prior month, with total assets, liabilities and equity leading. */
+    @Test
+    void balanceSheetComparesWithThePriorMonthAndLeadsWithTheTotals() {
+        balanceSheetLedger();
+        Mockito.when(finaccounting.trialBalanceThrough("2026-08")).thenReturn(ledger("through 2026-08", List.of(
+            account("1100", "Cash", AccountType.ASSET, PostingDirection.DR, "420.00", "0.00", "420.00")),
+            "420.00", "420.00"));
+
+        ReportBody body = new BalanceSheetReport(finaccounting).body(tenantId, ReportFilter.month(YearMonth.of(2026, 9))
+            .withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD), labels);
+
+        assertEquals("420.00", body.sections().get(0).rows().get(0).get("prior"));
+        assertEquals("500.00", body.sections().get(0).totals().get("balance"), "the dashboard reads it");
+        assertEquals("compared with the end of August 2026", body.comparisonLabel());
+        assertEquals(3, body.figures().size());
+        assertEquals("80.00", body.figures().get(0).change());
     }
 
     // ---- Income statement --------------------------------------------------------------------

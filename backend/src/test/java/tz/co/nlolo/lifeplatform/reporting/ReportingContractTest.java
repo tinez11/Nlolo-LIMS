@@ -169,7 +169,20 @@ class ReportingContractTest {
                 .with(staff(tenant, "FINANCE_OFFICER")))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
-            .andExpect(jsonPath("$.sections[5].title").value("Result"));
+            // The statement's lines, then the result the dashboard reads (2026-11-09, the reports redesign).
+            .andExpect(jsonPath("$.sections[0].title").value("Income statement"))
+            .andExpect(jsonPath("$.sections[0].rows[6]._kind").value("TOTAL"))
+            .andExpect(jsonPath("$.sections[1].title").value("Result"));
+        mockMvc.perform(get("/reports/income-statement/parts")
+                .param("lineId", "revenue").param("monthFrom", "2026-09").param("monthTo", "2026-10")
+                .param("compareWith", "PRIOR_PERIOD").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.balanced").value(true));
+        mockMvc.perform(get("/reports/income-statement/parts")
+                .param("lineId", "no-such-line").param("monthFrom", "2026-09").param("monthTo", "2026-10")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isNotFound());
     }
 
     @Test

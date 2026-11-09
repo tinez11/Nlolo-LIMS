@@ -3,12 +3,13 @@ package tz.co.nlolo.lifeplatform.reporting.application;
 import org.springframework.stereotype.Component;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
-import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.reporting.api.DateFilterKind;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportCategory;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportFigure;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportParts;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.domain.Figures;
 
@@ -22,29 +23,34 @@ import java.util.UUID;
 
 import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.MONEY;
 import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.TEXT;
-import static tz.co.nlolo.lifeplatform.reporting.application.Sections.col;
 
 /**
- * What the entity owns, owes and is worth, through the chosen period.
+ * What the entity owns, owes and is worth, through the chosen period -- against the period it is compared with, each
+ * line opening to what it is made of (2026-11-09, the reports redesign).
  *
- * <p>A straight roll-up of the chart's own classes -- 1000 Assets, 2000 Liabilities, 3000 Equity -- and not a
- * statutory presentation (decision D4, 2026-10-14). No account is reclassified, netted or renamed on its way
- * here: what the ledger calls a thing is what this report calls it.
+ * <p>A roll-up of the chart's own classes -- 1000 Assets, 2000 Liabilities, 3000 Equity -- and not a statutory
+ * presentation (decision D4, 2026-10-14). Each class's lines are the chart's own groups beneath it (1100 Cash and bank,
+ * 1200 Financial investments, ...), so nothing is reclassified or renamed on its way here.
  *
- * <p>Cumulative, through {@code trialBalanceThrough}: a balance sheet states a POSITION. The income statement
- * reads {@code trialBalanceBetween} because it reports movement, and swapping the two produces a plausible
- * statement that is entirely wrong.
+ * <p>Cumulative, through {@code trialBalanceThrough}: a balance sheet states a POSITION. The income statement reads
+ * {@code trialBalanceBetween} because it reports movement, and swapping the two produces a plausible statement that is
+ * entirely wrong.
  *
- * <p>Comparison takes the MONTH that {@code compareAsOf} falls in. The filter's comparison field is a date
- * because every other comparable report compares dates; the ledger has only months, so the day is dropped
- * rather than a fourth month field added to a filter that every report shares.
+ * <p>Compared with the prior month or the same month last year ({@code compareWith}), or -- as before the redesign --
+ * the month {@code compareAsOf} falls in.
  */
 @Component
 public class BalanceSheetReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("balance-sheet", "Balance sheet",
-        "Assets, liabilities and equity through the chosen period, rolled up from the chart of accounts.",
-        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), true);
+        "Assets, liabilities and equity through the chosen period, by the chart's own groups, against the period it is"
+            + " compared with.",
+        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), true).comparingPeriods();
+
+    /** A balance sheet's tree goes back to the ledger's first posting: a position is everything up to the month. */
+    private static final String INCEPTION = "1900-01";
+
+    private static final Map<String, String> GOOD_WHEN = Map.of("1000", "UP", "2000", "DOWN", "3000", "UP");
 
     private final FinaccountingApi finaccounting;
 
@@ -59,79 +65,96 @@ public class BalanceSheetReport implements Report {
 
     @Override
     public List<ReportSection> run(UUID tenantId, ReportFilter f, Labels labels) {
-        TrialBalanceView ledger = finaccounting.trialBalanceThrough(f.monthFrom().toString());
-        TrialBalanceView comparison = f.compareAsOf() == null ? null
-            : finaccounting.trialBalanceThrough(YearMonth.from(f.compareAsOf()).toString());
+        return body(tenantId, f, labels).sections();
+    }
+
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        StatementReports.Ledgers ledgers = ledgers(f);
+        boolean compares = ledgers.prior() != null;
+        List<ReportColumn> columns = StatementReports.columns(compares, ledgers.currentLabel(), ledgers.priorLabel());
 
         List<ReportSection> sections = new ArrayList<>();
-        Map<String, BigDecimal> classTotals = new LinkedHashMap<>();
-
+        Map<String, Statement.Figures> classFigures = new LinkedHashMap<>();
         for (String classRoot : LedgerAccounts.BALANCE_SHEET_CLASSES) {
-            // The accounts that take postings, and the class root's rolled total. Listing the summary accounts
-            // beside their own leaves and adding the column up reports every posting once per ancestor.
-            List<AccountBalanceView> accounts = LedgerAccounts.postedLeavesIn(ledger.accounts(), classRoot);
-            BigDecimal total = LedgerAccounts.classTotal(ledger.accounts(), classRoot);
-            classTotals.put(classRoot, total);
-            // The finance dashboard reads the "Assets" and "Liabilities" section totals by these titles
-            // (dashboard.application.ReportFigures). Renaming a class section breaks those two cards, knowingly.
-            sections.add(section(LedgerAccounts.CLASS_NAMES.get(classRoot), accounts, total, comparison));
+            List<Statement.Line> lines = groups(classRoot, ledgers);
+            Map<String, Statement.Figures> figures = Statement.evaluate(lines, ledgers.current(), ledgers.prior());
+            Statement.Figures total = new Statement.Figures(Statement.account(ledgers.current(), classRoot),
+                compares ? Statement.account(ledgers.prior(), classRoot) : null);
+            classFigures.put(classRoot, total);
+
+            Map<String, String> totals = StatementReports.row("Total " + LedgerAccounts.CLASS_NAMES.get(classRoot)
+                .toLowerCase(java.util.Locale.ROOT), total, compares);
+            // The finance dashboard reads the "Assets" and "Liabilities" section totals by these titles, under
+            // "balance" (dashboard.application.ReportFigures). Renaming a class section breaks those two cards.
+            totals.put("balance", Figures.money(total.current()));
+            sections.add(new ReportSection(LedgerAccounts.CLASS_NAMES.get(classRoot), columns,
+                StatementReports.rows(lines, figures, compares), totals));
         }
 
-        BigDecimal assets = classTotals.get("1000");
-        BigDecimal liabilitiesAndEquity = classTotals.get("2000").add(classTotals.get("3000"));
+        BigDecimal assets = classFigures.get("1000").current();
+        BigDecimal liabilitiesAndEquity = classFigures.get("2000").current().add(classFigures.get("3000").current());
         BigDecimal difference = assets.subtract(liabilitiesAndEquity).abs();
-
         Map<String, String> check = new LinkedHashMap<>();
         check.put("check", difference.signum() == 0
             ? "Assets equal liabilities plus equity: the sheet balances"
             : "Assets do NOT balance liabilities plus equity — the ledger is out, or a period is unposted");
         check.put("difference", Figures.money(difference));
         sections.add(new ReportSection("Accounting equation",
-            List.of(col("check", "Check", TEXT), col("difference", "Difference", MONEY)),
+            List.of(new ReportColumn("check", "Check", TEXT), new ReportColumn("difference", "Difference", MONEY)),
             List.of(check), Map.of()));
 
-        return sections;
-    }
-
-    private static ReportSection section(String title, List<AccountBalanceView> accounts, BigDecimal total,
-                                         TrialBalanceView comparison) {
-        List<ReportColumn> columns = comparison == null
-            ? List.of(col("accountCode", "Account", TEXT), col("name", "Name", TEXT),
-                col("currency", "Currency", TEXT), col("balance", "Balance", MONEY))
-            : List.of(col("accountCode", "Account", TEXT), col("name", "Name", TEXT),
-                col("currency", "Currency", TEXT), col("balance", "Balance", MONEY),
-                col("comparison", "Comparison", MONEY), col("movement", "Movement", MONEY));
-
-        List<Map<String, String>> rows = accounts.stream().map(a -> {
-            Map<String, String> row = new LinkedHashMap<>();
-            row.put("accountCode", a.accountCode());
-            row.put("name", a.name());
-            row.put("currency", a.currency());
-            row.put("balance", Figures.money(a.balance()));
-            if (comparison != null) {
-                BigDecimal was = balanceOf(comparison, a.accountCode());
-                row.put("comparison", Figures.money(was));
-                row.put("movement", Figures.money(a.balance().subtract(was)));
-            }
-            return row;
-        }).toList();
-
-        Map<String, String> totals = new LinkedHashMap<>();
-        totals.put("accountCode", "Total");
-        totals.put("name", "");
-        totals.put("currency", rows.isEmpty() ? "" : rows.get(0).get("currency"));
-        totals.put("balance", Figures.money(total));
-        if (comparison != null) {
-            BigDecimal was = accounts.stream().map(a -> balanceOf(comparison, a.accountCode()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-            totals.put("comparison", Figures.money(was));
-            totals.put("movement", Figures.money(total.subtract(was)));
+        List<ReportFigure> headline = new ArrayList<>();
+        for (String classRoot : LedgerAccounts.BALANCE_SHEET_CLASSES) {
+            Statement.Line line = new Statement.Line(classRoot, "Total " + LedgerAccounts.CLASS_NAMES.get(classRoot)
+                .toLowerCase(java.util.Locale.ROOT), Statement.Kind.TOTAL, List.of(), GOOD_WHEN.get(classRoot));
+            headline.add(StatementReports.figure(line, classFigures.get(classRoot), true));
         }
-        return new ReportSection(title, columns, rows, totals);
+        return new ReportBody(sections, headline, null, comparisonLabel(f));
     }
 
-    private static BigDecimal balanceOf(TrialBalanceView view, String accountCode) {
-        return view.accounts().stream().filter(a -> a.accountCode().equals(accountCode))
-            .map(AccountBalanceView::balance).findFirst().orElse(BigDecimal.ZERO);
+    @Override
+    public ReportParts parts(UUID tenantId, String lineId, ReportFilter f, int page, Labels labels) {
+        StatementReports.Ledgers ledgers = ledgers(f);
+        List<Statement.Line> lines = new ArrayList<>();
+        for (String classRoot : LedgerAccounts.BALANCE_SHEET_CLASSES) {
+            lines.addAll(groups(classRoot, ledgers));
+        }
+        return StatementReports.parts(lineId, lines, ledgers, finaccounting, INCEPTION, f.monthFrom().toString(), page);
+    }
+
+    /** A class's lines: the chart's own groups beneath its root that hold anything, in either period. */
+    private static List<Statement.Line> groups(String classRoot, StatementReports.Ledgers ledgers) {
+        List<Statement.Line> lines = new ArrayList<>();
+        for (AccountBalanceView a : ledgers.current()) {
+            if (!classRoot.equals(a.parentCode())) continue;
+            boolean held = LedgerAccounts.posted(a) || (ledgers.prior() != null && ledgers.prior().stream()
+                .anyMatch(p -> p.accountCode().equals(a.accountCode()) && LedgerAccounts.posted(p)));
+            if (held) {
+                lines.add(Statement.Line.accounts("acct:" + a.accountCode(), a.accountCode() + " " + a.name(),
+                    GOOD_WHEN.get(classRoot), a.accountCode()));
+            }
+        }
+        return lines;
+    }
+
+    private StatementReports.Ledgers ledgers(ReportFilter f) {
+        YearMonth month = f.monthFrom();
+        YearMonth compared = f.compareAsOf() != null ? YearMonth.from(f.compareAsOf())
+            : f.comparisonMonths() == null ? null : f.comparisonMonths()[0];
+        List<AccountBalanceView> current = finaccounting.trialBalanceThrough(month.toString()).accounts();
+        List<AccountBalanceView> prior = compared == null ? null
+            : finaccounting.trialBalanceThrough(compared.toString()).accounts();
+        return new StatementReports.Ledgers(current, prior, "At end of " + StatementReports.span(month, month),
+            compared == null ? null : "At end of " + StatementReports.span(compared, compared));
+    }
+
+    private static String comparisonLabel(ReportFilter f) {
+        if (f.compareAsOf() != null) {
+            YearMonth m = YearMonth.from(f.compareAsOf());
+            return "compared with the end of " + StatementReports.span(m, m);
+        }
+        YearMonth[] months = f.comparisonMonths();
+        return months == null ? null : "compared with the end of " + StatementReports.span(months[0], months[0]);
     }
 }

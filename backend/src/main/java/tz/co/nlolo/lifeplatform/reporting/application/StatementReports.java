@@ -187,9 +187,14 @@ final class StatementReports {
             return new ReportParts(lineId, label, columns, rows, rows.size(), 0, rows.size(),
                 Statement.check(values, signs, total), Statement.adds(values, signs, total));
         }
+        if (parent == null) {
+            // Not in this ledger's chart at all (a tenant with no chart yet): nothing makes it up, and it says so.
+            return new ReportParts(lineId, label, columns, List.of(), 0, 0, 0,
+                Statement.check(List.of(), List.of(), total), total.signum() == 0);
+        }
         // A leaf: its postings in the span, signed in the account's own normal direction.
         AccountPostingsView postings = ledger.accountPostings(code, fromPeriod, toPeriod, page, POSTINGS_PAGE);
-        PostingDirection normal = parent == null ? PostingDirection.DR : parent.normalBalance();
+        PostingDirection normal = parent.normalBalance();
         List<ReportColumn> postingColumns = List.of(new ReportColumn("line", "Posting", TEXT),
             new ReportColumn("current", "Amount", MONEY));
         List<Map<String, String>> rows = new ArrayList<>();
