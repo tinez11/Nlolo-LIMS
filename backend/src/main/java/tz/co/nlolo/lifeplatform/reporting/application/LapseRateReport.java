@@ -37,7 +37,7 @@ public class LapseRateReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("lapse-rate", "Lapse rate",
         "Lapses in the period divided by the average number of policies in force (start plus end, halved), "
             + "gross and net of reinstatements in the same period.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false);
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
 
     private final ReportQueries queries;
 
@@ -48,6 +48,60 @@ public class LapseRateReport implements Report {
     @Override
     public ReportDefinitionView definition() {
         return DEFINITION;
+    }
+
+    /**
+     * The period's rate against the period it is compared with, and (2026-11-09, batch 4) how far into their lives the
+     * policies lapsed: in their first year, their second, or later. A lapse in year one is a selling problem; later, a
+     * service one.
+     */
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        List<ReportSection> sections = new ArrayList<>(run(tenantId, f, labels));
+        java.time.LocalDate[] span = f.comparisonSpan();
+        Map<String, String> now = sections.get(0).totals();
+        Map<String, String> before = span == null ? null
+            : run(tenantId, f.withPeriod(span[0], span[1]), labels).get(0).totals();
+        sections.add(byPolicyYear(tenantId, f));
+        return new ReportBody(sections, Sections.present(
+            Sections.compared("grossLapseRate", "Gross lapse rate", now, before, "PERCENT", "DOWN", true),
+            Sections.compared("lapses", "Lapses", now, before, "COUNT", "DOWN", true),
+            Sections.compared("netLapseRate", "Net of reinstatements", now, before, "PERCENT", "DOWN", true),
+            Sections.compared("reinstatements", "Reinstatements", now, before, "COUNT", "UP", false),
+            Sections.compared("inForceEnd", "In force at the end", now, before, "COUNT", "UP", false)),
+            null, Sections.comparedWith(span));
+    }
+
+    /** Lapses by the policy year they fell in: year 1 is the first twelve months from activation. */
+    private ReportSection byPolicyYear(UUID tenantId, ReportFilter f) {
+        long[] years = new long[3];
+        for (ReportQueries.LapseAge l : queries.lapseAges(tenantId, f.from(), f.to(), GroupBy.PRODUCT, f)) {
+            years[policyYear(l.activatedOn(), l.lapsedOn()) - 1]++;
+        }
+        long all = years[0] + years[1] + years[2];
+        List<ReportColumn> columns = List.of(col("year", "Policy year", TEXT), col("lapses", "Lapses", COUNT),
+            col("share", "Share of lapses %", PERCENT));
+        String[] names = { "Year 1", "Year 2", "Year 3 or later" };
+        List<Map<String, String>> rows = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            Map<String, String> row = new LinkedHashMap<>();
+            row.put("year", names[i]);
+            row.put("lapses", Figures.count(years[i]));
+            row.put("share", Figures.percent(BigDecimal.valueOf(years[i]), BigDecimal.valueOf(all)));
+            rows.add(row);
+        }
+        Map<String, String> totals = new LinkedHashMap<>();
+        totals.put("year", "Total");
+        totals.put("lapses", Figures.count(all));
+        totals.put("share", all == 0 ? "" : "100.00");
+        return new ReportSection("Lapses by policy year", columns, rows, totals);
+    }
+
+    /** 1, 2 or 3 (meaning 3 or later). A lapse with no activation date is counted in year 1. */
+    static int policyYear(LocalDate activatedOn, LocalDate lapsedOn) {
+        if (activatedOn == null || lapsedOn == null) return 1;
+        long years = java.time.temporal.ChronoUnit.YEARS.between(activatedOn, lapsedOn);
+        return (int) Math.min(3, Math.max(0, years) + 1);
     }
 
     @Override

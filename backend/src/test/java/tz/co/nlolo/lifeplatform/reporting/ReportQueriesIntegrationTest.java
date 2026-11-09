@@ -91,6 +91,36 @@ class ReportQueriesIntegrationTest {
 
     // ---- policies in force -------------------------------------------------------------------------------
 
+    /**
+     * 2026-11-09, batch 4: the movement from a month earlier reconciles with the in-force count on both dates -- the
+     * moves are read off the same status timeline. Four in force at the end of February; in March one is sold, one
+     * lapses, a lapsed one is reinstated, one is suspended (still in force), one cancelled in free-look.
+     */
+    @Test
+    void theBooksMovementReconcilesTheOpeningWithTheClosing() {
+        events.sell(tenant, Sale.of("M-A", product, d("2026-01-05")));
+        events.sell(tenant, Sale.of("M-B", product, d("2026-01-06")));
+        events.sell(tenant, Sale.of("M-C", product, d("2026-01-07")));
+        events.sell(tenant, Sale.of("M-D", product, d("2026-02-20")));
+        events.sell(tenant, Sale.of("M-E", product, d("2026-01-08")));
+        events.lapse(tenant, "M-E", d("2026-02-10"));
+        events.sell(tenant, Sale.of("M-F", product, d("2026-03-04")));
+        events.lapse(tenant, "M-A", d("2026-03-10"));
+        events.reinstate(tenant, "M-E", d("2026-03-12"));
+        events.suspend(tenant, "M-B", d("2026-03-15"));
+        events.cancelFreeLook(tenant, "M-D", d("2026-03-16"));
+
+        ReportResult result = run("policies-in-force",
+            ReportFilter.asOf(d("2026-03-31")).withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD));
+
+        assertThat(rows(result, 1)).extracting(r -> r.get("line") + " " + r.get("policies")).containsExactly(
+            "In force on 2026-02-28 4", "New policies 1", "Reinstated 1", "Lapsed -1",
+            "Cancelled in free-look -1", "In force on 2026-03-31 4");
+        assertThat(rows(result, 0)).singleElement().satisfies(row -> assertThat(row.get("policies")).isEqualTo("4"));
+        assertThat(result.figures().get(0).prior()).isEqualTo("4");
+        assertThat(result.chart().unit()).isEqualTo("COUNT");
+    }
+
     @Test
     void inForceCountsActiveSuspendedAndPaidUpButNotLapsed() {
         events.sell(tenant, Sale.of("P-A", product, d("2026-01-05")));
@@ -249,9 +279,11 @@ class ReportQueriesIntegrationTest {
 
         assertThat(rows(result, 0)).extracting(r -> r.get("month") + " " + r.get("channel") + " " + r.get("receipts")
                 + " " + r.get("amount"))
-            .containsExactly("2026-01 FIELD_CASH 1 4000.00", "2026-01 MOBILE_MONEY 2 20000.00", "2026-02 MOBILE_MONEY 1 10000.00");
+            .containsExactly("2026-01 Cash (field receipt) 1 4000.00", "2026-01 Mobile money 2 20000.00",
+                "2026-02 Mobile money 1 10000.00");
         assertThat(result.sections().get(0).totals().get("amount")).isEqualTo("34000.00");
-        assertThat(rows(result, 1)).extracting(r -> r.get("policyNumber")).containsExactly("K-1", "K-2");
+        // 2026-11-09, batch 4: the payment-method split now sits between the months and the top policies.
+        assertThat(rows(result, 2)).extracting(r -> r.get("policyNumber")).containsExactly("K-1", "K-2");
     }
 
     /**
@@ -439,10 +471,12 @@ class ReportQueriesIntegrationTest {
             // extended with its four statements. This assertion was left at the seven management reports by that
             // batch and had been failing on main ever since; nothing else asserts the catalogue is complete.
             .containsExactly("policies-in-force", "products", "new-business", "lapse-rate", "persistency",
+                "free-look-and-not-taken-up",
                 "premium-collections", "clients",
                 "trial-balance", "general-ledger", "balance-sheet", "income-statement",
                 "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
-                "early-claims", "claims-outstanding");
+                "early-claims", "claims-outstanding",
+                "capital-adequacy", "stress-tests", "solvency-forecast");
     }
 
     @Test

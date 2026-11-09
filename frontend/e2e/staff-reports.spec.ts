@@ -211,6 +211,23 @@ test.describe('staff reports', () => {
     await expect(page.getByRole('table', { name: 'Thresholds' })).toContainText('Minimum capital requirement (MCR)');
   });
 
+  /** 2026-11-09, batch 4: the book's movement since a month earlier, and the new free-look report. */
+  test('policies in force shows how the book moved, and free-look sits with the policy reports', async ({ page }) => {
+    await page.goto('/staff/reports/policies-in-force');
+    await expect(page.getByRole('heading', { name: /^How the book moved, / })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel('Headline figures')).toContainText('Policies in force');
+    await expect(page.getByLabel('Compare with')).toContainText('A month earlier');
+
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Free-look and not taken up', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Free-look and not taken up' })).toBeVisible();
+    await page.getByLabel('From').fill('2026-01-01');
+    await page.getByLabel('To').fill('2026-12-31');
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page.getByRole('heading', { name: /^Free-look and not taken up, 2026-01-01 to 2026-12-31$/ }))
+      .toBeVisible({ timeout: 30_000 });
+  });
+
   test('a cohort report asks for months and a clients report for both a date and a period', async ({ page }) => {
     await page.goto('/staff/reports/persistency');
     await expect(page.getByLabel('First activation month')).toBeVisible({ timeout: 15_000 });

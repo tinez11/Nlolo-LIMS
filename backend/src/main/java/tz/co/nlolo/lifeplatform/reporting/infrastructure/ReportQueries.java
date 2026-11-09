@@ -158,6 +158,42 @@ public class ReportQueries {
             rs.getString("currency").trim(), rs.getLong("n")), args.toArray());
     }
 
+    /** A policy whose status on two dates differs: the movement between them (2026-11-09, batch 4). Null is no status. */
+    public record StatusMove(String policyNumber, String dimension, LocalDate activatedOn, String before, String after) {}
+
+    /**
+     * Every policy whose latest status on {@code open} differs from its latest status on {@code close}, read as
+     * LAST_CHANGE_CTE reads a status, so a movement built from these rows reconciles with inForce() on both dates.
+     */
+    public List<StatusMove> statusMoves(UUID tenantId, LocalDate open, LocalDate close, GroupBy groupBy, ReportFilter f) {
+        String latest = "SELECT DISTINCT ON (s.policy_number) s.policy_number, s.to_status"
+            + " FROM reporting.report_policy_status_change s WHERE s.tenant_id = ? AND s.effective_on <= ?"
+            + " ORDER BY s.policy_number, s.effective_on DESC, s.occurred_at DESC, s.event_id DESC";
+        List<Object> args = new ArrayList<>(List.of(tenantId, open, tenantId, close, tenantId));
+        StringBuilder sql = new StringBuilder("WITH a AS (" + latest + "), b AS (" + latest + ")"
+            + " SELECT p.policy_number, " + dimension(groupBy) + " AS dim, p.activated_on,"
+            + " a.to_status AS before, b.to_status AS after FROM reporting.report_policy p"
+            + " LEFT JOIN a ON a.policy_number = p.policy_number LEFT JOIN b ON b.policy_number = p.policy_number"
+            + CLIENT_JOIN + " WHERE p.tenant_id = ? AND a.to_status IS DISTINCT FROM b.to_status");
+        appendFilters(sql, args, f);
+        return jdbc.query(sql.toString(), (rs, i) -> new StatusMove(rs.getString("policy_number"), rs.getString("dim"),
+            date(rs, "activated_on"), rs.getString("before"), rs.getString("after")), args.toArray());
+    }
+
+    /** One lapse in a period, with the day its policy began: how far into its life a policy lapsed (batch 4). */
+    public record LapseAge(String dimension, LocalDate activatedOn, LocalDate lapsedOn) {}
+
+    public List<LapseAge> lapseAges(UUID tenantId, LocalDate from, LocalDate to, GroupBy groupBy, ReportFilter f) {
+        List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
+        StringBuilder sql = new StringBuilder("SELECT " + dimension(groupBy) + " AS dim, p.activated_on, s.effective_on"
+            + " FROM reporting.report_policy_status_change s"
+            + " JOIN reporting.report_policy p ON p.tenant_id = s.tenant_id AND p.policy_number = s.policy_number"
+            + CLIENT_JOIN + " WHERE s.tenant_id = ? AND s.cause = 'policy.PolicyLapsed' AND s.effective_on BETWEEN ? AND ?");
+        appendFilters(sql, args, f);
+        return jdbc.query(sql.toString(), (rs, i) -> new LapseAge(rs.getString("dim"), date(rs, "activated_on"),
+            date(rs, "effective_on")), args.toArray());
+    }
+
     /** Status changes with this cause (an event type) whose effective date falls in the period, per dimension. */
     public Map<String, Long> causeCounts(UUID tenantId, String cause, LocalDate from, LocalDate to, GroupBy groupBy,
                                          ReportFilter f) {

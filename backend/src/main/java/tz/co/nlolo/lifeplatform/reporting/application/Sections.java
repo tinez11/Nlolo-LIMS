@@ -46,6 +46,40 @@ final class Sections {
     }
 
     /**
+     * A headline figure read from a total row, against the same total of the run it is compared with (2026-11-09,
+     * batch 4): both totals are the reports' own, worked out the same way, so the change is like for like. Null when
+     * the total is blank -- no rows, or two currencies.
+     */
+    static ReportFigure compared(String key, String label, Map<String, String> now, Map<String, String> before,
+                                 String unit, String goodWhen, boolean lead) {
+        String value = now.get(key);
+        if (value == null || value.isBlank()) return null;
+        String prior = before == null ? null : before.get(key);
+        if (prior != null && prior.isBlank()) prior = null;
+        String change = null;
+        String changePercent = null;
+        if (prior != null) {
+            BigDecimal a = new BigDecimal(value);
+            BigDecimal b = new BigDecimal(prior);
+            change = "COUNT".equals(unit) ? a.subtract(b).toBigInteger().toString() : a.subtract(b).toPlainString();
+            if (!"PERCENT".equals(unit)) changePercent = ClaimsReporting.percent(a, b);
+        }
+        return new ReportFigure(key, label, value, prior, change, changePercent, goodWhen, lead, unit);
+    }
+
+    /** The figures that are not null, in order. */
+    static List<ReportFigure> present(ReportFigure... figures) {
+        List<ReportFigure> out = new ArrayList<>();
+        for (ReportFigure f : figures) if (f != null) out.add(f);
+        return out;
+    }
+
+    /** "compared with 2026-09-01 to 2026-09-30", or null. */
+    static String comparedWith(java.time.LocalDate[] span) {
+        return span == null ? null : "compared with " + span[0] + " to " + span[1];
+    }
+
+    /**
      * Sums every COUNT and MONEY column; the first column reads "Total"; everything else is blank. Empty --
      * no total row -- when the rows carry more than one currency, because adding shillings to dollars is a
      * number that means nothing.

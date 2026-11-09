@@ -33,8 +33,9 @@ import static tz.co.nlolo.lifeplatform.reporting.application.Sections.col;
 public class NewBusinessReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("new-business", "New business",
-        "Policies activated each month, offers that expired unpaid, and the take-up rate between them.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false);
+        "Policies activated each month, offers that expired unpaid, and the take-up rate between them, against the period"
+            + " before or the same period last year.",
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
 
     private final ReportQueries queries;
 
@@ -45,6 +46,24 @@ public class NewBusinessReport implements Report {
     @Override
     public ReportDefinitionView definition() {
         return DEFINITION;
+    }
+
+    /** The period's totals against the same report run for the period it is compared with (2026-11-09, batch 4). */
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        List<ReportSection> sections = run(tenantId, f, labels);
+        java.time.LocalDate[] span = f.comparisonSpan();
+        Map<String, String> now = sections.get(0).totals();
+        Map<String, String> before = span == null ? null
+            : run(tenantId, f.withPeriod(span[0], span[1]), labels).get(0).totals();
+        return new ReportBody(sections, Sections.present(
+            Sections.compared("policies", "Policies activated", now, before, "COUNT", "UP", true),
+            Sections.compared("annualisedPremium", "Annualised premium", now, before, "MONEY", "UP", true),
+            Sections.compared("takeUpRate", "Take-up rate", now, before, "PERCENT", "UP", true),
+            Sections.compared("sumAssured", "Sum assured", now, before, "MONEY", "UP", false),
+            Sections.compared("singlePremiums", "Single premiums", now, before, "MONEY", "UP", false),
+            Sections.compared("notTakenUp", "Offers not taken up", now, before, "COUNT", "DOWN", false)),
+            null, Sections.comparedWith(span));
     }
 
     @Override

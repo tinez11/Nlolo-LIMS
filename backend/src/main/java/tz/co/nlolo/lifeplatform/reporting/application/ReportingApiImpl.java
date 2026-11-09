@@ -37,7 +37,7 @@ public class ReportingApiImpl implements ReportingApi {
 
     /** Catalogue order: the order a manager reads the business in, then the order a ledger is read in. */
     static final List<String> ORDER = List.of("policies-in-force", "products", "new-business", "lapse-rate",
-        "persistency", "premium-collections", "clients",
+        "persistency", "free-look-and-not-taken-up", "premium-collections", "clients",
         "trial-balance", "general-ledger", "balance-sheet", "income-statement",
         // Claims (2026-11-09): what was incurred, the ratio to premium, what became of claims, the money, the time.
         "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",

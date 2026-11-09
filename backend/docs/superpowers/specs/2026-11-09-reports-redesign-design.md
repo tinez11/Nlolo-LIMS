@@ -202,3 +202,25 @@ Later: the investments register and ALM, then ORSA, then AML (each designed sepa
   scheduled premium is NOT used yet.
 - Every solvency report carries `notices` (the amber strip): the placeholder warning, and the method or approximation.
   Exports print them under the header.
+
+## 11. Batch 4 as built (2026-11-09)
+
+- **Comparison for dated and period reports:** `ReportFilter.comparisonDate()` (a month or a year before `asOf`) and
+  `comparisonSpan()` (the same length before, a span of whole months moving by whole months; or a year earlier). A
+  report compares by running itself on the compared span and reading both total rows (`Sections.compared`).
+- **Policies in force:** a movement section and bridge chart from the compared date: each policy whose status differs
+  between the two dates is counted once by where it ended up (new, reinstated, lapsed, surrendered, matured or
+  expired, ended by a claim, cancelled in free-look, ended), read off the same status timeline as in force, so it
+  reconciles; a "Not explained" line appears if it ever does not. Not taken up never enters the in-force count, so it
+  is in the free-look report, not the movement. An explicit `compareAsOf` still works.
+- **New business, lapse rate, clients, premium collections, free-look:** compare with the period before or the same
+  period last year. Lapse rate adds lapses by policy year (1, 2, 3+). Persistency adds each activation month as a
+  cohort and a 13th/25th-month trend line. Collections adds the split by payment method and billing's arrears ageing on
+  the period's last day (the whole book: billing's ageing takes no product filter). Clients adds "identity not yet
+  verified" as a headline.
+- **Free-look and not taken up** (new): free-look rate = cancelled ÷ activated; not-taken-up rate = not taken up ÷
+  (activated + not taken up).
+- **Not built, no data path yet:** billed vs collected (billing publishes no invoice-issued event and has no billed
+  total in its API) and policyholders without portal access (the portal publishes no events and has no listing). Each
+  needs an event or an API in its own module first.
+- **Policies by product** stays its own report (not folded into policies in force).

@@ -25,7 +25,7 @@ export function ReportTrend({ chart }: { chart: ReportChart }) {
     points: s.points.map((p) => ({
       key: p.period,
       value: p.value == null || p.value === '' ? null : Number(p.value),
-      display: p.value == null || p.value === '' ? '' : formatCell('MONEY', p.value),
+      display: p.value == null || p.value === '' ? '' : formatCell(chart.unit, p.value),
     })),
   }));
   return (

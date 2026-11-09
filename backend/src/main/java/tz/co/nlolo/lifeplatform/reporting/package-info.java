@@ -9,5 +9,6 @@
  * with the first, which is exactly what a trial balance exists to rule out.
  */
 @org.springframework.modulith.ApplicationModule(
-    allowedDependencies = { "audit::api", "party::api", "product::api", "distribution::api", "finaccounting::api" })
+    allowedDependencies = { "audit::api", "party::api", "product::api", "distribution::api", "finaccounting::api",
+        "billing::api" })
 package tz.co.nlolo.lifeplatform.reporting;

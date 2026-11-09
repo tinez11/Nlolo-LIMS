@@ -137,7 +137,7 @@ export function ReportPage() {
             {current.chart && current.chart.kind === 'BRIDGE' && current.chart.bars.length > 0 && (
               <Panel title={current.chart.description}>
                 <div className="px-4 pb-4">
-                  <BridgeChart bars={current.chart.bars} description={current.chart.description} />
+                  <BridgeChart bars={current.chart.bars} description={current.chart.description} unit={current.chart.unit} />
                 </div>
               </Panel>
             )}
