@@ -62,9 +62,13 @@ public class ReportController {
 
     @GetMapping("/reports/{reportKey}/export")
     @PreAuthorize("@access.can('reports.view')")
-    public ResponseEntity<byte[]> export(@PathVariable String reportKey, @RequestParam Map<String, String> query) {
+    public ResponseEntity<byte[]> export(@PathVariable String reportKey, @RequestParam Map<String, String> query,
+                                         @AuthenticationPrincipal Jwt jwt) {
+        // Who prepared it, on the printed report (2026-11-09, report formatting).
+        String preparedBy = jwt == null ? null : jwt.getClaimAsString("name");
+        if ((preparedBy == null || preparedBy.isBlank()) && jwt != null) preparedBy = jwt.getClaimAsString("preferred_username");
         ReportExporter.Export export = exporter.export(reportingApi.run(reportKey, ReportFilterParams.parse(query)),
-            query.get("format"));
+            query.get("format"), preparedBy);
         return FileDownloadResponses.fileResponse(export.bytes(), export.contentType(), export.fileName(), export.fileName());
     }
 

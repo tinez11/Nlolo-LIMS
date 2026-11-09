@@ -1,6 +1,10 @@
 package tz.co.nlolo.lifeplatform.omnichannel.infrastructure;
 
 import org.springframework.http.HttpHeaders;
+import static tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.PAYOUT_ADVICE;
+import static tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.POLICY_SCHEDULE;
+import static tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.RECEIPT;
+import static tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.STATEMENT;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -36,8 +40,11 @@ public class PolicyDocumentsController {
 
     private final PolicyDocuments documents;
     private final PolicyApi policyApi;
+    private final tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
 
-    public PolicyDocumentsController(PolicyDocuments documents, PolicyApi policyApi) {
+    public PolicyDocumentsController(PolicyDocuments documents, PolicyApi policyApi,
+                                     tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
         this.documents = documents;
         this.policyApi = policyApi;
     }
@@ -55,7 +62,7 @@ public class PolicyDocumentsController {
     public ResponseEntity<byte[]> paymentScheduleFile(@PathVariable String policyNumber, @PathVariable String format,
                                                       @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.paymentScheduleDocument(policyNumber), format, "payment-schedule-" + policyNumber);
+        return file(STATEMENT, documents.paymentScheduleDocument(policyNumber), format, "payment-schedule-" + policyNumber);
     }
 
     @GetMapping("/policies/{policyNumber}/savings-statement")
@@ -73,7 +80,7 @@ public class PolicyDocumentsController {
                                                        @RequestParam LocalDate from, @RequestParam LocalDate to,
                                                        @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.savingsStatementDocument(policyNumber, from, to), format,
+        return file(STATEMENT, documents.savingsStatementDocument(policyNumber, from, to), format,
             "savings-statement-" + policyNumber + "-" + from + "-to-" + to);
     }
 
@@ -83,7 +90,7 @@ public class PolicyDocumentsController {
     public ResponseEntity<byte[]> policySchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
                                                  Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.policyScheduleDocument(policyNumber), "pdf", "policy-schedule-" + policyNumber);
+        return file(POLICY_SCHEDULE, documents.policyScheduleDocument(policyNumber), "pdf", "policy-schedule-" + policyNumber);
     }
 
     /** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF. */
@@ -92,7 +99,7 @@ public class PolicyDocumentsController {
     public ResponseEntity<byte[]> depositSchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
                                                   Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.depositScheduleDocument(policyNumber), "pdf", "deposit-schedule-" + policyNumber);
+        return file(STATEMENT, documents.depositScheduleDocument(policyNumber), "pdf", "deposit-schedule-" + policyNumber);
     }
 
     /** Every premium received on the policy, newest first (2026-10-08, the customer portal step 3). */
@@ -110,7 +117,7 @@ public class PolicyDocumentsController {
     public ResponseEntity<byte[]> receipt(@PathVariable String policyNumber, @PathVariable java.util.UUID receiptId,
                                           @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.receiptDocument(policyNumber, receiptId), "pdf", "receipt-" + policyNumber + "-" + receiptId);
+        return file(RECEIPT, documents.receiptDocument(policyNumber, receiptId), "pdf", "receipt-" + policyNumber + "-" + receiptId);
     }
 
     /** Every payment made on the policy, newest first (2026-11-09, the payout advice). */
@@ -128,11 +135,13 @@ public class PolicyDocumentsController {
     public ResponseEntity<byte[]> payoutAdvice(@PathVariable String policyNumber, @PathVariable java.util.UUID disbursementId,
                                                @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
-        return file(documents.payoutAdviceDocument(policyNumber, disbursementId), "pdf",
+        return file(PAYOUT_ADVICE, documents.payoutAdviceDocument(policyNumber, disbursementId), "pdf",
             "payout-advice-" + policyNumber + "-" + disbursementId);
     }
 
-    private static ResponseEntity<byte[]> file(CustomerDocument document, String format, String name) {
+    /** In the company's letterhead, signed by whoever signs this kind of document on the day it was issued (2026-11-09). */
+    private ResponseEntity<byte[]> file(tz.co.nlolo.lifeplatform.organisation.api.DocumentKind kind, CustomerDocument document,
+                                        String format, String name) {
         boolean pdf = "pdf".equalsIgnoreCase(format);
         if (!pdf && !"xlsx".equalsIgnoreCase(format)) {
             throw new IllegalArgumentException("A document downloads as pdf or xlsx, not " + format);
@@ -140,7 +149,11 @@ public class PolicyDocumentsController {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + (pdf ? ".pdf" : ".xlsx") + "\"")
             .contentType(pdf ? MediaType.APPLICATION_PDF : XLSX)
-            .body(pdf ? DocumentPdf.render(document) : DocumentXlsx.render(document));
+            .body(pdf
+                ? DocumentPdf.render(document, organisation.letterhead(), organisation.signatory(kind,
+                    document.issuedOn() == null ? java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))
+                        : document.issuedOn()).orElse(null))
+                : DocumentXlsx.render(document, organisation.letterhead()));
     }
 
     /** A customer reads only their own policy: a real 403, as GET /policies/{policyNumber} gives. */

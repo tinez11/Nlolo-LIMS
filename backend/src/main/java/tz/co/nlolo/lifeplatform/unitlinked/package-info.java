@@ -11,5 +11,5 @@
  */
 @org.springframework.modulith.ApplicationModule(allowedDependencies = {
     "policy::api", "product::api", "underwriting::api", "party::api", "benefitpayout::api", "refdata::api",
-    "document::api", "approvals::api" })
+    "document::api", "approvals::api", "organisation::api" })
 package tz.co.nlolo.lifeplatform.unitlinked;

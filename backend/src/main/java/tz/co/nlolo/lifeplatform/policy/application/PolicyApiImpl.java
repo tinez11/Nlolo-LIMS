@@ -104,6 +104,13 @@ public class PolicyApiImpl implements PolicyApi {
     }
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
+    /** The company's own head office (2026-11-09, organisation settings); absent in a module test. */
+    private tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setOrganisation(tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
+    }
     private final DistributionApi distributionApi;
     private final UnderwritingApi underwritingApi;
     /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
@@ -2868,8 +2875,12 @@ public class PolicyApiImpl implements PolicyApi {
             channel, branch);
     }
 
-    /** Null where the platform has no head office configured (a schema without refdata V8). */
+    /** The company's head office (organisation settings), else the shared one; null where neither is configured. */
     private String headOfficeBranch() {
+        if (organisation != null) {
+            String own = organisation.headOfficeBranch();
+            if (own != null) return own;
+        }
         try {
             return referenceDataApi.getValue("HEAD_OFFICE_BRANCH", "TZ");
         } catch (RuntimeException e) {

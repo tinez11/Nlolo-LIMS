@@ -1,8 +1,9 @@
 import { Select } from '@/components/ui/input';
-import { useReferenceCodes } from '@/store/refdataStore';
+import { useBranchCodes } from '@/store/organisationStore';
 
 /**
- * The branches a sale can belong to (refdata BRANCH, IFRS 17 I2), as a CONTROLLED select. Controlled on purpose: the
+ * The company's branches a sale can belong to (its own register since 2026-11-09, organisation settings), as a
+ * CONTROLLED select. Controlled on purpose: the
  * options arrive after the first render, and an uncontrolled select whose value is set before its options exist falls
  * back to the first option the browser sees -- a form would then submit whichever branch sorts first.
  *
@@ -23,7 +24,7 @@ export function BranchSelect({
   id?: string;
   disabled?: boolean;
 }) {
-  const branches = useReferenceCodes('BRANCH');
+  const branches = useBranchCodes();
   // While the list loads, the current value is still offered, so the select shows it rather than nothing.
   const showValueAlone = value !== '' && !branches.some((b) => b.code === value);
   return (

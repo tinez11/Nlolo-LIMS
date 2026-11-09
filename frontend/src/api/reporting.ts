@@ -27,7 +27,8 @@ export type ExportFormat = 'xlsx' | 'csv' | 'pdf';
 
 const ACCEPT: Record<ExportFormat, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  csv: 'text/csv',
+  // A report with several tables comes back as a zip of CSVs.
+  csv: 'text/csv, application/zip',
   pdf: 'application/pdf',
 };
 

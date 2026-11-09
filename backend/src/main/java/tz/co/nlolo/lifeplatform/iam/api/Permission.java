@@ -144,7 +144,9 @@ public enum Permission {
     USERS_VIEW("users.view", Area.ADMINISTRATION, "See users and roles", "Staff users, roles and the history of changes."),
     USERS_MANAGE("users.manage", Area.ADMINISTRATION, "Manage users",
         "Add, deactivate and reset staff users; give them roles and permissions."),
-    ROLES_MANAGE("roles.manage", Area.ADMINISTRATION, "Manage roles", "Create roles and change what they carry.");
+    ROLES_MANAGE("roles.manage", Area.ADMINISTRATION, "Manage roles", "Create roles and change what they carry."),
+    ORGANISATION_MANAGE("organisation.manage", Area.ADMINISTRATION, "Manage the organisation",
+        "The company profile, branding and document layout, signatories and branches.");
 
     /** The console's grouping, in the order the screens show it. */
     public enum Area {

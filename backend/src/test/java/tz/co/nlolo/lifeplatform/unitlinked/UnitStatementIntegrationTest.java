@@ -144,7 +144,7 @@ class UnitStatementIntegrationTest {
         try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
             String text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
             // Before the first price nothing could be valued; after it, 90,000 at 1.00.
-            assertThat(text).contains(s.policyNumber(), "No price yet", "TZS 90,000.00", "Allocation charge:  TZS 10,000.00");
+            assertThat(text).contains(s.policyNumber(), "No price yet", "TZS 90,000.00", "Allocation charge 10,000.00", "Invested in units 90,000.00");
         }
     }
 

@@ -68,6 +68,7 @@ public class AccumulationApiImpl implements AccumulationApi {
     final ApplicationEventPublisher events;
     final StatementRepository statementRepository;
     final DocumentApi documentApi;
+    private final tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
     final IdempotentRequests keyed;
     final Deposits deposits;
 
@@ -79,7 +80,9 @@ public class AccumulationApiImpl implements AccumulationApi {
                                ApplicationEventPublisher events, StatementRepository statementRepository,
                                DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits,
                                ChosenCharges chosenCharges, TermAccountRepository termAccounts,
-                               tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+                               tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork,
+                               tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
         this.ownWork = ownWork;
         this.chosenCharges = chosenCharges;
         this.termAccounts = termAccounts;
@@ -917,7 +920,9 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
         // The upload is the one side effect a rollback cannot undo; a failed save after it leaves an
         // orphan object. The same trade every DocumentApi caller on this platform makes.
-        byte[] pdf = StatementPdf.render(view, "Nlolo Life");
+        // In the company's letterhead, signed by its statements signatory on the period's last day (2026-11-09).
+        byte[] pdf = StatementPdf.render(view, organisation.letterhead(), organisation.signatory(
+            tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.STATEMENT, to).orElse(null));
         String ref = documentApi.upload("policy:" + policyNumber, DocumentType.ACCOUNT_STATEMENT, generatedBy,
             new java.io.ByteArrayInputStream(pdf), pdf.length, "application/pdf",
             "statement-" + policyNumber + "-" + from + "-" + to + ".pdf");

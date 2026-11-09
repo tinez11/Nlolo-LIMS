@@ -1,123 +1,113 @@
 package tz.co.nlolo.lifeplatform.reporting.infrastructure;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import tz.co.nlolo.lifeplatform.organisation.api.BrandedDocument;
+import tz.co.nlolo.lifeplatform.organisation.api.BrandedPdf;
+import tz.co.nlolo.lifeplatform.organisation.api.Letterhead;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportChart;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportFigure;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportResult;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Landscape A4, Standard-14 Helvetica (accumulation's StatementPdf does the same: no font file to ship).
- * Columns share the width equally; a value too long for its column is cut with "~". */
+/**
+ * A report as a PDF in the company's letterhead (2026-11-09, report formatting -- before, a bare table cut off with "~"
+ * and machine time): the title, the period and what it is compared with, who prepared it and when; the headline
+ * figures; the notices; the chart; then each section as a table whose figures are written in their unit and
+ * right-aligned, whose text wraps, whose subtotals are bold and totals ruled, and whose heading repeats on every page.
+ * The footer carries the company's confidentiality line and "Page X of Y". A wide report turns the page.
+ */
 final class ReportPdf {
+
     private ReportPdf() {}
 
-    private static final float MARGIN = 36f;
-    private static final float LINE = 13f;
-    private static final PDType1Font REGULAR = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-    private static final PDType1Font BOLD = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+    /** More columns than this and the page turns. */
+    private static final int PORTRAIT_COLUMNS = 6;
 
-    static byte[] render(ReportResult result) {
-        try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Writer w = new Writer(doc);
-            w.text(BOLD, 14, MARGIN, result.title());
-            w.newLine();
-            w.text(REGULAR, 9, MARGIN, result.filterSummary() + "    Generated " + result.generatedAt());
-            for (String notice : result.notices()) {
-                w.newLine();
-                w.text(BOLD, 9, MARGIN, notice);
+    static byte[] render(ReportResult result, Letterhead letterhead, String preparedBy) {
+        return BrandedPdf.render(document(result, preparedBy), letterhead);
+    }
+
+    static BrandedDocument document(ReportResult result, String preparedBy) {
+        List<String> subtitle = new ArrayList<>();
+        if (present(result.filterSummary())) subtitle.add(result.filterSummary());
+        if (present(result.comparisonLabel())) subtitle.add(result.comparisonLabel());
+        subtitle.add("Prepared" + (present(preparedBy) ? " by " + preparedBy : "") + " on "
+            + ReportFormat.stamp(result.generatedAt()));
+
+        List<BrandedDocument.Figure> figures = result.figures().stream()
+            .map(f -> new BrandedDocument.Figure(f.label(), ReportFormat.figure(f), ReportFormat.caption(f))).toList();
+
+        List<BrandedDocument.Table> tables = new ArrayList<>();
+        int widest = 0;
+        for (ReportSection section : result.sections()) {
+            List<ReportColumn> columns = section.columns().stream().filter(c -> !c.key().startsWith("_")).toList();
+            widest = Math.max(widest, columns.size());
+            List<BrandedDocument.Column> cols = new ArrayList<>();
+            for (int i = 0; i < columns.size(); i++) {
+                ReportColumn c = columns.get(i);
+                boolean number = ReportFormat.numeric(c.type());
+                cols.add(new BrandedDocument.Column(c.label(), number, number ? 1.2f : i == 0 ? 2.8f : 1.8f));
             }
-            w.newLine();
-            for (ReportSection section : result.sections()) {
-                w.gap();
-                w.text(BOLD, 11, MARGIN, section.title());
-                w.newLine();
-                float width = (w.pageWidth() - 2 * MARGIN) / Math.max(1, section.columns().size());
-                w.cells(BOLD, section.columns().stream().map(ReportColumn::label).toList(), width);
-                for (Map<String, String> row : section.rows()) {
-                    boolean sum = "SUBTOTAL".equals(row.get("_kind")) || "TOTAL".equals(row.get("_kind"));
-                    w.cells(sum ? BOLD : REGULAR, section.columns().stream().map(c -> row.getOrDefault(c.key(), "")).toList(), width);
-                }
-                if (!section.totals().isEmpty()) {
-                    w.cells(BOLD, section.columns().stream().map(c -> section.totals().getOrDefault(c.key(), "")).toList(), width);
-                }
-                if (section.rows().isEmpty()) {
-                    w.text(REGULAR, 9, MARGIN, "No rows.");
-                    w.newLine();
-                }
+            List<BrandedDocument.Row> rows = new ArrayList<>();
+            for (Map<String, String> row : section.rows()) rows.add(row(columns, row));
+            if (!section.totals().isEmpty()) {
+                List<String> cells = new ArrayList<>();
+                for (ReportColumn c : columns) cells.add(ReportFormat.cell(c.type(), section.totals().get(c.key())));
+                rows.add(new BrandedDocument.Row(cells, BrandedDocument.Style.TOTAL, 0));
             }
-            w.close();
-            doc.save(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            tables.add(new BrandedDocument.Table(section.title(), cols, rows));
+        }
+        return new BrandedDocument(result.title(), String.join(" · ", subtitle), List.of(), figures, result.notices(),
+            chart(result.chart()), tables, List.of(), List.of(), widest > PORTRAIT_COLUMNS, true, null);
+    }
+
+    private static BrandedDocument.Row row(List<ReportColumn> columns, Map<String, String> row) {
+        List<String> cells = new ArrayList<>();
+        for (ReportColumn c : columns) cells.add(ReportFormat.cell(c.type(), row.get(c.key())));
+        BrandedDocument.Style style = switch (row.getOrDefault("_kind", "LINE")) {
+            case "SUBTOTAL" -> BrandedDocument.Style.SUBTOTAL;
+            case "TOTAL" -> BrandedDocument.Style.TOTAL;
+            default -> BrandedDocument.Style.LINE;
+        };
+        int level;
+        try {
+            level = Integer.parseInt(row.getOrDefault("_level", "0"));
+        } catch (NumberFormatException e) {
+            level = 0;
+        }
+        return new BrandedDocument.Row(cells, style, level);
+    }
+
+    /** The screen's chart, drawn under the figures: a bridge's bars, or a trend's lines over its periods. */
+    static BrandedDocument.Chart chart(ReportChart c) {
+        if (c == null) return null;
+        if ("TREND".equals(c.kind())) {
+            if (c.series().isEmpty()) return null;
+            List<String> periods = c.series().get(0).points().stream().map(ReportChart.Point::period).toList();
+            List<BrandedDocument.Series> series = c.series().stream().map(s -> new BrandedDocument.Series(s.label(),
+                s.dashed(), s.points().stream().map(p -> number(p.value())).toList())).toList();
+            return new BrandedDocument.Chart("TREND", c.description(), List.of(), periods, series, c.unit());
+        }
+        if (c.bars().isEmpty()) return null;
+        List<BrandedDocument.Bar> bars = c.bars().stream().map(b -> new BrandedDocument.Bar(b.label(),
+            number(b.value()) == null ? 0 : number(b.value()), b.kind())).toList();
+        return new BrandedDocument.Chart("BRIDGE", c.description(), bars, List.of(), List.of(), c.unit());
+    }
+
+    private static Double number(String v) {
+        if (v == null || v.isBlank()) return null;
+        try {
+            return Double.valueOf(v);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
-    private static final class Writer {
-        private final PDDocument doc;
-        private PDPageContentStream stream;
-        private float y;
-        private float pageWidth;
-
-        Writer(PDDocument doc) throws IOException {
-            this.doc = doc;
-            newPage();
-        }
-
-        float pageWidth() {
-            return pageWidth;
-        }
-
-        private void newPage() throws IOException {
-            if (stream != null) stream.close();
-            PDRectangle landscape = new PDRectangle(PDRectangle.A4.getHeight(), PDRectangle.A4.getWidth());
-            PDPage page = new PDPage(landscape);
-            doc.addPage(page);
-            stream = new PDPageContentStream(doc, page);
-            pageWidth = landscape.getWidth();
-            y = landscape.getHeight() - MARGIN;
-        }
-
-        void text(PDType1Font font, float size, float x, String s) throws IOException {
-            if (y < MARGIN) newPage();
-            stream.beginText();
-            stream.setFont(font, size);
-            stream.newLineAtOffset(x, y);
-            // Standard-14 fonts encode WinAnsi only; anything else is replaced rather than failing the export.
-            stream.showText(s.replace('·', '-').replaceAll("[^\\x20-\\x7E]", "?"));
-            stream.endText();
-        }
-
-        void cells(PDType1Font font, List<String> values, float width) throws IOException {
-            if (y < MARGIN + LINE) newPage();
-            int maxChars = Math.max(3, (int) (width / 4.6f));
-            for (int i = 0; i < values.size(); i++) {
-                String v = values.get(i);
-                text(font, 8, MARGIN + i * width, v.length() > maxChars ? v.substring(0, maxChars - 1) + "~" : v);
-            }
-            newLine();
-        }
-
-        void newLine() {
-            y -= LINE;
-        }
-
-        void gap() {
-            y -= LINE / 2;
-        }
-
-        void close() throws IOException {
-            stream.close();
-        }
+    private static boolean present(String s) {
+        return s != null && !s.isBlank();
     }
 }

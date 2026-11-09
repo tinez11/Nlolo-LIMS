@@ -53,9 +53,12 @@ public class QuotationDocumentController {
     private final QuotationDocuments quotations;
     private final PartyApi partyApi;
     private final LenderQuotations lenderQuotations;
+    private final tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
 
     public QuotationDocumentController(QuotationDocuments quotations, PartyApi partyApi,
-                                       LenderQuotations lenderQuotations) {
+                                       LenderQuotations lenderQuotations,
+                                       tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
         this.quotations = quotations;
         this.partyApi = partyApi;
         this.lenderQuotations = lenderQuotations;
@@ -112,7 +115,7 @@ public class QuotationDocumentController {
             .header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"quotation-" + body.productVersionId().toString().substring(0, 8) + ".pdf\"")
             .contentType(MediaType.APPLICATION_PDF)
-            .body(DocumentPdf.render(quotations.quotation(body.toRequest(preparer(jwt)))));
+            .body(branded(quotations.quotation(body.toRequest(preparer(jwt)))));
     }
 
     /**
@@ -167,7 +170,7 @@ public class QuotationDocumentController {
             .header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"scheme-quotation-" + body.productVersionId().toString().substring(0, 8) + ".pdf\"")
             .contentType(MediaType.APPLICATION_PDF)
-            .body(DocumentPdf.render(quotations.schemeQuotation(body.toRequest())));
+            .body(branded(quotations.schemeQuotation(body.toRequest())));
     }
 
     /**
@@ -182,7 +185,7 @@ public class QuotationDocumentController {
             .header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"quotation-" + policyNumber + "-" + submissionId.toString().substring(0, 8) + ".pdf\"")
             .contentType(MediaType.APPLICATION_PDF)
-            .body(DocumentPdf.render(lenderQuotations.fileQuotation(policyNumber, submissionId)));
+            .body(branded(lenderQuotations.fileQuotation(policyNumber, submissionId)));
     }
 
     /** As {@code CustomerProductsController} answers it: a request this product cannot meet, in its own words. */
@@ -193,5 +196,12 @@ public class QuotationDocumentController {
         problem.setProperty("errorCode", "CUSTOMER_REQUEST_REFUSED");
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
+    }
+
+    /** In the company's letterhead, signed by whoever signs quotations today (2026-11-09, organisation settings). */
+    private byte[] branded(tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument document) {
+        return DocumentPdf.render(document, organisation.letterhead(), organisation.signatory(
+            tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.QUOTATION,
+            java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))).orElse(null));
     }
 }

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { FormField } from '@/components/FormField';
 import { BranchSelect } from './BranchSelect';
 
-vi.mock('@/store/refdataStore', () => ({
-  useReferenceCodes: () => [
+vi.mock('@/store/organisationStore', () => ({
+  useBranchCodes: () => [
     { code: 'ARU', label: 'Arusha', value: 'ARU' },
     { code: 'DSM', label: 'Dar es Salaam', value: 'DSM' },
   ],

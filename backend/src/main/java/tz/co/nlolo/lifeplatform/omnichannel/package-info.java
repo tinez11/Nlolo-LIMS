@@ -7,5 +7,5 @@
 // iam::api added 2026-11-06 for "your password was changed": a staff member's phone is on their staff record.
 @org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "billing::api", "claims::api", "party::api",
     "product::api", "accumulation::api", "unitlinked::api", "annuity::api", "underwriting::api", "communication::api",
-    "benefitpayout::api", "payment::api", "iam::api" })
+    "benefitpayout::api", "payment::api", "iam::api", "organisation::api" })
 package tz.co.nlolo.lifeplatform.omnichannel;
