@@ -43,7 +43,7 @@ class AccountingReportsTest {
 
     private static AccountBalanceView account(String code, String name, AccountType type, PostingDirection normal,
                                               String ownDebit, String ownCredit, String balance) {
-        return new AccountBalanceView(code, name, type, normal, null, (short) 1, true, AccountStatus.ACTIVE, "TZS",
+        return new AccountBalanceView(code, name, type, normal, parentOf(code), (short) 1, true, AccountStatus.ACTIVE, "TZS",
             new BigDecimal(ownDebit), new BigDecimal(ownCredit), new BigDecimal(ownDebit), new BigDecimal(ownCredit),
             new BigDecimal(balance));
     }
@@ -55,8 +55,18 @@ class AccountingReportsTest {
      */
     private static AccountBalanceView summary(String code, String name, AccountType type, PostingDirection normal,
                                               String rolled) {
-        return new AccountBalanceView(code, name, type, normal, null, (short) 1, false, AccountStatus.ACTIVE, "TZS",
+        return new AccountBalanceView(code, name, type, normal, parentOf(code), (short) 1, false, AccountStatus.ACTIVE, "TZS",
             BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(rolled), BigDecimal.ZERO, new BigDecimal(rolled));
+    }
+
+    /** As the chart nests them: 4110 under 4100 under 4000 -- the last non-zero digit made zero. */
+    private static String parentOf(String code) {
+        for (int i = code.length() - 1; i > 0; i--) {
+            if (code.charAt(i) != '0') {
+                return code.substring(0, i) + "0".repeat(code.length() - i);
+            }
+        }
+        return null;
     }
 
     private static TrialBalanceView ledger(String label, List<AccountBalanceView> accounts,
@@ -267,13 +277,128 @@ class AccountingReportsTest {
                 account("5100", "Claims incurred", AccountType.EXPENSE, PostingDirection.DR, "500.00", "0.00", "500.00")),
                 "500.00", "900.00"));
 
-        List<ReportSection> sections = new IncomeStatementReport(finaccounting).run(tenantId,
-            ReportFilter.months(YearMonth.of(2026, 1), YearMonth.of(2026, 9)), labels);
+        IncomeStatementReport report = new IncomeStatementReport(finaccounting);
+        ReportFilter span = ReportFilter.months(YearMonth.of(2026, 1), YearMonth.of(2026, 9));
+        List<ReportSection> sections = report.run(tenantId, span, labels);
 
-        assertEquals("900.00", sections.get(0).totals().get("amount"), "900, not 1800");
-        assertEquals(1, sections.get(0).rows().size());
+        assertEquals("900.00", sections.get(0).rows().get(0).get("current"), "900, not 1800");
         Map<String, String> result = sections.get(sections.size() - 1).rows().get(0);
         assertEquals("400.00", result.get("amount"), "900 income less 500 expenses, each counted once");
+
+        // The tree: revenue opens to 4100 alone, which opens to 4110 -- the summary never listed beside its leaf.
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts revenue = report.parts(tenantId, "revenue", span, 0, labels);
+        assertEquals(1, revenue.rows().size());
+        assertEquals("acct:4100", revenue.rows().get(0).get("_lineId"));
+        assertEquals("900.00 = 900.00", revenue.check());
+        assertTrue(revenue.balanced());
+    }
+
+    // ---- Income statement against a compared period (2026-11-09, the reports redesign) -----------------------------
+
+    private void twoMonths() {
+        Mockito.when(finaccounting.trialBalanceBetween("2026-10", "2026-10")).thenReturn(ledger("2026-10", List.of(
+            summary("4000", "Insurance revenue", AccountType.INCOME, PostingDirection.CR, "1240.50"),
+            account("4100", "Premium earned", AccountType.INCOME, PostingDirection.CR, "0.00", "1102.00", "1102.00"),
+            account("4200", "Fees", AccountType.INCOME, PostingDirection.CR, "0.00", "138.50", "138.50"),
+            summary("5000", "Service expenses", AccountType.EXPENSE, PostingDirection.DR, "720.20"),
+            account("5100", "Claims", AccountType.EXPENSE, PostingDirection.DR, "720.20", "0.00", "720.20")),
+            "720.20", "1240.50"));
+        Mockito.when(finaccounting.trialBalanceBetween("2026-09", "2026-09")).thenReturn(ledger("2026-09", List.of(
+            summary("4000", "Insurance revenue", AccountType.INCOME, PostingDirection.CR, "1168.10"),
+            account("4100", "Premium earned", AccountType.INCOME, PostingDirection.CR, "0.00", "1168.10", "1168.10"),
+            summary("5000", "Service expenses", AccountType.EXPENSE, PostingDirection.DR, "667.80"),
+            account("5100", "Claims", AccountType.EXPENSE, PostingDirection.DR, "667.80", "0.00", "667.80")),
+            "667.80", "1168.10"));
+    }
+
+    private static ReportFilter october() {
+        return ReportFilter.months(YearMonth.of(2026, 10), YearMonth.of(2026, 10))
+            .withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD);
+    }
+
+    @Test
+    void incomeStatementComparesWithThePriorPeriodLineByLine() {
+        twoMonths();
+
+        ReportBody body = new IncomeStatementReport(finaccounting).body(tenantId, october(), labels);
+
+        Map<String, String> revenue = body.sections().get(0).rows().get(0);
+        assertEquals("1240.50", revenue.get("current"));
+        assertEquals("1168.10", revenue.get("prior"));
+        assertEquals("72.40", revenue.get("change"));
+        assertEquals("6.2", revenue.get("changePercent"));
+        assertEquals("UP", revenue.get("_goodWhen"));
+        Map<String, String> serviceResult = body.sections().get(0).rows().get(2);
+        assertEquals("SUBTOTAL", serviceResult.get("_kind"));
+        assertEquals("520.30", serviceResult.get("current"));
+        assertEquals("compared with September 2026", body.comparisonLabel());
+        assertEquals("Result", body.sections().get(1).title(), "the dashboard reads it");
+    }
+
+    @Test
+    void incomeStatementLeadsWithRevenueResultAndProfitAndBridgesTheProfit() {
+        twoMonths();
+
+        ReportBody body = new IncomeStatementReport(finaccounting).body(tenantId, october(), labels);
+
+        assertEquals(List.of("revenue", "service-result", "profit"),
+            body.figures().stream().map(tz.co.nlolo.lifeplatform.reporting.api.ReportFigure::key).toList());
+        assertEquals("520.30", body.figures().get(2).value());
+        assertEquals("500.30", body.figures().get(2).prior());
+        List<tz.co.nlolo.lifeplatform.reporting.api.ReportChart.Bar> bars = body.chart().bars();
+        assertEquals("START", bars.get(0).kind());
+        assertEquals("500.30", bars.get(0).value());
+        assertEquals("UP", bars.get(1).kind(), "revenue rose 72.40");
+        assertEquals("72.40", bars.get(1).value());
+        assertEquals("DOWN", bars.get(2).kind(), "expenses rose 52.40, lowering the profit");
+        assertEquals("END", bars.get(bars.size() - 1).kind());
+        assertEquals("520.30", bars.get(bars.size() - 1).value());
+    }
+
+    @Test
+    void comparingWithNothingLeavesOutThePriorColumnsAndTheChart() {
+        twoMonths();
+
+        ReportBody body = new IncomeStatementReport(finaccounting).body(tenantId,
+            ReportFilter.months(YearMonth.of(2026, 10), YearMonth.of(2026, 10)), labels);
+
+        assertTrue(body.sections().get(0).columns().stream().noneMatch(c -> c.key().equals("prior")));
+        assertEquals(null, body.chart());
+    }
+
+    @Test
+    void aStatementLineOpensToItsAccountsAndStatesTheirSum() {
+        twoMonths();
+        IncomeStatementReport report = new IncomeStatementReport(finaccounting);
+
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts revenue = report.parts(tenantId, "revenue", october(), 0, labels);
+        assertEquals(2, revenue.rows().size());
+        assertEquals("1,102.00 + 138.50 = 1,240.50", revenue.check());
+        assertTrue(revenue.balanced());
+
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts result =
+            report.parts(tenantId, "service-result", october(), 0, labels);
+        assertEquals("1,240.50 − 720.20 = 520.30", result.check());
+    }
+
+    @Test
+    void aLeafAccountOpensToItsPostingsAndTheirTotal() {
+        twoMonths();
+        Mockito.when(finaccounting.accountPostings("4200", "2026-10", "2026-10", 0, 20)).thenReturn(
+            new tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView("4200", "2026-10", "2026-10",
+                BigDecimal.ZERO, new BigDecimal("138.50"), 1, 0, 20, List.of(
+                    new tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView.Posting(UUID.randomUUID(),
+                        UUID.randomUUID(), "4200", "2026-10", java.time.Instant.now(), PostingDirection.CR,
+                        new BigDecimal("138.50"), "TZS", "POL-1", "billing.PremiumCollected", "RC-000214"))));
+
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts fees =
+            new IncomeStatementReport(finaccounting).parts(tenantId, "acct:4200", october(), 0, labels);
+
+        assertEquals(1, fees.total());
+        assertTrue(fees.rows().get(0).get("line").contains("Premium collected · RC-000214 · POL-1"));
+        assertEquals("138.50", fees.rows().get(0).get("current"));
+        assertEquals("1 posting in 2026-10 = 138.50", fees.check());
+        assertTrue(fees.balanced());
     }
 
     /** A trial balance lists the accounts that were posted TO; a summary account carries none of its own. */
