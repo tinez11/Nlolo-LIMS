@@ -357,6 +357,89 @@ public class PolicyDocuments {
             columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))), notes, false);
     }
 
+    // ---- payout advices (2026-11-09, receipts step 4: the user could not find a receipt for money paid out) ----
+
+    /** Every payment made on the policy that reached its payee, newest first, each under its advice number. */
+    @Transactional(readOnly = true)
+    public List<tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine> payoutAdvices(String policyNumber) {
+        return paymentApi.payoutsForPolicy(policyNumber).stream().map(PolicyDocuments::adviceLine).toList();
+    }
+
+    /**
+     * One payout advice, to keep or hand over: what was paid, to whom, how, on which day, and the payment's own
+     * reference -- what a customer quotes to their bank, and what a claim file keeps as proof of settlement.
+     */
+    @Transactional(readOnly = true)
+    public CustomerDocument payoutAdviceDocument(String policyNumber, UUID disbursementId) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine a = payoutAdvices(policyNumber).stream()
+            .filter(x -> x.disbursementId().equals(disbursementId)).findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Policy " + policyNumber + " has no payout " + disbursementId));
+        List<Column> columns = List.of(new Column("Paid for", Kind.TEXT, 4.0f),
+            new Column("Amount (" + a.currency() + ")", Kind.MONEY, 1.4f));
+        List<List<Object>> rows = List.of(List.of(a.what(), a.amount()));
+        List<Field> facts = new ArrayList<>(List.of(
+            new Field("Advice number", a.adviceNumber()),
+            new Field("Paid to", a.paidTo() == null ? "-" : a.paidTo()),
+            new Field("Paid on", DMY.format(a.paidOn())),
+            new Field("How", a.method())));
+        if (a.reference() != null) facts.add(new Field("Payment reference", a.reference()));
+        return new CustomerDocument(ISSUER, "Payout advice " + a.adviceNumber(), header(policy, productName(policy), facts),
+            columns, rows, List.of(new Field("Amount paid", money(a.amount(), a.currency()))),
+            List.of("This advice confirms that the amount above was paid. Quote the advice number in any question about"
+                + " this payment."), false);
+    }
+
+    private static tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine adviceLine(
+            tz.co.nlolo.lifeplatform.payment.api.DisbursementStatusView d) {
+        java.time.Instant when = d.executedAt() != null ? d.executedAt() : d.createdAt();
+        LocalDate paidOn = when.atZone(CIVIL_ZONE).toLocalDate();
+        return new tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine(d.disbursementId(),
+            adviceNumber(d.disbursementId(), paidOn), paidOn, d.amount(), d.currency(), payoutWords(d.purpose()),
+            paidTo(d), payoutMethod(d.method()), d.gatewayReference());
+    }
+
+    /**
+     * PA-2026-3F2A91BC: the year it was paid and the first eight characters of the payment's own id, so the same
+     * payment always carries the same number and a support call can find it from either.
+     */
+    static String adviceNumber(UUID disbursementId, LocalDate paidOn) {
+        return "PA-" + paidOn.getYear() + "-" + disbursementId.toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** What a payout was for, in a customer's words. */
+    static String payoutWords(String purpose) {
+        return switch (purpose == null ? "" : purpose) {
+            case "CLAIM_SETTLEMENT" -> "Claim settlement";
+            case "SURRENDER_PAYOUT" -> "Surrender value";
+            case "WITHDRAWAL_PAYOUT", "BALANCE_WITHDRAWAL" -> "Withdrawal";
+            case "ANNUITY_PAYOUT" -> "Annuity income";
+            case "SURVIVAL_BENEFIT_PAYOUT" -> "Survival benefit";
+            case "MATURITY_PAYOUT" -> "Maturity value";
+            case "FREE_LOOK_REFUND" -> "Premium refunded in the free-look period";
+            default -> {
+                String words = purpose == null ? "Payment" : purpose.replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
+                yield Character.toUpperCase(words.charAt(0)) + words.substring(1);
+            }
+        };
+    }
+
+    private static String paidTo(tz.co.nlolo.lifeplatform.payment.api.DisbursementStatusView d) {
+        if (d.payeeAccountNumber() != null && !d.payeeAccountNumber().isBlank()) {
+            return (d.payeeAccountName() == null ? "" : d.payeeAccountName() + ", ")
+                + (d.payeeBank() == null ? "bank" : d.payeeBank()) + " account " + d.payeeAccountNumber();
+        }
+        return d.payeeRef();
+    }
+
+    private static String payoutMethod(String method) {
+        return switch (method == null ? "" : method) {
+            case "EFT" -> "Bank transfer";
+            case "CHEQUE" -> "Cheque";
+            default -> "Mobile money";
+        };
+    }
+
     /** What money not spent on a premium on arrival was for, in the words a customer reads. */
     private static String otherwise(String purpose) {
         return switch (purpose) {

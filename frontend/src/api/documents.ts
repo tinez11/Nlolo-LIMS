@@ -103,3 +103,15 @@ export function documentFileName(kind: 'payment-schedule' | 'savings-statement',
                                  format: DocumentFormat, period?: { from: string; to: string }): string {
   return `${kind}-${policyNumber}${period ? `-${period.from}-to-${period.to}` : ''}.${format}`;
 }
+
+export type PayoutAdviceLine = components['schemas']['PayoutAdviceLine'];
+
+/** Every payment made on the policy that reached its payee, newest first (2026-11-09, the payout advice). */
+export function listPayoutAdvices(policyNumber: string): Promise<PayoutAdviceLine[]> {
+  return get<PayoutAdviceLine[]>(`/policies/${enc(policyNumber)}/payout-advices`);
+}
+
+export function downloadPayoutAdvice(policyNumber: string, disbursementId: string): Promise<Blob> {
+  return get<Blob>(`/policies/${enc(policyNumber)}/payout-advices/${enc(disbursementId)}/pdf`,
+    { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}

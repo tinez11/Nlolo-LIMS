@@ -25,8 +25,8 @@ class BillingApprovalSources {
                 Page<FieldReceiptView> overdue = billing.searchFieldReceipts("RECONCILIATION_OVERDUE", page);
                 Page<FieldReceiptView> pending = billing.searchFieldReceipts("PENDING_RECONCILIATION", page);
                 List<ApprovalSource.Item> rows = new ArrayList<>();
-                overdue.forEach(r -> rows.add(item(r, "Cash collected by an agent, past its matching deadline")));
-                pending.forEach(r -> rows.add(item(r, "Cash collected by an agent")));
+                overdue.forEach(r -> rows.add(item(r, "Past its matching deadline: no deposit matches it yet")));
+                pending.forEach(r -> rows.add(item(r, null)));
                 return new ApprovalSource.Pending(overdue.getTotalElements() + pending.getTotalElements(),
                     rows.stream().limit(limit).toList());
             });
@@ -64,17 +64,29 @@ class BillingApprovalSources {
             limit -> ApprovalSource.Pending.of(reversals.waiting().stream()
                 // The deposit's id, not the reversal's: the deposit's own page is where the reversal is confirmed (step 5).
                 .map(r -> new ApprovalSource.Item(r.getPaymentId().toString(), r.getPolicyNumber(),
-                    "Reverse a deposit: " + r.getReason(), r.getAmount(), r.getCurrency(), r.getRequestedBy(),
-                    r.getRequestedAt())).toList(), limit));
+                    "Reverse a deposit", r.getAmount(), r.getCurrency(), r.getRequestedBy(),
+                    r.getRequestedAt(), reasonLine(r.getReason()))).toList(), limit));
     }
 
     private static ApprovalSource.Item withdrawalItem(BalanceWithdrawal w, String what) {
+        String payee = w.payeeLine();
+        String reason = reasonLine(w.getReason());
+        String detail = payee == null ? reason : "To " + payee + (reason == null ? "" : " · " + reason);
         return new ApprovalSource.Item(w.getWithdrawalId().toString(), w.getPolicyNumber(), what, w.getAmount(),
-            w.getCurrency(), "system".equals(w.getRequestedBy()) ? null : w.getRequestedBy(), w.getRequestedAt());
+            w.getCurrency(), "system".equals(w.getRequestedBy()) ? null : w.getRequestedBy(), w.getRequestedAt(), detail);
     }
 
-    private static ApprovalSource.Item item(FieldReceiptView r, String what) {
-        return new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(), what, r.amount(), r.currency(), null,
-            r.capturedAtServer());
+    /**
+     * The reason the asker typed, quoted as theirs (2026-11-09: "Reverse a deposit: nothing" read as the platform's own
+     * sentence). Null when nothing was given.
+     */
+    static String reasonLine(String reason) {
+        return reason == null || reason.isBlank() ? null : "Reason given: “" + reason.trim() + "”";
+    }
+
+    /** Short on the row (2026-11-09, the user: "many info there"); the deadline, when passed, is the drawer's second line. */
+    private static ApprovalSource.Item item(FieldReceiptView r, String detail) {
+        return new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(), "Agent cash", r.amount(), r.currency(), null,
+            r.capturedAtServer(), detail);
     }
 }

@@ -31,11 +31,20 @@ public class Approvals {
     private final List<ApprovalSource> sources;
     private final CurrentAccess access;
     private final AccessApi staff;
+    private final List<tz.co.nlolo.lifeplatform.approvals.api.PolicyHolders> holders;
 
+    /** Without policyholder names: a module test, or a deployment with no policy module. */
     public Approvals(List<ApprovalSource> sources, CurrentAccess access, AccessApi staff) {
+        this(sources, access, staff, List.of());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Approvals(List<ApprovalSource> sources, CurrentAccess access, AccessApi staff,
+                     List<tz.co.nlolo.lifeplatform.approvals.api.PolicyHolders> holders) {
         this.sources = sources;
         this.access = access;
         this.staff = staff;
+        this.holders = holders;
     }
 
     /**
@@ -75,6 +84,14 @@ public class Approvals {
             .filter(Objects::nonNull)
             .toList());
 
+        Map<String, String> clients = clients(reads.stream()
+            .filter(r -> r.pending() != null)
+            .flatMap(r -> r.pending().oldest().stream())
+            .map(ApprovalSource.Item::policyNumber)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList());
+
         List<ApprovalsView.Group> groups = new ArrayList<>();
         long actionable = 0;
         for (Read read : reads) {
@@ -88,7 +105,8 @@ public class Approvals {
             List<ApprovalsView.Row> rows = read.pending().oldest().stream()
                 .map(i -> new ApprovalsView.Row(i.reference(), i.policyNumber(), i.summary(),
                     ApprovalsView.Money.of(i.amount(), i.currency()), i.requestedBy(), i.requestedBy() == null ? null : names.get(i.requestedBy()), i.requestedAt(),
-                    source.twoPeople() && !alone && viewerSubject != null && viewerSubject.equals(i.requestedBy())))
+                    source.twoPeople() && !alone && viewerSubject != null && viewerSubject.equals(i.requestedBy()),
+                    i.detail(), i.policyNumber() == null ? null : clients.get(i.policyNumber())))
                 .toList();
             // Own requests are counted from the rows in hand: a queue longer than one page could hide more of the
             // viewer's own beyond it, so the actionable figure errs high, never low.
@@ -138,6 +156,20 @@ public class Approvals {
             log.warn("approvals could not name who asked", e);
             return Map.of();
         }
+    }
+
+    /** Whose policy each row is on (2026-11-09). A courtesy like the askers' names: without it the page still loads. */
+    private Map<String, String> clients(List<String> policyNumbers) {
+        if (policyNumbers.isEmpty()) return Map.of();
+        Map<String, String> out = new java.util.HashMap<>();
+        for (tz.co.nlolo.lifeplatform.approvals.api.PolicyHolders h : holders) {
+            try {
+                out.putAll(h.names(policyNumbers));
+            } catch (RuntimeException e) {
+                log.warn("approvals could not name the policyholders", e);
+            }
+        }
+        return out;
     }
 
     private record Read(ApprovalSource source, ApprovalSource.Pending pending) {}

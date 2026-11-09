@@ -76,7 +76,16 @@ public interface ApprovalSource {
      * @param amount      the money it moves, or null where there is none (a price, an election)
      * @param requestedBy the asker's subject, or null for a queue nobody asked for
      * @param requestedAt when it started waiting
+     * @param detail      a second line a signer needs before opening it (2026-11-09, the user: "doesn't show more
+     *                    details"): who is paid and how, the reason given -- or null
      */
     record Item(String reference, String policyNumber, String summary, BigDecimal amount, String currency,
-                String requestedBy, Instant requestedAt) {}
+                String requestedBy, Instant requestedAt, String detail) {
+
+        /** A row with no second line. */
+        public Item(String reference, String policyNumber, String summary, BigDecimal amount, String currency,
+                    String requestedBy, Instant requestedAt) {
+            this(reference, policyNumber, summary, amount, currency, requestedBy, requestedAt, null);
+        }
+    }
 }

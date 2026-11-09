@@ -378,6 +378,45 @@ paths:
           content:
             application/pdf: { schema: { type: string, format: binary } }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/payout-advices:
+    get:
+      summary: Every payment made on the policy that reached its payee, newest first (2026-11-09, the payout advice)
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The payments
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PayoutAdviceLine' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/payout-advices/{disbursementId}/pdf:
+    get:
+      summary: One payout advice, as a PDF
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: disbursementId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /parties/{partyId}/portal-access:
     parameters:
       - name: partyId
@@ -1170,6 +1209,21 @@ components:
         coversTo: { type: [string, "null"], format: date, description: "Last day of cover the premiums it paid buy" }
         receiptNumber: { type: string, description: "RC-year-sequence, as printed on the receipt and sent by SMS" }
         status: { type: string, enum: [CONFIRMED, REVERSED] }
+    PayoutAdviceLine:
+      type: object
+      additionalProperties: false
+      description: One payment the company made on the policy -- a premium receipt's counterpart for money going out.
+      required: [disbursementId, adviceNumber, paidOn, amount, currency, what, paidTo, method, reference]
+      properties:
+        disbursementId: { type: string, format: uuid }
+        adviceNumber: { type: string, description: "PA-year-eight characters of the payment's id, as printed" }
+        paidOn: { type: string, format: date }
+        amount: { type: number }
+        currency: { type: string }
+        what: { type: string, description: "What it was, in a customer's words: Claim settlement, Surrender value" }
+        paidTo: { type: [string, "null"] }
+        method: { type: string, enum: [Mobile money, Bank transfer, Cheque] }
+        reference: { type: [string, "null"], description: "The payment rail's own reference" }
     CustomerAmount:
       type: object
       additionalProperties: false

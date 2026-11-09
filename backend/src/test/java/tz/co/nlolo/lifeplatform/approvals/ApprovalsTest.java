@@ -43,6 +43,22 @@ class ApprovalsTest {
         };
     }
 
+    /** 2026-11-09: whose policy a row is on, and the second line its module gives -- and a failed name read costs nothing. */
+    @Test
+    void aRowCarriesThePolicyholdersNameAndItsSecondLine() {
+        ApprovalSource.Item withDetail = new ApprovalSource.Item("w1", "POL-1", "Withdrawal", new BigDecimal("1500"), null,
+            "alice", T, "Reason given: “school fees”");
+        tz.co.nlolo.lifeplatform.approvals.api.PolicyHolders holders = numbers -> Map.of("POL-1", "Zawadi Mussa");
+        tz.co.nlolo.lifeplatform.approvals.api.PolicyHolders broken = numbers -> { throw new IllegalStateException("down"); };
+        Approvals approvals = new Approvals(List.of(source("account-withdrawal", "accounts.approve", true, withDetail)),
+            holding(Permission.ACCOUNTS_APPROVE), naming(Map.of()), List.of(broken, holders));
+
+        ApprovalsView.Row row = approvals.forViewer("carol").groups().get(0).rows().get(0);
+
+        assertThat(row.clientName()).isEqualTo("Zawadi Mussa");
+        assertThat(row.detail()).isEqualTo("Reason given: “school fees”");
+    }
+
     @Test
     void aKindIsShownOnlyToWhoeverHoldsItsPermission() {
         Approvals approvals = new Approvals(List.of(

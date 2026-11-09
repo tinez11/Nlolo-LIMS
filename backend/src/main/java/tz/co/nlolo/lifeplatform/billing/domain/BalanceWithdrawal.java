@@ -162,6 +162,15 @@ public class BalanceWithdrawal {
     public String getCurrency() { return currency; }
     public String getStatus() { return status; }
     public String getReason() { return reason; }
+    /** Who is paid and how, in one line for the approvals page (2026-11-09); null before a payee is named. */
+    public String payeeLine() {
+        if (payeeAccountNumber != null && !payeeAccountNumber.isBlank()) {
+            return (payeeAccountName == null ? "" : payeeAccountName + ", ") + (payeeBank == null ? "bank" : payeeBank)
+                + " account " + payeeAccountNumber;
+        }
+        if (payeeRef != null && !payeeRef.isBlank()) return (method == null ? "" : method.replace('_', ' ').toLowerCase() + " ") + payeeRef;
+        return null;
+    }
     public String getRequestedBy() { return requestedBy; }
     public Instant getRequestedAt() { return requestedAt; }
     public String getApprovedBy() { return approvedBy; }

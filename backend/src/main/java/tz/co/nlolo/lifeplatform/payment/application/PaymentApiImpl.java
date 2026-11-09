@@ -276,6 +276,13 @@ public class PaymentApiImpl implements PaymentApi {
 
     @Override
     @Transactional(readOnly = true)
+    public List<DisbursementStatusView> payoutsForPolicy(String policyNumber) {
+        return disbursementRepository
+            .findByTenantIdAndPolicyNumberAndStatusOrderByCreatedAtDesc(TenantContext.get(), policyNumber, "COMPLETED")
+            .stream().map(PaymentApiImpl::toView).toList();
+    }
+
+    @Override
     public List<DisbursementStatusView> listDisbursementsFor(String purpose, String sourceRef) {
         return disbursementRepository
             .findByTenantIdAndPurposeAndSourceRefOrderByCreatedAtDesc(TenantContext.get(), purpose, sourceRef)
