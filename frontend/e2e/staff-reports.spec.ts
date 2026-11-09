@@ -100,18 +100,24 @@ test.describe('staff reports', () => {
   test('an income statement runs across a span of periods and names the result', async ({ page }) => {
     await page.goto('/staff/reports');
     await page.getByRole('main').getByRole('link', { name: 'Income statement', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Income statement', exact: true })).toBeVisible();
+    // The page title; the statement's own table carries the same name one level down (2026-11-09).
+    await expect(page.getByRole('heading', { level: 1, name: 'Income statement', exact: true })).toBeVisible();
 
     await page.getByLabel('First period').fill('2026-01');
     await page.getByLabel('Last period').fill('2026-12');
     await page.getByRole('button', { name: 'Run report' }).click();
 
-    // exact: two of the chart's own class names end in "result" -- "Net result from reinsurance contracts
-    // held" and "Finance and investment result" -- so an inexact name matches three headings.
     await expect(page.getByRole('heading', { name: 'Result', exact: true })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/Profit for the period|Loss for the period/)).toBeVisible();
+    await expect(page.getByRole('cell', { name: /Profit for the period|Loss for the period/ }).first()).toBeVisible();
     // A balance-sheet class never appears on a profit and loss.
     await expect(page.getByRole('heading', { name: 'Assets', exact: true })).toHaveCount(0);
+
+    // 2026-11-09, the user: the computation "until it reaches the figure summed up". A line opens to its accounts
+    // and states the server's own sum beneath them.
+    await expect(page.getByLabel('Headline figures')).toContainText('Profit for the period');
+    await page.getByRole('button', { name: 'Show what makes up Insurance revenue' }).click();
+    await expect(page.getByText(/^(✓|Does not add up:) .* = /).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^Does not add up/)).toHaveCount(0);
   });
 
   test('a general ledger asks for an account instead of failing without one', async ({ page }) => {
@@ -138,7 +144,8 @@ test.describe('staff reports', () => {
   test('runs a report from the catalogue and downloads it', async ({ page }) => {
     await page.goto('/staff/reports');
     await expect(page.getByRole('heading', { name: 'Reports', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Management' })).toBeVisible();
+    // The areas (2026-11-09): what the old catalogue called Management is Policies and Clients.
+    await expect(page.getByRole('heading', { name: 'Policies', exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Policies in force' }).click();
     // exact: the section heading "Policies in force on <date>" would otherwise match too.
