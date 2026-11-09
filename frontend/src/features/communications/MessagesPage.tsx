@@ -154,7 +154,7 @@ function Summary({ summary, onShow }: { summary: DispatchSummary; onShow: (statu
         <button key={t.status} type="button" onClick={() => onShow(t.status)}
           className="rounded-xl border border-border bg-surface p-4 text-left shadow-card hover:bg-hover">
           <span className="block text-xs text-label">{t.label}</span>
-          <span className={`text-2xl font-semibold tabular-nums ${t.tone}`}>{total(t.status).toLocaleString('en-US')}</span>
+          <span className={`text-display font-semibold tabular-nums ${t.tone}`}>{total(t.status).toLocaleString('en-US')}</span>
         </button>
       ))}
       <div className="rounded-xl border border-border bg-surface p-4 shadow-card">

@@ -1,3 +1,4 @@
+import { Tip } from '@/components/ui/tooltip';
 import type { PolicyView } from '@/api/types';
 import { formatMoney } from '@/lib/money';
 import { isDepositAccount } from './policyValue';
@@ -9,9 +10,11 @@ import { isDepositAccount } from './policyValue';
 export function CoverAmount({ policy }: { policy: Pick<PolicyView, 'portfolioCode' | 'sumAssured'> }) {
   if (isDepositAccount(policy)) {
     return (
-      <span className="text-muted-foreground" title="A savings account: no cover above its value">
-        —<span className="sr-only">No cover above the account value</span>
-      </span>
+      <Tip content="A savings account: no cover above its value">
+        <span className="text-muted-foreground">
+          —<span className="sr-only">No cover above the account value</span>
+        </span>
+      </Tip>
     );
   }
   return <>{formatMoney(policy.sumAssured)}</>;

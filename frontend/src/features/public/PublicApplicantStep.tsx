@@ -4,6 +4,7 @@ import { checkPublicCode, getPublicConsent, sendPublicCode, type PublicConsentWo
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/features/customer/language';
 import { useWords } from '@/features/customer/words';
@@ -102,7 +103,7 @@ export function PublicApplicantStep({ visitToken, initialPhone, value, onChange 
             <>
               <p role="status" className="text-sm">{w.codeSent(sentTo)}</p>
               <FormField required label={w.code}>
-                <Input className="h-12 text-base tracking-[0.3em]" inputMode="numeric" autoComplete="one-time-code"
+                <Input className="h-12 text-base" inputMode="numeric" autoComplete="one-time-code"
                   maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
               </FormField>
               <div className="flex flex-wrap gap-2">
@@ -160,7 +161,7 @@ export function PublicDeclaration({ agreed, onAgree, onWording }: {
         {points.map((p) => <li key={p}>{p}</li>)}
       </ul>
       <label className="flex items-start gap-3 rounded-xl border border-border-strong p-3 font-medium">
-        <input type="checkbox" className="mt-1 size-5" checked={agreed} onChange={(e) => onAgree(e.target.checked)} />
+        <Checkbox className="mt-1" checked={agreed} onChange={(e) => onAgree(e.target.checked)} />
         <span>{w.agree}</span>
       </label>
     </section>

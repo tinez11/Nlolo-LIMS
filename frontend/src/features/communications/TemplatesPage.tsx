@@ -119,7 +119,7 @@ export function TemplatesPage() {
             return (
               <section key={t} aria-label={t} className="space-y-3">
                 <div className="flex items-baseline justify-between gap-3 border-b border-border pb-1">
-                  <h2 className="text-lg font-semibold">{t}</h2>
+                  <h2 className="font-display text-title font-semibold text-heading">{t}</h2>
                   <span className="text-xs text-muted-foreground">{total.toLocaleString('en-US')} sent in the last 30 days</span>
                 </div>
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -186,7 +186,7 @@ function Variant({ template, canEdit }: { template: NotificationTemplateView; ca
   return (
     <div className="rounded-lg border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-muted px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-label">{sms ? 'SMS' : 'Email'}</span>
+        <span className="text-eyebrow font-medium uppercase text-label">{sms ? 'SMS' : 'Email'}</span>
         {!editing && canEdit && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit</Button>}
       </div>
       {editing
