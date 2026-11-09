@@ -39,7 +39,7 @@ test.describe('staff reports', () => {
     const page = await context.newPage();
     try {
       await page.goto('/staff/reports');
-      await expect(page.getByRole('link', { name: 'Policies in force' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('link', { name: 'Policies in force', exact: true })).toBeVisible({ timeout: 15_000 });
       await expect(page.getByRole('button', { name: 'Rebuild reporting data' })).toHaveCount(0);
     } finally {
       await context.close();
@@ -49,9 +49,9 @@ test.describe('staff reports', () => {
   /** 2026-11-09, batch 2: a claims variance report, from the Claims area, compared with the period before. */
   test('claims incurred compares with the period before and opens to its claims', async ({ page }) => {
     await page.goto('/staff/reports');
-    const list = page.getByRole('navigation', { name: 'Reports' });
-    await list.getByRole('button', { name: /Claims/ }).click();
-    await list.getByRole('link', { name: 'Claims incurred variance' }).click();
+    // The index lists every area open (2026-11-09); the collapsed list lives behind "All reports" on a report.
+    await expect(page.getByRole('heading', { name: 'Claims', exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('main').getByRole('link', { name: 'Claims incurred variance', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Claims incurred variance' })).toBeVisible();
     await page.getByLabel('First period').fill('2026-01');
     await page.getByLabel('Last period').fill('2026-12');
@@ -173,7 +173,7 @@ test.describe('staff reports', () => {
     // The areas (2026-11-09): what the old catalogue called Management is Policies and Clients.
     await expect(page.getByRole('heading', { name: 'Policies', exact: true })).toBeVisible();
 
-    await page.getByRole('link', { name: 'Policies in force' }).click();
+    await page.getByRole('main').getByRole('link', { name: 'Policies in force', exact: true }).click();
     // exact: the section heading "Policies in force on <date>" would otherwise match too.
     await expect(page.getByRole('heading', { name: 'Policies in force', exact: true })).toBeVisible();
     await page.getByLabel('As of').fill('2026-10-01');

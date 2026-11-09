@@ -14,6 +14,9 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
+import tz.co.nlolo.lifeplatform.reporting.api.ColumnType;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportFigure;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportParameterException;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
@@ -85,6 +88,11 @@ class AccountingReportsTest {
             account("4100", "Insurance revenue", AccountType.INCOME, PostingDirection.CR, "0.00", "130.00", "130.00"),
             account("1200", "Never used", AccountType.ASSET, PostingDirection.DR, "0.00", "0.00", "0.00")),
             "130.00", "130.00"));
+        // The month itself (2026-11-09): debits and credits are the month's.
+        Mockito.when(finaccounting.trialBalance("2026-09")).thenReturn(ledger("2026-09", List.of(
+            account("1100", "Premium receivables", AccountType.ASSET, PostingDirection.DR, "130.00", "0.00", "130.00"),
+            account("4100", "Insurance revenue", AccountType.INCOME, PostingDirection.CR, "0.00", "130.00", "130.00")),
+            "130.00", "130.00"));
 
         List<ReportSection> sections = new TrialBalanceReport(finaccounting)
             .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels);
@@ -110,16 +118,60 @@ class AccountingReportsTest {
         assertEquals("1.00", sections.get(1).rows().get(0).get("difference"));
     }
 
-    /** A trial balance is the position AT a date, not one month's movement in isolation. */
+    /** The page heads with the month's debits and credits and the ledger's difference, each the table's own. */
     @Test
-    void trialBalanceReadsCumulativelyThroughTheMonth() {
-        Mockito.when(finaccounting.trialBalanceThrough("2026-09"))
-            .thenReturn(ledger("through 2026-09", List.of(), "0.00", "0.00"));
+    void trialBalanceHeadsThePageWithTheMonthsDebitsCreditsAndTheDifference() {
+        Mockito.when(finaccounting.trialBalanceThrough("2026-09")).thenReturn(ledger("through 2026-09", List.of(
+            account("1100", "Premium receivables", AccountType.ASSET, PostingDirection.DR, "130.00", "0.00", "130.00")),
+            "130.00", "129.00"));
+        Mockito.when(finaccounting.trialBalance("2026-09")).thenReturn(ledger("2026-09", List.of(
+            account("1100", "Premium receivables", AccountType.ASSET, PostingDirection.DR, "30.00", "0.00", "30.00")),
+            "30.00", "29.00"));
 
-        new TrialBalanceReport(finaccounting).run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels);
+        List<ReportFigure> figures = new TrialBalanceReport(finaccounting)
+            .body(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels).figures();
 
+        assertEquals(List.of("30.00", "29.00", "1.00"), figures.stream().map(ReportFigure::value).toList());
+        assertTrue(figures.stream().allMatch(ReportFigure::lead));
+    }
+
+    /** A report with no figures of its own heads the page with its first total row, never a new sum. */
+    @Test
+    void aReportWithoutFiguresOfItsOwnIsHeadedByItsFirstTotalRow() {
+        List<ReportColumn> columns = List.of(new ReportColumn("product", "Product", ColumnType.TEXT),
+            new ReportColumn("policies", "Policies", ColumnType.COUNT),
+            new ReportColumn("currency", "Currency", ColumnType.TEXT),
+            new ReportColumn("premium", "Annual premium", ColumnType.MONEY),
+            new ReportColumn("rate", "Take-up", ColumnType.PERCENT));
+        Map<String, String> totals = Map.of("product", "Total", "policies", "12", "currency", "TZS",
+            "premium", "4500.00", "rate", "");
+        List<ReportFigure> figures = Sections.figuresFromTotals(List.of(
+            new ReportSection("Empty first", columns, List.of(), Map.of()),
+            new ReportSection("Products", columns, List.of(), totals)));
+
+        assertEquals(List.of("policies", "premium"), figures.stream().map(ReportFigure::key).toList());
+        assertEquals(List.of("COUNT", "MONEY"), figures.stream().map(ReportFigure::unit).toList());
+        assertTrue(figures.get(0).lead());
+    }
+
+    /**
+     * The closing balance is the position AT the month's end, never one month's movement in isolation. Since
+     * 2026-11-09 the month's own ledger is read too -- but only for the debits and credits columns.
+     */
+    @Test
+    void trialBalanceClosesOnTheCumulativePositionAndReadsTheMonthOnlyForItsDebitsAndCredits() {
+        Mockito.when(finaccounting.trialBalanceThrough("2026-09")).thenReturn(ledger("through 2026-09", List.of(
+            account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "137.00", "0.00", "137.00")),
+            "137.00", "137.00"));
+        Mockito.when(finaccounting.trialBalance("2026-09")).thenReturn(ledger("2026-09", List.of(
+            account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "7.00", "0.00", "7.00")), "7.00", "0.00"));
+
+        Map<String, String> row = new TrialBalanceReport(finaccounting)
+            .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels).get(0).rows().get(0);
+
+        assertEquals("137.00", row.get("balance"), "inception to the month's end");
+        assertEquals("7.00", row.get("debit"), "the month alone");
         Mockito.verify(finaccounting).trialBalanceThrough("2026-09");
-        Mockito.verify(finaccounting, Mockito.never()).trialBalance(Mockito.anyString());
     }
 
     // ---- General ledger ----------------------------------------------------------------------
@@ -201,12 +253,15 @@ class AccountingReportsTest {
         Mockito.when(finaccounting.trialBalanceThrough("2026-08")).thenReturn(ledger("through 2026-08", List.of(
             account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "130.00", "0.00", "130.00")),
             "130.00", "130.00"));
+        Mockito.when(finaccounting.trialBalance("2026-09")).thenReturn(ledger("2026-09", List.of(
+            account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "7.00", "0.00", "7.00")), "7.00", "0.00"));
 
         Map<String, String> wallets = new TrialBalanceReport(finaccounting)
             .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels).get(0).rows().get(0);
 
         assertEquals("130.00", wallets.get("opening"));
-        assertEquals("7.00", wallets.get("movement"));
+        assertEquals("7.00", wallets.get("debit"), "the month's debits, not inception to date");
+        assertEquals("1140 Wallets", wallets.get("account"));
         assertEquals("137.00", wallets.get("balance"));
     }
 
