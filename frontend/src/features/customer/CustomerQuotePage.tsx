@@ -183,16 +183,27 @@ function StepScreen({ step, product, answers, set, w, icon }: {
         </Question>
       );
     }
-    case 'years':
+    case 'years': {
+      // 2026-11-09, the user: "I can't choose duration" -- a 1-10 year product offered only 5 and 10. The usual picks,
+      // and any whole number of years the product allows.
+      const min = product.terms.minTermYears ?? 1;
+      const max = product.terms.maxTermYears ?? 40;
+      const picks = yearChoices(product);
       return (
         <Question icon={<CalendarClock className="size-7" />} title={w.years} help={w.yearsHelp}>
           <div role="radiogroup" aria-label={w.years} className="grid gap-2.5">
-            {yearChoices(product).map((y) => (
+            {picks.map((y) => (
               <Choice key={y} label={w.yearsLabel(y)} selected={answers.years === y} onSelect={() => set({ years: y })} />
             ))}
           </div>
+          {min !== max && (
+            <OtherYears key={picks.includes(answers.years ?? -1) ? 'pick' : 'own'} label={w.otherYears(min, max)}
+              min={min} max={max} initial={answers.years != null && !picks.includes(answers.years) ? answers.years : null}
+              onChange={(years) => set({ years })} />
+          )}
         </Question>
       );
+    }
     case 'frequency':
       return (
         <Question icon={<CalendarClock className="size-7" />} title={w.frequency} help={w.frequencyHelp}>
@@ -396,4 +407,26 @@ function roleWord(w: Words['quote'], role: string): string {
   return role === 'MAIN_MEMBER' || (FAMILY_ROLES as readonly string[]).includes(role)
     ? w[role as 'MAIN_MEMBER' | (typeof FAMILY_ROLES)[number]]
     : role;
+}
+
+/** Any whole number of years the product allows, typed; out of range counts as not answered yet. */
+function OtherYears({ label, min, max, initial, onChange }: {
+  label: string;
+  min: number;
+  max: number;
+  initial: number | null;
+  onChange: (years: number | undefined) => void;
+}) {
+  const [text, setText] = useState(initial == null ? '' : String(initial));
+  return (
+    <FormField label={label}>
+      <Input className="h-12 text-base" inputMode="numeric" value={text}
+        onChange={(e) => {
+          const typed = e.target.value.replace(/\D/g, '');
+          setText(typed);
+          const n = Number(typed);
+          onChange(typed !== '' && n >= min && n <= max ? n : undefined);
+        }} />
+    </FormField>
+  );
 }
