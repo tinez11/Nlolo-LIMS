@@ -559,8 +559,8 @@ class ReportQueriesIntegrationTest {
         ReportResult outstanding = run("claims-outstanding", october());
         // Open at start: September's unpaid 6m claim. Registered 5, paid 2, declined 1 -> open 3.
         assertThat(rows(outstanding, 0).get(0).get("count")).isEqualTo("1");
-        assertThat(rows(outstanding, 0).get(4).get("count")).isEqualTo("3");
-        assertThat(rows(outstanding, 0).get(5).get("line")).startsWith("✓ 1 + 5 − 2 − 1 = 3");
+        assertThat(rows(outstanding, 0).get(5).get("count")).isEqualTo("3");
+        assertThat(rows(outstanding, 0).get(6).get("line")).startsWith("✓ 1 + 5 + 0 − 2 − 1 = 3");
         assertThat(figure(outstanding, "unpaid")).isEqualTo("31000000.00");
 
         ReportResult paid = run("claims-approved-vs-paid", october());
@@ -573,6 +573,29 @@ class ReportQueriesIntegrationTest {
         ReportResult early = run("early-claims", october());
         // P-2 started 2026-03-01: its October claims fell within a year of starting.
         assertThat(figure(early, "year1")).isEqualTo("4");
+    }
+
+    /**
+     * Found on dev 2026-11-09: a declined claim that was reopened still counted as closed. Its decline stays where it
+     * happened; from the reopening it is open again, and the movement shows it.
+     */
+    @Test
+    void aReopenedClaimIsOpenAgainAndTheMovementStillAddsUp() {
+        events.sell(tenant, Sale.of("P-R", product, d("2025-06-01")));
+        UUID claim = events.claimRegistered(tenant, "P-R", "DEATH", d("2026-09-01"), d("2026-09-02"));
+        events.claimRejected(tenant, claim, "P-R", "DEATH", "Exclusion period", d("2026-09-20"));
+        events.claimReopened(tenant, claim, "P-R", "DEATH", d("2026-10-05"));
+
+        ReportResult september = run("claims-outstanding", ReportFilter.months(java.time.YearMonth.of(2026, 9),
+            java.time.YearMonth.of(2026, 9)));
+        assertThat(rows(september, 0).get(5).get("count")).as("declined in September: closed").isEqualTo("0");
+
+        ReportResult r = run("claims-outstanding", october());
+        assertThat(rows(r, 0).get(2).get("count")).as("reopened in October").isEqualTo("1");
+        assertThat(rows(r, 0).get(5).get("count")).as("open again at the end of October").isEqualTo("1");
+        assertThat(rows(r, 0).get(6).get("line")).startsWith("✓ 0 + 0 + 1 − 0 − 0 = 1");
+        // Its decline is history: it happened in September.
+        assertThat(figure(run("claim-outcomes", october()), "declined")).isEqualTo("0");
     }
 
     @Test

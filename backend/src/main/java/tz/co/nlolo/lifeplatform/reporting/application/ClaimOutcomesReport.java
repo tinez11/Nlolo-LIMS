@@ -122,11 +122,19 @@ public class ClaimOutcomesReport implements Report {
             figures, null, StatementReports.comparisonLabel(f.comparisonMonths()));
     }
 
-    /** Open on a day: registered by then, and neither paid nor declined by then. */
+    /**
+     * Open on a day: registered by then, and not closed by then -- closed being paid or declined, unless the claim was
+     * reopened on or after that closing and by that day (2026-11-09: a reopened claim is open again).
+     */
     static boolean openOn(ClaimFact c, LocalDate day) {
-        return c.registeredOn() != null && !c.registeredOn().isAfter(day)
-            && (c.settledOn() == null || c.settledOn().isAfter(day))
-            && (c.rejectedOn() == null || c.rejectedOn().isAfter(day));
+        if (c.registeredOn() == null || c.registeredOn().isAfter(day)) return false;
+        LocalDate closed = null;
+        if (c.settledOn() != null && !c.settledOn().isAfter(day)) closed = c.settledOn();
+        if (c.rejectedOn() != null && !c.rejectedOn().isAfter(day) && (closed == null || c.rejectedOn().isAfter(closed))) {
+            closed = c.rejectedOn();
+        }
+        if (closed == null) return true;
+        return c.reopenedOn() != null && !c.reopenedOn().isAfter(day) && !c.reopenedOn().isBefore(closed);
     }
 
     private static long count(List<ClaimFact> claims, Predicate<ClaimFact> which) {

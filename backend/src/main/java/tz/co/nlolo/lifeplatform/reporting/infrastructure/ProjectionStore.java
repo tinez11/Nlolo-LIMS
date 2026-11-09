@@ -199,6 +199,13 @@ public class ProjectionStore {
             tenantId, claimId, policyNumber, paid, on);
     }
 
+    public void claimReopened(UUID tenantId, UUID claimId, String policyNumber, LocalDate on) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, reopened_on)"
+            + " VALUES (?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET reopened_on = EXCLUDED.reopened_on,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number)",
+            tenantId, claimId, policyNumber, on);
+    }
+
     /** A rebuild starts here: every row this tenant has, including the record of which events were applied. */
     public void deleteTenant(UUID tenantId) {
         for (String table : TABLES) {

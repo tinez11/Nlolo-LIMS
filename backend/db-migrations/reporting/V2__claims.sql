@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS reporting.report_claim (
     payable_amount          NUMERIC(19,2),
     settled_on              DATE,
     paid_amount             NUMERIC(19,2),
+    -- The last time a declined or paid claim was reopened (claims.ClaimReopened): open again from that day.
+    reopened_on             DATE,
     currency                CHAR(3)       NOT NULL DEFAULT 'TZS',
     PRIMARY KEY (tenant_id, claim_id)
 );

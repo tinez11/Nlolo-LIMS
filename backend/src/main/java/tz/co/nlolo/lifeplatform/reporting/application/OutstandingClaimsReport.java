@@ -32,7 +32,8 @@ import static tz.co.nlolo.lifeplatform.reporting.application.ClaimsReporting.Spa
 public class OutstandingClaimsReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claims-outstanding", "Outstanding claims movement",
-        "Open claims at the start, plus those registered, less those paid and declined, gives the open claims at the end;"
+        "Open claims at the start, plus those registered and reopened, less those paid and declined, gives the open"
+            + " claims at the end;"
             + " against the period before.",
         ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
 
@@ -67,12 +68,13 @@ public class OutstandingClaimsReport implements Report {
         List<Map<String, String>> rows = new ArrayList<>();
         rows.add(row("Open at the start", m.opening(), w == null ? null : w.opening(), "LINE"));
         rows.add(row("plus registered", m.registered(), w == null ? null : w.registered(), "LINE"));
+        rows.add(row("plus reopened", m.reopened(), w == null ? null : w.reopened(), "LINE"));
         rows.add(row("less paid", m.paid(), w == null ? null : w.paid(), "LINE"));
         rows.add(row("less declined", m.declined(), w == null ? null : w.declined(), "LINE"));
         rows.add(row("Open at the end", m.closing(), w == null ? null : w.closing(), "TOTAL"));
-        boolean adds = m.opening() + m.registered() - m.paid() - m.declined() == m.closing();
+        boolean adds = m.opening() + m.registered() + m.reopened() - m.paid() - m.declined() == m.closing();
         Map<String, String> check = new LinkedHashMap<>();
-        check.put("line", (adds ? "✓ " : "Does not add up: ") + m.opening() + " + " + m.registered() + " − " + m.paid()
+        check.put("line", (adds ? "✓ " : "Does not add up: ") + m.opening() + " + " + m.registered() + " + " + m.reopened() + " − " + m.paid()
             + " − " + m.declined() + " = " + m.closing());
         rows.add(check);
 
@@ -86,7 +88,7 @@ public class OutstandingClaimsReport implements Report {
             figures, null, StatementReports.comparisonLabel(f.comparisonMonths()));
     }
 
-    private record Movement(long opening, long registered, long paid, long declined, long closing) {}
+    private record Movement(long opening, long registered, long reopened, long paid, long declined, long closing) {}
 
     private static Movement movement(List<ClaimFact> claims, Span span) {
         LocalDate dayBefore = span.from().minusDays(1);
@@ -96,8 +98,9 @@ public class OutstandingClaimsReport implements Report {
             && !c.registeredOn().isAfter(span.to())).count();
         long declined = claims.stream().filter(c -> span.holds(c.rejectedOn()) && c.registeredOn() != null
             && !c.registeredOn().isAfter(span.to())).count();
+        long reopened = claims.stream().filter(c -> span.holds(c.reopenedOn())).count();
         long closing = claims.stream().filter(c -> ClaimOutcomesReport.openOn(c, span.to())).count();
-        return new Movement(opening, registered, paid, declined, closing);
+        return new Movement(opening, registered, reopened, paid, declined, closing);
     }
 
     private static BigDecimal approvedUnpaid(List<ClaimFact> claims, LocalDate day) {

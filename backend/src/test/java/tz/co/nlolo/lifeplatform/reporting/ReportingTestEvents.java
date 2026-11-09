@@ -144,6 +144,11 @@ public class ReportingTestEvents {
             "paidAmount", Map.of("amount", paid, "currencyCode", "TZS"), "settledAt", at(on).toString()));
     }
 
+    public void claimReopened(UUID tenant, UUID claimId, String policyNumber, String claimType, LocalDate on) {
+        apply(tenant, "claims.ClaimReopened", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "claimType", claimType, "fromStatus", "REJECTED", "reopenedAt", at(on).toString()));
+    }
+
     public void lapse(UUID tenant, String policyNumber, LocalDate on) {
         apply(tenant, "policy.PolicyLapsed", on, Map.of("policyNumber", policyNumber, "lapsedAt", at(on).toString()));
     }
