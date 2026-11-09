@@ -346,4 +346,50 @@ public class ReportQueries {
             rs.getLong("joined"), rs.getLong("exited"), rs.getBigDecimal("total_covered"), rs.getBigDecimal("annualised"),
             rs.getString("currency").trim()), args.toArray());
     }
+
+    // --- claims (2026-11-09, the reports redesign batch 2) ------------------------------------------------------------
+
+    /** One claim, every step dated, with the dimensions of the policy it was made on (null when that policy is unknown). */
+    public record ClaimFact(UUID claimId, String policyNumber, String claimType, LocalDate dateOfEvent,
+                            LocalDate registeredOn, LocalDate approvedOn, BigDecimal approvedAmount, LocalDate rejectedOn,
+                            String rejectReason, BigDecimal payableAmount, LocalDate settledOn, BigDecimal paidAmount,
+                            String currency, String productId, String productCategory, String branchCode,
+                            String salesChannel, String agentId, LocalDate activatedOn) {}
+
+    /**
+     * Every claim with any step on or before {@code to}, with its policy's dimensions and the common filters applied.
+     * Claims are few beside policies, so the variance reports select spans from this in memory: one read, every figure
+     * of both periods from the same rows.
+     */
+    public List<ClaimFact> claimFacts(UUID tenantId, LocalDate to, ReportFilter f) {
+        List<Object> args = new ArrayList<>(List.of(tenantId, to, to, to));
+        StringBuilder sql = new StringBuilder("SELECT k.*, p.product_id, p.product_category, p.branch_code,"
+            + " p.sales_channel, p.agent_id, p.activated_on FROM reporting.report_claim k"
+            + " LEFT JOIN reporting.report_policy p ON p.tenant_id = k.tenant_id AND p.policy_number = k.policy_number"
+            + CLIENT_JOIN
+            + " WHERE k.tenant_id = ? AND (k.registered_on <= ? OR k.approved_on <= ? OR k.rejected_on <= ?)");
+        appendFilters(sql, args, f);
+        sql.append(" ORDER BY k.registered_on NULLS LAST, k.claim_id");
+        return jdbc.query(sql.toString(), (rs, i) -> new ClaimFact((UUID) rs.getObject("claim_id"),
+            rs.getString("policy_number"), rs.getString("claim_type"), date(rs, "date_of_event"),
+            date(rs, "registered_on"), date(rs, "approved_on"), rs.getBigDecimal("approved_amount"),
+            date(rs, "rejected_on"), rs.getString("reject_reason"), rs.getBigDecimal("payable_amount"),
+            date(rs, "settled_on"), rs.getBigDecimal("paid_amount"), rs.getString("currency").trim(),
+            rs.getString("product_id"), rs.getString("product_category"), rs.getString("branch_code"),
+            rs.getString("sales_channel"), rs.getString("agent_id"), date(rs, "activated_on")), args.toArray());
+    }
+
+    /** Premium collected in a span by product, for the loss ratio. */
+    public Map<String, BigDecimal> collectedByProduct(UUID tenantId, LocalDate from, LocalDate to, ReportFilter f) {
+        Map<String, BigDecimal> out = new java.util.LinkedHashMap<>();
+        for (CollectionRow r : collections(tenantId, from, to, GroupBy.PRODUCT, f)) {
+            out.merge(r.dimension(), r.amount(), BigDecimal::add);
+        }
+        return out;
+    }
+
+    private static LocalDate date(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        java.sql.Date d = rs.getDate(column);
+        return d == null ? null : d.toLocalDate();
+    }
 }

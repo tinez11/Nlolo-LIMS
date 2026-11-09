@@ -36,7 +36,10 @@ public class ReportingApiImpl implements ReportingApi {
     /** Catalogue order: the order a manager reads the business in, then the order a ledger is read in. */
     static final List<String> ORDER = List.of("policies-in-force", "products", "new-business", "lapse-rate",
         "persistency", "premium-collections", "clients",
-        "trial-balance", "general-ledger", "balance-sheet", "income-statement");
+        "trial-balance", "general-ledger", "balance-sheet", "income-statement",
+        // Claims (2026-11-09): what was incurred, the ratio to premium, what became of claims, the money, the time.
+        "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
+        "early-claims", "claims-outstanding");
 
     private final Map<String, Report> reports = new LinkedHashMap<>();
     private final LabelsFactory labelsFactory;

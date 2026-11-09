@@ -182,7 +182,7 @@ components:
         key: { type: string }
         title: { type: string }
         description: { type: string }
-        category: { type: string, enum: [MANAGEMENT, ACCOUNTING] }
+        category: { type: string, enum: [MANAGEMENT, ACCOUNTING, CLAIMS] }
         dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
         groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
         comparable: { type: boolean, description: "Accepts compareAsOf" }
@@ -228,7 +228,7 @@ components:
     ReportFigure:
       type: object
       additionalProperties: false
-      required: [key, label, value, lead]
+      required: [key, label, value, lead, unit]
       properties:
         key: { type: string }
         label: { type: string }
@@ -238,6 +238,7 @@ components:
         changePercent: { type: [string, 'null'] }
         goodWhen: { type: [string, 'null'], enum: [UP, DOWN, null] }
         lead: { type: boolean }
+        unit: { type: string, enum: [MONEY, COUNT, PERCENT, DAYS] }
     ReportChart:
       type: object
       additionalProperties: false
