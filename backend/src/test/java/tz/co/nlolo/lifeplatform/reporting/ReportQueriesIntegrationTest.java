@@ -452,4 +452,43 @@ class ReportQueriesIntegrationTest {
         ReportSection section = result.sections().get(0);
         assertThat(section.totals()).isNotNull();
     }
+
+    // ---- claims (2026-11-09, the reports redesign batch 2) -----------------------------------------------------------
+
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private Map<String, Object> claimRow(UUID claimId) {
+        return jdbc.queryForMap("SELECT * FROM reporting.report_claim WHERE tenant_id = ? AND claim_id = ?", tenant, claimId);
+    }
+
+    @Test
+    void aClaimsLifeIsOneRowWithEveryStepDated() {
+        events.sell(tenant, Sale.of("P-CL", product, d("2025-01-05")));
+        UUID claim = events.claimRegistered(tenant, "P-CL", "DEATH", d("2026-02-20"), d("2026-03-01"));
+        events.claimApproved(tenant, claim, "P-CL", "DEATH", d("2026-02-20"), "5000000.00", d("2026-03-10"));
+        events.claimSettlementRequested(tenant, claim, "P-CL", "4800000.00", d("2026-03-11"));
+        events.claimSettled(tenant, claim, "P-CL", "5000000.00", "4800000.00", d("2026-03-15"));
+
+        Map<String, Object> row = claimRow(claim);
+        assertThat(row.get("claim_type")).isEqualTo("DEATH");
+        assertThat(row.get("registered_on").toString()).isEqualTo("2026-03-01");
+        assertThat(row.get("approved_on").toString()).isEqualTo("2026-03-10");
+        assertThat((java.math.BigDecimal) row.get("approved_amount")).isEqualByComparingTo("5000000.00");
+        assertThat((java.math.BigDecimal) row.get("payable_amount")).isEqualByComparingTo("4800000.00");
+        assertThat((java.math.BigDecimal) row.get("paid_amount")).isEqualByComparingTo("4800000.00");
+        assertThat(row.get("settled_on").toString()).isEqualTo("2026-03-15");
+    }
+
+    @Test
+    void aDeclinedClaimKeepsItsReasonAndAnEarlyEventStillMakesARow() {
+        UUID claim = UUID.randomUUID();
+        // The approval arrives before the registration (a replay out of order): the row is made, then completed.
+        events.claimApproved(tenant, claim, "P-X", "DISABILITY", d("2026-01-02"), "100.00", d("2026-01-20"));
+        UUID declined = events.claimRegistered(tenant, "P-Y", "DEATH", d("2026-01-03"), d("2026-01-04"));
+        events.claimRejected(tenant, declined, "P-Y", "DEATH", "Non-disclosure", d("2026-01-25"));
+
+        assertThat(claimRow(claim).get("approved_on").toString()).isEqualTo("2026-01-20");
+        assertThat(claimRow(declined).get("reject_reason")).isEqualTo("Non-disclosure");
+        assertThat(claimRow(declined).get("rejected_on").toString()).isEqualTo("2026-01-25");
+    }
 }
