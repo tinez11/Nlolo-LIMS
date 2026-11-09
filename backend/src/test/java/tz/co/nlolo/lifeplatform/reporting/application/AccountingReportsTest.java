@@ -138,10 +138,22 @@ class AccountingReportsTest {
             amount, "0.00"));
     }
 
+    /** The ledger's paged query, answering as the database would: only the postings inside the asked span. */
     private void postingsOn(String account, List<JournalEntryView> entries) {
-        Page<JournalEntryView> page = new PageImpl<>(entries, Pageable.ofSize(2000), entries.size());
-        Mockito.when(finaccounting.listJournalEntries(Mockito.isNull(), Mockito.isNull(), Mockito.eq(account),
-            Mockito.any(Pageable.class))).thenReturn(page);
+        Mockito.when(finaccounting.accountPostings(Mockito.eq(account), Mockito.anyString(), Mockito.anyString(),
+            Mockito.anyInt(), Mockito.anyInt())).thenAnswer(call -> {
+                String from = call.getArgument(1);
+                String to = call.getArgument(2);
+                List<tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView.Posting> inSpan = entries.stream()
+                    .flatMap(e -> e.postings().stream())
+                    .filter(p -> p.period().compareTo(from) >= 0 && p.period().compareTo(to) <= 0)
+                    .map(p -> new tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView.Posting(p.postingId(),
+                        p.journalEntryId(), p.accountCode(), p.period(), Instant.now(), p.direction(), p.amount(),
+                        p.currency(), p.policyNumber(), p.sourceEvent(), p.sourceRef()))
+                    .toList();
+                return new tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView(account, from, to,
+                    BigDecimal.ZERO, BigDecimal.ZERO, inSpan.size(), 0, 500, inSpan);
+            });
     }
 
     @Test
@@ -174,6 +186,28 @@ class AccountingReportsTest {
             ReportFilter.months(YearMonth.of(2026, 8), YearMonth.of(2026, 9)).withAccountCode("1100"), labels);
 
         assertEquals(2, sections.get(0).rows().size(), "the opening balance plus the one entry inside the range");
+        // 2026-11-09: the span is asked of the ledger, never the first 2,000 entries of all time filtered here.
+        Mockito.verify(finaccounting).accountPostings("1100", "2026-08", "2026-09", 0, 500);
+        Mockito.verify(finaccounting, Mockito.never()).listJournalEntries(Mockito.any(), Mockito.any(), Mockito.any(),
+            Mockito.any(Pageable.class));
+    }
+
+    /** 2026-11-09: opening + movement = closing, per account, beside its debits and credits. */
+    @Test
+    void trialBalanceShowsEachAccountsOpeningAndMovement() {
+        Mockito.when(finaccounting.trialBalanceThrough("2026-09")).thenReturn(ledger("through 2026-09", List.of(
+            account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "137.00", "0.00", "137.00")),
+            "137.00", "137.00"));
+        Mockito.when(finaccounting.trialBalanceThrough("2026-08")).thenReturn(ledger("through 2026-08", List.of(
+            account("1140", "Wallets", AccountType.ASSET, PostingDirection.DR, "130.00", "0.00", "130.00")),
+            "130.00", "130.00"));
+
+        Map<String, String> wallets = new TrialBalanceReport(finaccounting)
+            .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels).get(0).rows().get(0);
+
+        assertEquals("130.00", wallets.get("opening"));
+        assertEquals("7.00", wallets.get("movement"));
+        assertEquals("137.00", wallets.get("balance"));
     }
 
     @Test

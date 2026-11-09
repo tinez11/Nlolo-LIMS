@@ -57,7 +57,9 @@ final class ReportXlsx {
                 }
                 int r = 1;
                 for (Map<String, String> values : section.rows()) {
-                    write(sheet.createRow(r++), section.columns(), values, money, count, null);
+                    // A statement's subtotal and total lines in bold, as on screen (2026-11-09).
+                    write(sheet.createRow(r++), section.columns(), values, money, count,
+                        "SUBTOTAL".equals(values.get("_kind")) || "TOTAL".equals(values.get("_kind")) ? bold : null);
                 }
                 if (!section.totals().isEmpty()) {
                     write(sheet.createRow(r), section.columns(), section.totals(), money, count, bold);

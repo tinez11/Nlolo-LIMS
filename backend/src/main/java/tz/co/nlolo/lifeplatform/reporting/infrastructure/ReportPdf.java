@@ -40,7 +40,8 @@ final class ReportPdf {
                 float width = (w.pageWidth() - 2 * MARGIN) / Math.max(1, section.columns().size());
                 w.cells(BOLD, section.columns().stream().map(ReportColumn::label).toList(), width);
                 for (Map<String, String> row : section.rows()) {
-                    w.cells(REGULAR, section.columns().stream().map(c -> row.getOrDefault(c.key(), "")).toList(), width);
+                    boolean sum = "SUBTOTAL".equals(row.get("_kind")) || "TOTAL".equals(row.get("_kind"));
+                    w.cells(sum ? BOLD : REGULAR, section.columns().stream().map(c -> row.getOrDefault(c.key(), "")).toList(), width);
                 }
                 if (!section.totals().isEmpty()) {
                     w.cells(BOLD, section.columns().stream().map(c -> section.totals().getOrDefault(c.key(), "")).toList(), width);
