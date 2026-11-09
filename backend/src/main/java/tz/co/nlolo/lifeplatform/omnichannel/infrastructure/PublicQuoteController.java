@@ -149,7 +149,8 @@ public class PublicQuoteController {
         if (body == null || body.request() == null || body.request().productId() == null) {
             throw new CustomerRequestRefusedException("Choose the cover you are applying for");
         }
-        String phone = access.confirmedPhone(body.phoneToken(), visit);
+        // Any live visit of this page: it renews its visit by itself, and the proof outlives one (2026-11-09).
+        String phone = access.confirmedPhone(body.phoneToken());
         access.limit("apply-phone:" + phone, 5, Duration.ofDays(1));
         CustomerProductView.Application opened = asTenant(() -> applications.apply(phone, body.applicant(),
             body.consent(), body.request(), http.getRemoteAddr()));

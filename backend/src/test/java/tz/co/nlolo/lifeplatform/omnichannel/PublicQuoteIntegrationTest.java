@@ -254,7 +254,8 @@ class PublicQuoteIntegrationTest {
         String token = confirm(visit, "0713 555 101", "+255713555101");
         assertThat(sms.sent).anyMatch(m -> m.startsWith("+255713555101|Your application code is "));
 
-        String body = mockMvc.perform(post("/public/applications").header("X-Visit", visit)
+        // Sent from a renewed visit, as the page does every few minutes (2026-11-09): the phone stays confirmed.
+        String body = mockMvc.perform(post("/public/applications").header("X-Visit", visit())
                 .contentType(MediaType.APPLICATION_JSON).content(application(token, "Neema  Mushi", "1991-05-20", productId)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
@@ -310,14 +311,16 @@ class PublicQuoteIntegrationTest {
             .andExpect(jsonPath("$.possibleExistingClients[0].displayName").value("Rehema Said"));
     }
 
-    /** Ten minutes, used once, five tries, three texts an hour -- and a code works only in the visit that asked. */
+    /** Ten minutes, used once, five tries, three texts an hour. */
     @Test
     void aWrongCodeCostsATryTheFifthEndsItAndTextsAreCapped() throws Exception {
         String visit = visit();
         sendCode(visit, "0713555303", 204);
         String first = codeTextedTo("+255713555303");
-        // Another visit cannot use it.
-        check(visit(), "0713555303", first).andExpect(status().isUnprocessableEntity());
+        // 2026-11-09, the user hit "Confirm your phone again": the page renews its visit by itself, so a code (and the
+        // proof it buys) must still work in the renewed visit. Used once: it is spent now.
+        check(visit(), "0713555303", first).andExpect(status().isOk());
+        check(visit, "0713555303", first).andExpect(status().isUnprocessableEntity());
 
         sendCode(visit, "0713555303", 204);
         String fresh = codeTextedTo("+255713555303");
@@ -342,15 +345,16 @@ class PublicQuoteIntegrationTest {
             .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("three codes")));
     }
 
-    /** The phone is the one confirmed in THIS visit, and the declaration must be agreed in its current words. */
+    /** The phone is the one a code confirmed -- proof that cannot be forged -- and the declaration agreed as worded now. */
     @Test
-    void applyingNeedsThePhoneConfirmedInThisVisitAndTheDeclarationAgreed() throws Exception {
+    void applyingNeedsAGenuinePhoneProofAndTheDeclarationAgreed() throws Exception {
         UUID productId = onlineDeposit();
         String visit = visit();
         String token = confirm(visit, "0713555404", "+255713555404");
 
-        mockMvc.perform(post("/public/applications").header("X-Visit", visit()).contentType(MediaType.APPLICATION_JSON)
-                .content(application(token, "Zawadi Ally", "1993-01-01", productId)))
+        String forged = token.replace("+255713555404", "+255713555999");
+        mockMvc.perform(post("/public/applications").header("X-Visit", visit).contentType(MediaType.APPLICATION_JSON)
+                .content(application(forged, "Zawadi Ally", "1993-01-01", productId)))
             .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/public/applications").header("X-Visit", visit).contentType(MediaType.APPLICATION_JSON)
                 .content(application(token, "Zawadi Ally", "1993-01-01", productId)

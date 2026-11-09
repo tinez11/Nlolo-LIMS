@@ -26,8 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link #MAX_SENDS_PER_HOUR} texts an hour to one phone.
  *
  * <p>Held in memory, as the public link's other guards are (one backend in the pilot, deployment D1): a restart only
- * means asking for a new code. Only a hash of the code is kept, tied to the visit that asked for it, so a code read off
- * somebody else's phone is no use in another visit. Nothing is written to the message log -- the visitor has no
+ * means asking for a new code. Only a hash of the code is kept. NOT tied to the visit (2026-11-09): the page renews its
+ * visit every few minutes and on a language switch, and a code tied to it failed for a visitor who had done nothing
+ * wrong; the five tries per phone are what stop guessing. Nothing is written to the message log -- the visitor has no
  * client record yet.
  */
 @Service
@@ -92,13 +93,13 @@ public class PhoneCodes {
     }
 
     /**
-     * Whether {@code code} is the one texted to {@code phone} in this visit. Used once: a right code is spent; a wrong
+     * Whether {@code code} is the one texted to {@code phone}. Used once: a right code is spent; a wrong
      * one costs a try, and the last try spends the code.
      */
     public void check(String phone, String visit, String code, boolean swahili) {
         Pending p = pending.get(phone);
         Instant now = clock.instant();
-        if (p == null || !p.visit().equals(visit) || now.isAfter(p.expires())) {
+        if (p == null || now.isAfter(p.expires())) {
             pending.remove(phone, p);
             throw new Refused(swahili ? "Namba hii imekwisha muda wake. Omba namba mpya."
                 : "That code has expired. Ask for a new one.");

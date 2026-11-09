@@ -160,8 +160,10 @@ public class PublicAccess {
     }
 
     /**
-     * Proof that a texted code confirmed {@code phone} in this visit (2026-11-08): signed like a visit token and bound
-     * to it, so it cannot be carried into another visit, and valid only while the visit is.
+     * Proof that a texted code confirmed {@code phone} (2026-11-08): signed like a visit token, valid
+     * {@link #VISIT_MINUTES} minutes. Not bound to the visit (2026-11-09): the page renews its visit by itself and on a
+     * language switch, and a proof tied to the old one refused an applicant at Send. The visit id stays in it only as a
+     * record of where the phone was confirmed.
      */
     public String confirmPhone(String phone, String visit) {
         long expires = clock.instant().plus(Duration.ofMinutes(VISIT_MINUTES)).getEpochSecond();
@@ -169,9 +171,9 @@ public class PublicAccess {
         return payload + "." + sign(payload);
     }
 
-    /** The phone a {@link #confirmPhone} token proves for this visit; a 401 when it does not. */
-    public String confirmedPhone(String token, String visit) {
-        String expired = "Confirm your phone again: the code has to be entered in this visit.";
+    /** The phone a {@link #confirmPhone} token proves while it is valid; a 401 when it does not. */
+    public String confirmedPhone(String token) {
+        String expired = "Confirm your phone again: it was confirmed more than 30 minutes ago.";
         if (token == null) {
             throw new Refused(401, expired);
         }
@@ -185,7 +187,7 @@ public class PublicAccess {
             throw new Refused(401, expired);
         }
         String[] parts = payload.split("\\.");
-        if (parts.length != 4 || !"phone".equals(parts[0]) || !parts[2].equals(visit)) {
+        if (parts.length != 4 || !"phone".equals(parts[0])) {
             throw new Refused(401, expired);
         }
         try {
