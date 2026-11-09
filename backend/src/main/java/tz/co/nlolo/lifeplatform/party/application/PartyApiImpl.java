@@ -490,6 +490,20 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<PartyView> possibleSamePerson(String phoneNumber, String fullName, LocalDate dateOfBirth) {
+        String phone = PhoneNumbers.normalise(phoneNumber);
+        String name = fullName == null || fullName.isBlank() ? null : fullName.trim().replaceAll("\s+", " ");
+        if (phone == null && (name == null || dateOfBirth == null)) {
+            return List.of();
+        }
+        return partyRepository.findPossibleSamePerson(TenantContext.get(), phone, name, dateOfBirth,
+                org.springframework.data.domain.PageRequest.of(0, 10)).stream()
+            .map(PartyApiImpl::toView)
+            .toList();
+    }
+
+    @Override
     public boolean isRegisteredBy(UUID partyId, String createdBy) {
         return partyRepository.existsByPartyIdAndTenantIdAndCreatedBy(partyId, TenantContext.get(), createdBy);
     }

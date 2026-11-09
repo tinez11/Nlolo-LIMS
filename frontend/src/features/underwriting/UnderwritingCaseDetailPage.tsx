@@ -17,6 +17,7 @@ import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
 import { CASE_SOURCE_HINT } from './caseSource';
 import { CaseSourceBadge } from './CaseSourceBadge';
+import { PublicApplicationPanel } from './PublicApplicationPanel';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -199,6 +200,8 @@ export function UnderwritingCaseDetailPage() {
           whole reason the panel exists, and it was scrolling away exactly when the
           declarations below were being read against it. */}
       <DetailLayout record={renderRecord()}>
+        {/* Through the public quote link (2026-11-08): who may already be a client, first. */}
+        {view?.source === 'PUBLIC_ONLINE' && <PublicApplicationPanel caseId={caseId} />}
         {/*
           WHAT IS BEING DECIDED, when it is not a proposal. A scheme member's free-cover-limit
           evidence case grants or refuses that member's excess, and issues no policy -- it used
@@ -466,7 +469,7 @@ export function UnderwritingCaseDetailPage() {
               {/* Where it came from (2026-10-29); a call back has no amount, so the customer is phoned first. */}
               {view.source && (
                 <Field label="Source" value={<CaseSourceBadge source={view.source} />}
-                  {...(view.source === 'CALL_BACK' || view.source === 'CUSTOMER_ONLINE' ? { note: CASE_SOURCE_HINT[view.source] } : {})} />
+                  {...(view.source === 'CALL_BACK' || view.source === 'CUSTOMER_ONLINE' || view.source === 'PUBLIC_ONLINE' ? { note: CASE_SOURCE_HINT[view.source] } : {})} />
               )}
               <Field
                 label="Applicant"

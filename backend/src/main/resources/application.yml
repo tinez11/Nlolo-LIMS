@@ -109,6 +109,8 @@ app:
   # the default is the dev realm's own placeholder.
   portal:
     url: ${PORTAL_URL:http://localhost:5173/customers}
+    # A new client's login is texted when their first premium starts their cover (2026-11-08, the user).
+    auto-invite: ${PORTAL_AUTO_INVITE:true}
     keycloak:
       base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
       realm: lifeplatform

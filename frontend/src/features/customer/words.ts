@@ -29,6 +29,23 @@ const en = {
     changeDetails: 'Change',
     applySoon: 'Applying online is coming soon. To go ahead now, contact us or an agent.',
   },
+  // Applying through the public link (2026-11-08): the phone confirmed by a texted code, and a declaration agreed.
+  publicApply: {
+    step: 'Your details',
+    lead: 'We text a code to your phone to check it is yours. We use this number to tell you about your application.',
+    fullName: 'Full name', email: 'Email (if you have one)', phone: 'Mobile number',
+    sendCode: 'Text me a code', resend: 'Send a new code',
+    codeSent: (phone: string) => `We texted a 6-digit code to ${phone}. It works for 10 minutes.`,
+    code: 'Code from the text', confirm: 'Confirm my number',
+    confirmed: (phone: string) => `Phone confirmed: ${phone}`,
+    otherNumber: 'Use another number',
+    needPhone: 'Confirm your phone to go on.',
+    declaration: 'Before you send',
+    agree: 'I have read this and I agree',
+    sentLead: (reference: string, phone: string) =>
+      `It has gone to our underwriting team. Your reference is ${reference}. We will text you at ${phone} when it is decided.`,
+    more: 'See other cover',
+  },
   needs: {
     title: 'What would you like to do?',
     lead: 'Pick one. We show you what you pay and what you get, in plain words, before you apply.',
@@ -275,6 +292,22 @@ const sw: Words = {
     you: (name: string, age: number) => `${name}, miaka ${age}`,
     changeDetails: 'Badilisha',
     applySoon: 'Kuomba mtandaoni kunakuja hivi karibuni. Kuendelea sasa, wasiliana nasi au wakala.',
+  },
+  publicApply: {
+    step: 'Taarifa zako',
+    lead: 'Tunatuma namba kwenye simu yako kuhakikisha ni yako. Tutatumia namba hii kukujulisha kuhusu ombi lako.',
+    fullName: 'Jina kamili', email: 'Barua pepe (kama unayo)', phone: 'Namba ya simu',
+    sendCode: 'Nitumie namba', resend: 'Tuma namba mpya',
+    codeSent: (phone: string) => `Tumetuma namba ya tarakimu 6 kwa ${phone}. Inatumika kwa dakika 10.`,
+    code: 'Namba kutoka kwenye ujumbe', confirm: 'Thibitisha namba yangu',
+    confirmed: (phone: string) => `Simu imethibitishwa: ${phone}`,
+    otherNumber: 'Tumia namba nyingine',
+    needPhone: 'Thibitisha simu yako ili kuendelea.',
+    declaration: 'Kabla ya kutuma',
+    agree: 'Nimesoma haya na ninakubali',
+    sentLead: (reference: string, phone: string) =>
+      `Limetumwa kwa timu yetu ya tathmini. Namba yako ya kumbukumbu ni ${reference}. Tutakutumia ujumbe kwa ${phone} uamuzi ukifanyika.`,
+    more: 'Ona bima nyingine',
   },
   needs: {
     title: 'Ungependa kufanya nini?',

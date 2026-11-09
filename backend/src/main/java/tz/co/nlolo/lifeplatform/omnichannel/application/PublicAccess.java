@@ -159,6 +159,45 @@ public class PublicAccess {
         return payload.substring(first + 1);
     }
 
+    /**
+     * Proof that a texted code confirmed {@code phone} in this visit (2026-11-08): signed like a visit token and bound
+     * to it, so it cannot be carried into another visit, and valid only while the visit is.
+     */
+    public String confirmPhone(String phone, String visit) {
+        long expires = clock.instant().plus(Duration.ofMinutes(VISIT_MINUTES)).getEpochSecond();
+        String payload = "phone." + expires + "." + visit + "." + phone;
+        return payload + "." + sign(payload);
+    }
+
+    /** The phone a {@link #confirmPhone} token proves for this visit; a 401 when it does not. */
+    public String confirmedPhone(String token, String visit) {
+        String expired = "Confirm your phone again: the code has to be entered in this visit.";
+        if (token == null) {
+            throw new Refused(401, expired);
+        }
+        int last = token.lastIndexOf('.');
+        if (last <= 0) {
+            throw new Refused(401, expired);
+        }
+        String payload = token.substring(0, last);
+        byte[] given = token.substring(last + 1).getBytes(StandardCharsets.US_ASCII);
+        if (!MessageDigest.isEqual(given, sign(payload).getBytes(StandardCharsets.US_ASCII))) {
+            throw new Refused(401, expired);
+        }
+        String[] parts = payload.split("\\.");
+        if (parts.length != 4 || !"phone".equals(parts[0]) || !parts[2].equals(visit)) {
+            throw new Refused(401, expired);
+        }
+        try {
+            if (clock.instant().getEpochSecond() > Long.parseLong(parts[1])) {
+                throw new Refused(401, expired);
+            }
+        } catch (NumberFormatException e) {
+            throw new Refused(401, expired);
+        }
+        return parts[3];
+    }
+
     private String sign(String payload) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");

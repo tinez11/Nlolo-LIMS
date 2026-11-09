@@ -278,4 +278,61 @@ class PortalAccessIntegrationTest {
             .andExpect(status().isForbidden());
         assertThat(keycloak.calls).isEmpty();
     }
+
+    // --- automatic invite on the first premium (2026-11-08, phase 3 of the public quote link) ----------------------
+
+    @Autowired private tz.co.nlolo.lifeplatform.omnichannel.application.PortalAccessService portalAccessService;
+    @Autowired private tz.co.nlolo.lifeplatform.omnichannel.infrastructure.PortalAccessRepository portalAccessRepository;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    /** Off for the suite (test config/application.yml); built switched on here. */
+    private tz.co.nlolo.lifeplatform.omnichannel.application.AutomaticPortalInvites autoInvites() {
+        return new tz.co.nlolo.lifeplatform.omnichannel.application.AutomaticPortalInvites(portalAccessService,
+            portalAccessRepository, transactionManager, true);
+    }
+
+    private static tz.co.nlolo.lifeplatform.DomainEventEnvelope<java.util.Map<String, Object>> activated(UUID partyId,
+            boolean byFirstPremium) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("policyNumber", "POL-AUTO");
+        payload.put("policyholderPartyId", partyId);
+        payload.put("byFirstPremium", byFirstPremium);
+        payload.put("groupScheme", false);
+        return tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.PolicyActivated", TENANT, payload);
+    }
+
+    /** 2026-11-08, the user: every new client gets their login when the first premium starts their cover -- by SMS. */
+    @Test
+    void aNewClientIsInvitedBySmsWhenTheirFirstPremiumStartsTheCoverAndOnlyOnce() {
+        UUID partyId = policyholder();
+        keycloak.calls.clear();
+        sms.sent.clear();
+
+        autoInvites().onDomainEvent(activated(partyId, true));
+
+        assertThat(jdbc.queryForObject("SELECT invited_by FROM omnichannel.portal_access WHERE party_id = ?",
+            String.class, partyId)).isEqualTo("automatic: first premium");
+        assertThat(jdbc.queryForObject("SELECT delivery FROM omnichannel.portal_access WHERE party_id = ?",
+            String.class, partyId)).isEqualTo("SMS_PASSWORD");
+        assertThat(invites()).hasSize(1);
+
+        // A second activation -- a redelivery, or another policy -- does not invite again.
+        autoInvites().onDomainEvent(activated(partyId, true));
+        assertThat(invites()).hasSize(1);
+    }
+
+    /** Cover that started at issue -- a migrated or converted book -- is not a new client: left to staff. */
+    @Test
+    void coverThatStartedAtIssueIsNotInvitedAutomatically() {
+        UUID partyId = policyholder();
+        keycloak.calls.clear();
+        sms.sent.clear();
+
+        autoInvites().onDomainEvent(activated(partyId, false));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM omnichannel.portal_access WHERE party_id = ?",
+            Integer.class, partyId)).isZero();
+        assertThat(keycloak.calls).isEmpty();
+        assertThat(invites()).isEmpty();
+    }
 }

@@ -20,6 +20,7 @@ import { Suspense } from 'react';
 import { LoadingBlock } from '@/components/states';
 import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
 import { CustomerQuotePage } from '@/features/customer/CustomerQuotePage';
+import { CustomerApplyPage } from '@/features/customer/CustomerApplyPage';
 import { PublicQuoteApp } from '@/lazyPages';
 
 /**
@@ -54,6 +55,7 @@ const router = createBrowserRouter(
         <Route path="/quote" element={<Suspense fallback={<LoadingBlock />}><PublicQuoteApp /></Suspense>}>
           <Route index element={<CustomerProductsPage />} />
           <Route path=":productId" element={<CustomerQuotePage />} />
+          <Route path=":productId/apply" element={<CustomerApplyPage />} />
         </Route>
 
         {realms.map((realm) => {

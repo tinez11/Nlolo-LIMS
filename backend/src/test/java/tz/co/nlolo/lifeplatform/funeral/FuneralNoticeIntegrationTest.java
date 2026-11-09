@@ -67,7 +67,7 @@ class FuneralNoticeIntegrationTest {
         "db-migrations/communication/V10__account_statement_template.sql",
         "db-migrations/communication/V11__vesting_reminder_template.sql",
         "db-migrations/communication/V12__funeral_templates.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql",
     };
 
     @BeforeAll

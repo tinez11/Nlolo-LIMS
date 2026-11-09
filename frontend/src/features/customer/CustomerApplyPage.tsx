@@ -2,6 +2,9 @@ import { CircleCheckBig, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { applyForProduct, getMe, type CustomerMe } from '@/api/portal';
+import { applyPublic, type PublicConsentWording } from '@/api/publicQuote';
+import { PublicApplicantStep, PublicDeclaration, type PublicApplicant } from '@/features/public/PublicApplicantStep';
+import { useQuoteSource } from './quoteSource';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -19,12 +22,18 @@ import { useWords } from './words';
  * Applying for the cover just priced (2026-10-29): the customer's own details to check, who receives the money, the
  * health questions the product asks, then one look at it all and Send. It goes straight to underwriting, which prices it
  * again -- nothing typed here sets a price.
+ *
+ * Shared with the public quote link (2026-11-08): there nobody is signed in, so the first step confirms the visitor's
+ * phone by a texted code instead of showing what we hold, and the last asks them to agree the declaration.
  */
 export function CustomerApplyPage() {
   const { productId = '' } = useParams();
   const words = useWords();
   const w = words.apply;
+  const pw = words.publicApply;
   const language = useLanguage();
+  const source = useQuoteSource();
+  const pub = source.publicApply;
   const draft = useApplyDraft((s) => s.draft);
   const clear = useApplyDraft((s) => s.clear);
   const [me, setMe] = useState<CustomerMe | null>(null);
@@ -33,13 +42,17 @@ export function CustomerApplyPage() {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<{ reference: string | null } | null>(null);
+  const [applicant, setApplicant] = useState<PublicApplicant>({ fullName: pub?.person.fullName ?? '', email: '', confirmed: null });
+  const [agreed, setAgreed] = useState(false);
+  const [wording, setWording] = useState<PublicConsentWording | null>(null);
 
   useEffect(() => {
+    if (pub) return;
     let live = true;
     getMe().then((m) => { if (live) setMe(m); }, () => undefined);
     return () => { live = false; };
-  }, []);
+  }, [pub]);
 
   if (sent) {
     return (
@@ -47,10 +60,18 @@ export function CustomerApplyPage() {
         <div className="space-y-2 text-center">
           <CircleCheckBig className="mx-auto size-14 text-status-success-fg" aria-hidden />
           <h1 className="text-headline">{w.sentTitle}</h1>
-          <p className="text-muted-foreground">{w.sentLead}</p>
+          <p className="text-muted-foreground">
+            {pub && applicant.confirmed
+              ? pw.sentLead(sent.reference ?? '—', applicant.confirmed.phoneNumber)
+              : w.sentLead}
+          </p>
         </div>
         <div className="rounded-2xl border border-border bg-surface p-4 shadow-card"><ProgressLine at={1} tone="go" /></div>
-        <Button asChild variant="primary" className="h-12 w-full text-base"><Link to="/customers/applications">{w.seeApplications}</Link></Button>
+        {pub ? (
+          <Button asChild variant="primary" className="h-12 w-full text-base"><Link to={source.base}>{pw.more}</Link></Button>
+        ) : (
+          <Button asChild variant="primary" className="h-12 w-full text-base"><Link to="/customers/applications">{w.seeApplications}</Link></Button>
+        )}
       </div>
     );
   }
@@ -60,36 +81,51 @@ export function CustomerApplyPage() {
       <div className="mx-auto max-w-xl space-y-3 px-4 pt-10 text-base">
         <h1 className="text-headline">{w.lost}</h1>
         <p className="text-muted-foreground">{w.lostLead}</p>
-        <Button asChild variant="primary"><Link to={`/customers/products/${encodeURIComponent(productId)}`}>{words.needs.see}</Link></Button>
+        <Button asChild variant="primary"><Link to={`${source.base}/${encodeURIComponent(productId)}`}>{words.needs.see}</Link></Button>
       </div>
     );
   }
 
   const { product, request, quote } = draft;
   const questions = product.questions;
-  const steps = [w.steps[0]!, w.steps[1]!, ...(questions.length > 0 ? [w.steps[2]!] : []), w.steps[3]!];
+  const steps = [pub ? pw.step : w.steps[0]!, w.steps[1]!, ...(questions.length > 0 ? [w.steps[2]!] : []), w.steps[3]!];
   const step = steps[at]!;
   const shares = beneficiaryProblem(people);
   const unanswered = questions.some((q) => {
     const a = answers[q.code];
     return !a?.answer || (needsDetail(q.code, a.answer) && a.notes.trim() === '');
   });
-  const canGo = step === w.steps[1] ? shares == null : step === w.steps[2] ? !unanswered : true;
+  const canGo = at === 0 && pub ? applicant.confirmed != null && applicant.fullName.trim() !== ''
+    : step === w.steps[1] ? shares == null : step === w.steps[2] ? !unanswered : true;
   const named = people.filter((p) => p.name.trim() !== '');
+  const canSend = !pub || (agreed && wording != null && applicant.confirmed != null);
 
   async function send() {
     setBusy(true);
     setError(null);
     try {
-      await applyForProduct({
+      const application = {
         productId: product.productId, ...request,
         beneficiaries: named.map((p) => ({ name: p.name.trim(), relationship: p.relationship.trim() || null,
           phone: p.phone.trim() || null, sharePercent: Number(p.share) })),
         answers: questions.map((q) => ({ code: q.code, answer: answers[q.code]!.answer!, notes: answers[q.code]!.notes.trim() || null })),
-        language: language === 'sw' ? 'SW' : 'EN',
-      });
-      clear();
-      setSent(true);
+        language: language === 'sw' ? 'SW' as const : 'EN' as const,
+      };
+      if (pub && applicant.confirmed && wording) {
+        const opened = await applyPublic({
+          phoneToken: applicant.confirmed.phoneToken,
+          applicant: { fullName: applicant.fullName.trim(), dateOfBirth: pub.person.dateOfBirth, sex: pub.person.sex,
+            smokerStatus: pub.person.smokerStatus, email: applicant.email.trim() || null },
+          consent: { version: wording.version, agreed },
+          request: application,
+        }, pub.visitToken);
+        clear();
+        setSent({ reference: opened.proposalNumber ?? null });
+      } else {
+        await applyForProduct(application);
+        clear();
+        setSent({ reference: null });
+      }
     } catch (e) {
       setError(toApiError(e));
     } finally {
@@ -100,12 +136,17 @@ export function CustomerApplyPage() {
   return (
     <>
       <PageHeader title={w.title} description={product.productName}
-        breadcrumb={[{ label: words.nav.products, to: '/customers/products' }]} />
+        breadcrumb={[{ label: words.nav.products, to: source.base }]} />
       <div className="w-full max-w-xl space-y-6 px-4 pb-10 text-base sm:px-6">
         <StepBar at={at} of={steps.length} label={`${words.quote.step(at + 1, steps.length)} · ${step}`} />
         <h2 className="text-headline">{step}</h2>
 
-        {step === w.steps[0] && (
+        {at === 0 && pub && (
+          <PublicApplicantStep visitToken={pub.visitToken} initialPhone={pub.person.phoneNumber} value={applicant}
+            onChange={setApplicant} />
+        )}
+
+        {at === 0 && !pub && (
           <div className="space-y-3">
             <p className="text-muted-foreground">{w.detailsLead}</p>
             <dl className="divide-y divide-border rounded-2xl border border-border bg-surface shadow-card">
@@ -184,6 +225,7 @@ export function CustomerApplyPage() {
             {questions.length > 0 && <Row label={w.healthDone} value={w.answered(questions.length)} />}
           </dl>
         )}
+        {step === w.steps[3] && pub && <PublicDeclaration agreed={agreed} onAgree={setAgreed} onWording={setWording} />}
 
         {error && <InlineError error={error} />}
         <div className="flex gap-2">
@@ -191,7 +233,7 @@ export function CustomerApplyPage() {
           {at < steps.length - 1 ? (
             <Button variant="primary" className="h-12 flex-1 text-base" disabled={!canGo} onClick={() => setAt(at + 1)}>{words.quote.next}</Button>
           ) : (
-            <Button variant="primary" className="h-12 flex-1 text-base" pending={busy} onClick={() => void send()}>{w.send}</Button>
+            <Button variant="primary" className="h-12 flex-1 text-base" pending={busy} disabled={!canSend} onClick={() => void send()}>{w.send}</Button>
           )}
         </div>
       </div>

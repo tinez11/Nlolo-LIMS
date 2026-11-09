@@ -155,6 +155,7 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V17__lender_refund_approval.sql", "db-migrations/billing/V18__waiver_count.sql",
         "db-migrations/omnichannel/V1__portal_access.sql",
         "db-migrations/omnichannel/V2__sms_password_delivery.sql",
+        "db-migrations/omnichannel/V3__public_applications.sql",
     };
 
     /**
@@ -178,6 +179,6 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql",
     };
 }

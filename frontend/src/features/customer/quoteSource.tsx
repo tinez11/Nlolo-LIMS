@@ -11,12 +11,23 @@ export interface QuoteSource {
   base: string;
   listProducts: () => Promise<CustomerProduct[]>;
   quote: (productId: string, request: CustomerQuoteRequest) => Promise<CustomerQuote>;
-  /** The portal applies from the price; the public link does not yet. */
+  /** Both apply from the price (the public link since 2026-11-08). */
   canApply: boolean;
+  /**
+   * Set on the public link: applying there confirms the visitor's phone by a texted code and asks them to agree the
+   * declaration, and the visit carries every request. Absent in the portal, where the customer is signed in.
+   */
+  publicApply?: PublicApplyContext;
   /** The portal lists what an adviser prices, with a way to ask; the public link, with nobody to call back, does not. */
   showsAdviserProducts: boolean;
   /** Shown above the product list -- the public link's "who you are" summary. */
   header?: ReactNode;
+}
+
+export interface PublicApplyContext {
+  visitToken: string;
+  /** What the visitor told us before pricing -- the price was worked out on these. */
+  person: { fullName: string; dateOfBirth: string; sex: 'FEMALE' | 'MALE' | null; smokerStatus: 'NON_SMOKER' | 'SMOKER' | 'UNKNOWN' | null; phoneNumber: string };
 }
 
 export const PORTAL_SOURCE: QuoteSource = {

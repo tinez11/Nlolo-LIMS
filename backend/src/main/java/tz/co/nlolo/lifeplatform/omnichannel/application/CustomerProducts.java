@@ -27,6 +27,7 @@ import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.product.api.Sex;
 import tz.co.nlolo.lifeplatform.product.api.SmokerStatus;
+import tz.co.nlolo.lifeplatform.underwriting.api.CaseSource;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.DisclosureAnswer;
@@ -277,6 +278,13 @@ public class CustomerProducts {
      */
     @Transactional
     public Application apply(UUID customerPartyId, CustomerProductView.ApplicationRequest request, String openedBy) {
+        return apply(customerPartyId, request, openedBy, CaseSource.PORTAL);
+    }
+
+    /** As {@link #apply}, recording where it came from -- the portal, or the public quote link (2026-11-08). */
+    @Transactional
+    public Application apply(UUID customerPartyId, CustomerProductView.ApplicationRequest request, String openedBy,
+                             String sourceOfBusiness) {
         OnlineListingView listing = offered(request.productId());
         boolean alreadyAsked = cases(customerPartyId).stream()
             .anyMatch(c -> c.productId().equals(request.productId()) && c.status() != UnderwritingCaseStatus.DECIDED);
@@ -334,7 +342,7 @@ public class CustomerProducts {
 
         UnderwritingCaseView opened = underwritingApi.openCase(customerPartyId, request.productId(), versionId, sumAssured,
             listing.defaultCurrency(), null,
-            new ProposalDetails(null, null, "CUSTOMER_PORTAL", null, termMonths, null, frequency, beneficiaries),
+            new ProposalDetails(null, null, sourceOfBusiness, null, termMonths, null, frequency, beneficiaries),
             openedBy);
         if (family != null) {
             List<FuneralApplication.Life> dependants = request.family().stream()
