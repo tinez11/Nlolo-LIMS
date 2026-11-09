@@ -1076,6 +1076,12 @@ public class ClaimsApiImpl implements ClaimsApi {
             policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
         }
 
+        // Announced (2026-11-09): reporting counted a reopened claim as still declined and closed -- the claims reports'
+        // open-claims movement and the module's own status disagreed on dev until it heard of reopenings.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimReopened", tenantId,
+            Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(), "claimType", claim.getClaimType().name(),
+                "fromStatus", fromRejected ? "REJECTED" : "SETTLED", "reopenedAt", Instant.now().toString())));
+
         log.info("Claim {} reopened by {}: {}", claimId, reopenedBy, reason);
     }
 

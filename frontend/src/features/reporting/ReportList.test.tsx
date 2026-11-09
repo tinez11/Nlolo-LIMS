@@ -62,3 +62,11 @@ describe('the report list', () => {
     expect(without.entries.map((e) => e.title)).not.toContain('IFRS 17 statements');
   });
 });
+
+describe('the claims area', () => {
+  it('holds the claims reports under Claims', () => {
+    const claims = reportAreas([...CATALOGUE, report('claims-incurred', 'Claims incurred variance', 'CLAIMS')])
+      .find((a) => a.id === 'claims');
+    expect(claims?.entries.map((e) => e.title)).toEqual(['Claims incurred variance']);
+  });
+});

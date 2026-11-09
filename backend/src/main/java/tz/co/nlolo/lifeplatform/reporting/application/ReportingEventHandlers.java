@@ -55,7 +55,10 @@ public class ReportingEventHandlers {
         "policy.PolicyMatured", "policy.PolicyExpired", "policy.PolicySurrendered", "policy.PolicyCancelledFreeLook",
         "policy.AnnuityEnded", "policy.GroupMemberAdded", "policy.GroupMemberExited", "policy.CoveredLifeAdded",
         "policy.CoveredLifeEnded", "billing.PremiumCollected",
-        "party.PartyRegistered", "party.PartyKycStatusChanged", "party.PartyDetailsAmended");
+        "party.PartyRegistered", "party.PartyKycStatusChanged", "party.PartyDetailsAmended",
+        // Claims for the variance reports (2026-11-09, the reports redesign batch 2).
+        "claims.ClaimRegistered", "claims.ClaimApproved", "claims.ClaimRejected", "claims.ClaimSettlementRequested",
+        "claims.ClaimSettled", "claims.ClaimReopened");
 
     private final ProjectionStore store;
     private final MeterRegistry meters;
@@ -125,6 +128,21 @@ public class ReportingEventHandlers {
                     currency(p, "amount"), onInstant(p, "collectedAt", occurredAt),
                     payer == null || payer.isBlank() ? "FIELD_CASH" : "MOBILE_MONEY");
             }
+            case "claims.ClaimRegistered" -> store.claimRegistered(tenantId, uuid(p, "claimId"), policyNumber,
+                text(p, "claimType"), date(p, "dateOfEvent"), onInstant(p, "registeredAt", occurredAt));
+            case "claims.ClaimApproved" -> store.claimApproved(tenantId, uuid(p, "claimId"), policyNumber,
+                text(p, "claimType"), date(p, "dateOfEvent"), amount(p, "approvedAmount"), currency(p, "approvedAmount"),
+                onInstant(p, "approvedAt", occurredAt));
+            case "claims.ClaimRejected" -> store.claimRejected(tenantId, uuid(p, "claimId"), policyNumber,
+                text(p, "claimType"), text(p, "reason"), onInstant(p, "rejectedAt", occurredAt));
+            case "claims.ClaimSettlementRequested" -> store.claimSettlementRequested(tenantId, uuid(p, "claimId"),
+                policyNumber, amount(p, "amount"), onInstant(p, "requestedAt", occurredAt));
+            // What was paid; a claim settled with nothing to pay (all netted) carries paidAmount 0.00.
+            case "claims.ClaimSettled" -> store.claimSettled(tenantId, uuid(p, "claimId"), policyNumber,
+                amount(p, "paidAmount") != null ? amount(p, "paidAmount") : amount(p, "settledAmount"),
+                onInstant(p, "settledAt", occurredAt));
+            case "claims.ClaimReopened" -> store.claimReopened(tenantId, uuid(p, "claimId"), policyNumber,
+                onInstant(p, "reopenedAt", occurredAt));
             case "party.PartyRegistered", "party.PartyDetailsAmended" ->
                 refreshClient(tenantId, uuid(p, "partyId"), text(p, "partyType"), occurredAt);
             case "party.PartyKycStatusChanged" -> {

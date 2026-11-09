@@ -42,6 +42,6 @@ public final class ReportingTestMigrations {
     public static final String[] ALL = Stream.of(
             Arrays.stream(DepositTestMigrations.ALL),
             Arrays.stream(FINACCOUNTING),
-            Stream.of("db-migrations/reporting/V1__create_reporting_schema.sql"))
+            Stream.of("db-migrations/reporting/V1__create_reporting_schema.sql", "db-migrations/reporting/V2__claims.sql"))
         .flatMap(s -> s).toArray(String[]::new);
 }

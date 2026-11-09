@@ -440,7 +440,9 @@ class ReportQueriesIntegrationTest {
             // batch and had been failing on main ever since; nothing else asserts the catalogue is complete.
             .containsExactly("policies-in-force", "products", "new-business", "lapse-rate", "persistency",
                 "premium-collections", "clients",
-                "trial-balance", "general-ledger", "balance-sheet", "income-statement");
+                "trial-balance", "general-ledger", "balance-sheet", "income-statement",
+                "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
+                "early-claims", "claims-outstanding");
     }
 
     @Test
@@ -451,5 +453,161 @@ class ReportQueriesIntegrationTest {
         assertThat(result.generatedAt()).isNotNull();
         ReportSection section = result.sections().get(0);
         assertThat(section.totals()).isNotNull();
+    }
+
+    // ---- claims (2026-11-09, the reports redesign batch 2) -----------------------------------------------------------
+
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private Map<String, Object> claimRow(UUID claimId) {
+        return jdbc.queryForMap("SELECT * FROM reporting.report_claim WHERE tenant_id = ? AND claim_id = ?", tenant, claimId);
+    }
+
+    @Test
+    void aClaimsLifeIsOneRowWithEveryStepDated() {
+        events.sell(tenant, Sale.of("P-CL", product, d("2025-01-05")));
+        UUID claim = events.claimRegistered(tenant, "P-CL", "DEATH", d("2026-02-20"), d("2026-03-01"));
+        events.claimApproved(tenant, claim, "P-CL", "DEATH", d("2026-02-20"), "5000000.00", d("2026-03-10"));
+        events.claimSettlementRequested(tenant, claim, "P-CL", "4800000.00", d("2026-03-11"));
+        events.claimSettled(tenant, claim, "P-CL", "5000000.00", "4800000.00", d("2026-03-15"));
+
+        Map<String, Object> row = claimRow(claim);
+        assertThat(row.get("claim_type")).isEqualTo("DEATH");
+        assertThat(row.get("registered_on").toString()).isEqualTo("2026-03-01");
+        assertThat(row.get("approved_on").toString()).isEqualTo("2026-03-10");
+        assertThat((java.math.BigDecimal) row.get("approved_amount")).isEqualByComparingTo("5000000.00");
+        assertThat((java.math.BigDecimal) row.get("payable_amount")).isEqualByComparingTo("4800000.00");
+        assertThat((java.math.BigDecimal) row.get("paid_amount")).isEqualByComparingTo("4800000.00");
+        assertThat(row.get("settled_on").toString()).isEqualTo("2026-03-15");
+    }
+
+    /**
+     * A small book: in September two death claims of 4m and 6m approved; in October three -- 4m, 5m and one large
+     * 25m -- one disability declined, and one still open.
+     */
+    private void twoMonthsOfClaims() {
+        events.sell(tenant, Sale.of("P-1", product, d("2025-06-01")));
+        events.sell(tenant, Sale.of("P-2", product, d("2026-03-01")));
+        claim("P-1", "DEATH", "2026-08-25", "2026-09-01", "2026-09-05", "4000000.00", "2026-09-20");
+        claim("P-1", "DEATH", "2026-08-26", "2026-09-02", "2026-09-10", "6000000.00", null);
+        claim("P-2", "DEATH", "2026-09-28", "2026-10-01", "2026-10-03", "4000000.00", "2026-10-10");
+        claim("P-2", "DEATH", "2026-09-29", "2026-10-02", "2026-10-06", "5000000.00", "2026-10-30");
+        claim("P-1", "DEATH", "2026-09-30", "2026-10-03", "2026-10-08", "25000000.00", null);
+        UUID declined = events.claimRegistered(tenant, "P-2", "DISABILITY", d("2026-10-01"), d("2026-10-04"));
+        events.claimRejected(tenant, declined, "P-2", "DISABILITY", "Non-disclosure", d("2026-10-12"));
+        events.claimRegistered(tenant, "P-2", "DEATH", d("2026-10-20"), d("2026-10-21"));
+    }
+
+    private void claim(String policy, String type, String event, String registered, String approved, String amount,
+                       String paid) {
+        UUID id = events.claimRegistered(tenant, policy, type, d(event), d(registered));
+        events.claimApproved(tenant, id, policy, type, d(event), amount, d(approved));
+        if (paid != null) {
+            events.claimSettlementRequested(tenant, id, policy, amount, d(paid));
+            events.claimSettled(tenant, id, policy, amount, amount, d(paid));
+        }
+    }
+
+    private static ReportFilter october() {
+        return ReportFilter.months(java.time.YearMonth.of(2026, 10), java.time.YearMonth.of(2026, 10))
+            .withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD);
+    }
+
+    private static String figure(ReportResult r, String key) {
+        return r.figures().stream().filter(x -> x.key().equals(key)).findFirst().orElseThrow().value();
+    }
+
+    @Test
+    void claimsIncurredSplitsTheChangeIntoMoreClaimsBiggerClaimsAndLargeOnes() {
+        twoMonthsOfClaims();
+
+        ReportResult r = run("claims-incurred", october());
+
+        assertThat(figure(r, "incurred")).isEqualTo("34000000.00");
+        assertThat(r.figures().get(0).prior()).isEqualTo("10000000.00");
+        assertThat(figure(r, "claims")).isEqualTo("3");
+        assertThat(figure(r, "large")).isEqualTo("1");
+        // Ordinary claims: Sep 2 x 5m = 10m, Oct 2 x 4.5m = 9m. Count effect 0; severity -1m; large +25m.
+        List<tz.co.nlolo.lifeplatform.reporting.api.ReportChart.Bar> bars = r.chart().bars();
+        assertThat(bars.get(0).value()).isEqualTo("10000000.00");
+        assertThat(bars.get(1).value()).isEqualTo("0.00");
+        assertThat(bars.get(2).kind()).isEqualTo("DOWN");
+        assertThat(bars.get(2).value()).isEqualTo("1000000.00");
+        assertThat(bars.get(3).value()).isEqualTo("25000000.00");
+        assertThat(bars.get(4).value()).isEqualTo("34000000.00");
+
+        // The tree: the product opens to Death, which opens to its three claims, each level stating its sum.
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts byType =
+            reportingApi.parts("claims-incurred", "product:" + product, october(), 0);
+        assertThat(byType.rows()).singleElement().satisfies(row -> assertThat(row.get("line")).isEqualTo("Death"));
+        assertThat(byType.balanced()).isTrue();
+        tz.co.nlolo.lifeplatform.reporting.api.ReportParts death =
+            reportingApi.parts("claims-incurred", byType.rows().get(0).get("_lineId"), october(), 0);
+        assertThat(death.rows()).hasSize(3);
+        assertThat(death.check()).isEqualTo("3 claims = 34,000,000.00");
+    }
+
+    @Test
+    void outcomesTurnaroundAndTheOpenClaimsMovementAddUp() {
+        twoMonthsOfClaims();
+
+        ReportResult outcomes = run("claim-outcomes", october());
+        assertThat(figure(outcomes, "registered")).isEqualTo("5");
+        assertThat(figure(outcomes, "declineRate")).isEqualTo("25.0");
+        assertThat(rows(outcomes, 1)).singleElement().satisfies(row -> assertThat(row.get("line")).isEqualTo("Non-disclosure"));
+
+        ReportResult outstanding = run("claims-outstanding", october());
+        // Open at start: September's unpaid 6m claim. Registered 5, paid 2, declined 1 -> open 3.
+        assertThat(rows(outstanding, 0).get(0).get("count")).isEqualTo("1");
+        assertThat(rows(outstanding, 0).get(5).get("count")).isEqualTo("3");
+        assertThat(rows(outstanding, 0).get(6).get("line")).startsWith("✓ 1 + 5 + 0 − 2 − 1 = 3");
+        assertThat(figure(outstanding, "unpaid")).isEqualTo("31000000.00");
+
+        ReportResult paid = run("claims-approved-vs-paid", october());
+        assertThat(figure(paid, "paid")).isEqualTo("9000000.00");
+
+        ReportResult turnaround = run("claims-turnaround", october());
+        // Paid in October: registered 1 Oct paid 10 Oct (9 days), registered 2 Oct paid 30 Oct (28 days).
+        assertThat(figure(turnaround, "onTime")).isEqualTo("100.0");
+
+        ReportResult early = run("early-claims", october());
+        // P-2 started 2026-03-01: its October claims fell within a year of starting.
+        assertThat(figure(early, "year1")).isEqualTo("4");
+    }
+
+    /**
+     * Found on dev 2026-11-09: a declined claim that was reopened still counted as closed. Its decline stays where it
+     * happened; from the reopening it is open again, and the movement shows it.
+     */
+    @Test
+    void aReopenedClaimIsOpenAgainAndTheMovementStillAddsUp() {
+        events.sell(tenant, Sale.of("P-R", product, d("2025-06-01")));
+        UUID claim = events.claimRegistered(tenant, "P-R", "DEATH", d("2026-09-01"), d("2026-09-02"));
+        events.claimRejected(tenant, claim, "P-R", "DEATH", "Exclusion period", d("2026-09-20"));
+        events.claimReopened(tenant, claim, "P-R", "DEATH", d("2026-10-05"));
+
+        ReportResult september = run("claims-outstanding", ReportFilter.months(java.time.YearMonth.of(2026, 9),
+            java.time.YearMonth.of(2026, 9)));
+        assertThat(rows(september, 0).get(5).get("count")).as("declined in September: closed").isEqualTo("0");
+
+        ReportResult r = run("claims-outstanding", october());
+        assertThat(rows(r, 0).get(2).get("count")).as("reopened in October").isEqualTo("1");
+        assertThat(rows(r, 0).get(5).get("count")).as("open again at the end of October").isEqualTo("1");
+        assertThat(rows(r, 0).get(6).get("line")).startsWith("✓ 0 + 0 + 1 − 0 − 0 = 1");
+        // Its decline is history: it happened in September.
+        assertThat(figure(run("claim-outcomes", october()), "declined")).isEqualTo("0");
+    }
+
+    @Test
+    void aDeclinedClaimKeepsItsReasonAndAnEarlyEventStillMakesARow() {
+        UUID claim = UUID.randomUUID();
+        // The approval arrives before the registration (a replay out of order): the row is made, then completed.
+        events.claimApproved(tenant, claim, "P-X", "DISABILITY", d("2026-01-02"), "100.00", d("2026-01-20"));
+        UUID declined = events.claimRegistered(tenant, "P-Y", "DEATH", d("2026-01-03"), d("2026-01-04"));
+        events.claimRejected(tenant, declined, "P-Y", "DEATH", "Non-disclosure", d("2026-01-25"));
+
+        assertThat(claimRow(claim).get("approved_on").toString()).isEqualTo("2026-01-20");
+        assertThat(claimRow(declined).get("reject_reason")).isEqualTo("Non-disclosure");
+        assertThat(claimRow(declined).get("rejected_on").toString()).isEqualTo("2026-01-25");
     }
 }

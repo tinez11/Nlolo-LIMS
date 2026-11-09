@@ -10,6 +10,18 @@ package tz.co.nlolo.lifeplatform.reporting.api;
  *                      zero or there is no comparison
  * @param goodWhen      UP when a rise is good news for the insurer, DOWN when it is bad; null when neither
  * @param lead          on the figures band (the answer the report exists for), rather than a tile
+ * @param unit          MONEY, COUNT, PERCENT or DAYS -- how the screen writes the value (2026-11-09, the claims reports)
  */
 public record ReportFigure(String key, String label, String value, String prior, String change, String changePercent,
-                           String goodWhen, boolean lead) {}
+                           String goodWhen, boolean lead, String unit) {
+
+    public ReportFigure {
+        unit = unit == null ? "MONEY" : unit;
+    }
+
+    /** A money figure, as every statement figure is. */
+    public ReportFigure(String key, String label, String value, String prior, String change, String changePercent,
+                        String goodWhen, boolean lead) {
+        this(key, label, value, prior, change, changePercent, goodWhen, lead, "MONEY");
+    }
+}

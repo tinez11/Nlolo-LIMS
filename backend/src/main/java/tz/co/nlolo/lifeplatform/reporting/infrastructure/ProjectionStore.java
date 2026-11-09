@@ -21,7 +21,7 @@ public class ProjectionStore {
 
     private static final UUID UNKNOWN_PRODUCT = new UUID(0L, 0L);
     private static final List<String> TABLES = List.of("report_policy", "report_policy_status_change",
-        "report_collection", "report_client", "report_lives_change", "applied_event");
+        "report_collection", "report_client", "report_lives_change", "report_claim", "applied_event");
 
     private final JdbcTemplate jdbc;
 
@@ -143,6 +143,67 @@ public class ProjectionStore {
         jdbc.update("INSERT INTO reporting.report_lives_change (tenant_id, event_id, policy_number, kind, lives_covered,"
             + " scheme_total_covered, effective_on, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
             tenantId, eventId, policyNumber, kind, lives, schemeTotalCovered, effectiveOn, Timestamp.from(occurredAt));
+    }
+
+    // --- claims (2026-11-09, the reports redesign batch 2) ------------------------------------------------------------
+    // Each claims event fills its own columns of one row per claim. An event that arrives before the claim's
+    // registration creates the row with what it knows; the registration fills the rest when it comes.
+
+    public void claimRegistered(UUID tenantId, UUID claimId, String policyNumber, String claimType, LocalDate dateOfEvent,
+                                LocalDate registeredOn) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, claim_type, date_of_event,"
+            + " registered_on) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"
+            + " policy_number = COALESCE(EXCLUDED.policy_number, report_claim.policy_number),"
+            + " claim_type = COALESCE(EXCLUDED.claim_type, report_claim.claim_type),"
+            + " date_of_event = COALESCE(EXCLUDED.date_of_event, report_claim.date_of_event),"
+            + " registered_on = EXCLUDED.registered_on",
+            tenantId, claimId, policyNumber, claimType, dateOfEvent, registeredOn);
+    }
+
+    public void claimApproved(UUID tenantId, UUID claimId, String policyNumber, String claimType, LocalDate dateOfEvent,
+                              BigDecimal amount, String currency, LocalDate approvedOn) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, claim_type, date_of_event,"
+            + " approved_on, approved_amount, currency) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'TZS'))"
+            + " ON CONFLICT (tenant_id, claim_id) DO UPDATE SET approved_on = EXCLUDED.approved_on,"
+            + " approved_amount = EXCLUDED.approved_amount, currency = EXCLUDED.currency,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number),"
+            + " claim_type = COALESCE(report_claim.claim_type, EXCLUDED.claim_type),"
+            + " date_of_event = COALESCE(report_claim.date_of_event, EXCLUDED.date_of_event)",
+            tenantId, claimId, policyNumber, claimType, dateOfEvent, approvedOn, amount, currency);
+    }
+
+    public void claimRejected(UUID tenantId, UUID claimId, String policyNumber, String claimType, String reason,
+                              LocalDate rejectedOn) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, claim_type, rejected_on,"
+            + " reject_reason) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"
+            + " rejected_on = EXCLUDED.rejected_on, reject_reason = EXCLUDED.reject_reason,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number),"
+            + " claim_type = COALESCE(report_claim.claim_type, EXCLUDED.claim_type)",
+            tenantId, claimId, policyNumber, claimType, rejectedOn, reason);
+    }
+
+    public void claimSettlementRequested(UUID tenantId, UUID claimId, String policyNumber, BigDecimal payable,
+                                         LocalDate on) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, payable_amount,"
+            + " settlement_requested_on) VALUES (?, ?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"
+            + " payable_amount = EXCLUDED.payable_amount, settlement_requested_on = EXCLUDED.settlement_requested_on,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number)",
+            tenantId, claimId, policyNumber, payable, on);
+    }
+
+    public void claimSettled(UUID tenantId, UUID claimId, String policyNumber, BigDecimal paid, LocalDate on) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, paid_amount, settled_on)"
+            + " VALUES (?, ?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"
+            + " paid_amount = EXCLUDED.paid_amount, settled_on = EXCLUDED.settled_on,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number)",
+            tenantId, claimId, policyNumber, paid, on);
+    }
+
+    public void claimReopened(UUID tenantId, UUID claimId, String policyNumber, LocalDate on) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, reopened_on)"
+            + " VALUES (?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET reopened_on = EXCLUDED.reopened_on,"
+            + " policy_number = COALESCE(report_claim.policy_number, EXCLUDED.policy_number)",
+            tenantId, claimId, policyNumber, on);
     }
 
     /** A rebuild starts here: every row this tenant has, including the record of which events were applied. */

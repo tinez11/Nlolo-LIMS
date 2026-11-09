@@ -49,6 +49,7 @@ const ORDER: { id: string; title: string }[] = [
 /** Which area a catalogue report belongs to. Later batches add their own categories; until then, by key. */
 function areaOf(definition: ReportDefinition): string {
   if (definition.category === 'ACCOUNTING') return 'accounting';
+  if (definition.category === 'CLAIMS') return 'claims';
   if (definition.key === 'clients') return 'clients';
   return 'policies';
 }

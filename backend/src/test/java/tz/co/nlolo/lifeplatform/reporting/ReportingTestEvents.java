@@ -111,6 +111,44 @@ public class ReportingTestEvents {
             "productId", s.productId(), "expiredAt", expiredOn.toString()));
     }
 
+    // --- claims (2026-11-09, the reports redesign batch 2): the payloads as ClaimsApiImpl publishes them ------------
+
+    public UUID claimRegistered(UUID tenant, String policyNumber, String claimType, LocalDate dateOfEvent, LocalDate on) {
+        UUID claimId = UUID.randomUUID();
+        apply(tenant, "claims.ClaimRegistered", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "claimantPartyId", UUID.randomUUID(), "claimType", claimType, "dateOfEvent", dateOfEvent.toString(),
+            "requiresContestabilityReview", false));
+        return claimId;
+    }
+
+    public void claimApproved(UUID tenant, UUID claimId, String policyNumber, String claimType, LocalDate dateOfEvent,
+                              String amount, LocalDate on) {
+        apply(tenant, "claims.ClaimApproved", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "claimType", claimType, "dateOfEvent", dateOfEvent.toString(),
+            "approvedAmount", Map.of("amount", amount, "currencyCode", "TZS")));
+    }
+
+    public void claimRejected(UUID tenant, UUID claimId, String policyNumber, String claimType, String reason, LocalDate on) {
+        apply(tenant, "claims.ClaimRejected", on, Map.of("claimId", claimId, "reason", reason,
+            "policyNumber", policyNumber, "claimType", claimType));
+    }
+
+    public void claimSettlementRequested(UUID tenant, UUID claimId, String policyNumber, String payable, LocalDate on) {
+        apply(tenant, "claims.ClaimSettlementRequested", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "amount", Map.of("amount", payable, "currencyCode", "TZS")));
+    }
+
+    public void claimSettled(UUID tenant, UUID claimId, String policyNumber, String approved, String paid, LocalDate on) {
+        apply(tenant, "claims.ClaimSettled", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "settledAmount", Map.of("amount", approved, "currencyCode", "TZS"),
+            "paidAmount", Map.of("amount", paid, "currencyCode", "TZS"), "settledAt", at(on).toString()));
+    }
+
+    public void claimReopened(UUID tenant, UUID claimId, String policyNumber, String claimType, LocalDate on) {
+        apply(tenant, "claims.ClaimReopened", on, Map.of("claimId", claimId, "policyNumber", policyNumber,
+            "claimType", claimType, "fromStatus", "REJECTED", "reopenedAt", at(on).toString()));
+    }
+
     public void lapse(UUID tenant, String policyNumber, LocalDate on) {
         apply(tenant, "policy.PolicyLapsed", on, Map.of("policyNumber", policyNumber, "lapsedAt", at(on).toString()));
     }
