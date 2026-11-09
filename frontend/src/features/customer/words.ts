@@ -28,6 +28,17 @@ const en = {
     you: (name: string, age: number) => `${name}, ${age}`,
     changeDetails: 'Change',
     applySoon: 'Applying online is coming soon. To go ahead now, contact us or an agent.',
+    // The opening screen (2026-11-09, the user: start with an opening statement, as other quotes online do).
+    welcomeTitle: 'Cover for you and your family, priced in minutes',
+    welcomeLead: 'See what life cover, savings or funeral cover would cost you, then apply here if you like it.',
+    welcomeSteps: [
+      ['Tell us a little about you', 'Your date of birth is all we need for a price.'],
+      ['See your price', 'In plain words: what you pay and what you get.'],
+      ['Apply if it suits you', 'We text a code to your phone to confirm it. No paperwork.'],
+    ] as [string, string][],
+    welcomeNeed: 'You will need your mobile phone to apply. We ask for your ID before any policy is issued.',
+    welcomeNoObligation: 'No obligation. Nothing is saved until you apply.',
+    start: 'Get my price',
   },
   // Applying through the public link (2026-11-08): the phone confirmed by a texted code, and a declaration agreed.
   publicApply: {
@@ -293,6 +304,16 @@ const sw: Words = {
     you: (name: string, age: number) => `${name}, miaka ${age}`,
     changeDetails: 'Badilisha',
     applySoon: 'Kuomba mtandaoni kunakuja hivi karibuni. Kuendelea sasa, wasiliana nasi au wakala.',
+    welcomeTitle: 'Bima kwa ajili yako na familia yako, bei ndani ya dakika chache',
+    welcomeLead: 'Ona bima ya maisha, akiba au mazishi ingekugharimu kiasi gani, kisha omba hapa ukiipenda.',
+    welcomeSteps: [
+      ['Tueleze kidogo kukuhusu', 'Tarehe yako ya kuzaliwa inatosha kupata bei.'],
+      ['Ona bei yako', 'Kwa maneno rahisi: unacholipa na unachopata.'],
+      ['Omba ikikufaa', 'Tunatuma namba kwenye simu yako kuithibitisha. Hakuna makaratasi.'],
+    ] as [string, string][],
+    welcomeNeed: 'Utahitaji simu yako ya mkononi kuomba. Tutakuomba kitambulisho kabla bima haijatolewa.',
+    welcomeNoObligation: 'Hakuna wajibu. Hakuna kinachohifadhiwa hadi uombe.',
+    start: 'Nipe bei yangu',
   },
   publicApply: {
     step: 'Taarifa zako',

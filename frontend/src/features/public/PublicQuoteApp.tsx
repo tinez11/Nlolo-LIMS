@@ -8,6 +8,7 @@ import { FormField, RequiredNote } from '@/components/FormField';
 import { Turnstile } from '@/components/Turnstile';
 import { LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { CircleCheckBig, Smartphone } from 'lucide-react';
 import { Input, Select } from '@/components/ui/input';
 import { useLanguage } from '@/features/customer/language';
 import { QuoteSourceProvider, type QuoteSource } from '@/features/customer/quoteSource';
@@ -30,6 +31,7 @@ export function PublicQuoteApp() {
   const [visit, setVisit] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [person, setPerson] = useState<AboutYouValues | null>(null);
+  const [started, setStarted] = useState(false);
 
   function begin(token: string) {
     startPublicVisit(token).then(
@@ -82,7 +84,10 @@ export function PublicQuoteApp() {
 
       <main id="main" className="pt-4">
         <Turnstile onToken={begin} onError={() => setFailed(true)} language={language} />
-        {failed && !visit ? (
+        {/* The opening screen first (2026-11-09); the person check runs behind it meanwhile. */}
+        {!started ? (
+          <Welcome onStart={() => setStarted(true)} />
+        ) : failed && !visit ? (
           <div className="mx-auto max-w-xl px-4 pt-8 text-base">
             <p role="alert" className="rounded-xl bg-status-danger-bg px-4 py-3 text-status-danger-fg">{w.notStarted}</p>
           </div>
@@ -182,4 +187,39 @@ function ageOn(iso: string): number {
   let age = now.getFullYear() - born.getFullYear();
   if (now.getMonth() < born.getMonth() || (now.getMonth() === born.getMonth() && now.getDate() < born.getDate())) age -= 1;
   return age;
+}
+
+/**
+ * The opening screen (2026-11-09, the user: "start with an opening statement, as other quotes online do"): what this
+ * is, the three steps, what you will need, and that nothing is owed or kept -- then one button.
+ */
+function Welcome({ onStart }: { onStart: () => void }) {
+  const w = useWords().publicQuote;
+  return (
+    <section className="mx-auto w-full max-w-xl space-y-6 px-4 pb-10 pt-4 text-base sm:px-6">
+      <div className="space-y-2">
+        <h1 className="text-display">{w.welcomeTitle}</h1>
+        <p className="text-muted-foreground">{w.welcomeLead}</p>
+      </div>
+      <ol className="space-y-3">
+        {w.welcomeSteps.map(([step, note], i) => (
+          <li key={step} className="flex gap-3 rounded-2xl border border-border bg-surface p-4">
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent font-semibold text-accent-foreground"
+              aria-hidden>
+              {i + 1}
+            </span>
+            <span>
+              <span className="block font-semibold">{step}</span>
+              <span className="block text-sm text-muted-foreground">{note}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="space-y-2 text-sm">
+        <p className="flex gap-2"><Smartphone className="mt-0.5 size-4 shrink-0" aria-hidden />{w.welcomeNeed}</p>
+        <p className="flex gap-2"><CircleCheckBig className="mt-0.5 size-4 shrink-0" aria-hidden />{w.welcomeNoObligation}</p>
+      </div>
+      <Button variant="primary" className="h-12 w-full text-base" onClick={onStart}>{w.start}</Button>
+    </section>
+  );
 }
