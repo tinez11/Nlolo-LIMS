@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.reporting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.reporting.api.CompareWith;
 import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportParameterException;
@@ -32,7 +33,12 @@ final class ReportFilterParams {
             value(q, "groupBy", GroupBy::valueOf, "one of PRODUCT, PRODUCT_CATEGORY, AGENT, CHANNEL, BRANCH"),
             value(q, "monthFrom", YearMonth::parse, "a month, YYYY-MM"),
             value(q, "monthTo", YearMonth::parse, "a month, YYYY-MM"),
-            blankToNull(q.get("accountCode")));
+            blankToNull(q.get("accountCode")),
+            orNone(value(q, "compareWith", CompareWith::valueOf, "one of PRIOR_PERIOD, SAME_PERIOD_LAST_YEAR, NONE")));
+    }
+
+    private static CompareWith orNone(CompareWith with) {
+        return with == null ? CompareWith.NONE : with;
     }
 
     private static <T> T value(Map<String, String> q, String name, Function<String, T> parser, String shape) {

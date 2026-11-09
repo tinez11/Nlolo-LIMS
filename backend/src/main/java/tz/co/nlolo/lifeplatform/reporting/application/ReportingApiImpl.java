@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.reporting.application;
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportParts;
 import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
@@ -86,9 +87,17 @@ public class ReportingApiImpl implements ReportingApi {
         if (report == null) throw new ReportNotFoundException(key);
         ReportFilters.validate(report.definition(), filter);
         Labels labels = labelsFactory.create();
-        List<ReportSection> sections = report.run(TenantContext.get(), filter, labels);
+        ReportBody body = report.body(TenantContext.get(), filter, labels);
         return new ReportResult(key, report.definition().title(), FilterSummary.describe(report.definition(), filter, labels),
-            Instant.now(clock), sections);
+            Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel());
+    }
+
+    @Override
+    public ReportParts parts(String key, String lineId, ReportFilter filter, int page) {
+        Report report = reports.get(key);
+        if (report == null) throw new ReportNotFoundException(key);
+        ReportFilters.validate(report.definition(), filter);
+        return report.parts(TenantContext.get(), lineId, filter, page, labelsFactory.create());
     }
 
     @Override

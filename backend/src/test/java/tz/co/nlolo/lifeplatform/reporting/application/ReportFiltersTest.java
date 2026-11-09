@@ -12,6 +12,8 @@ import java.time.YearMonth;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -87,5 +89,40 @@ class ReportFiltersTest {
         ReportParameterException e = assertThrows(ReportParameterException.class,
             () -> ReportFilters.validate(management(DateFilterKind.AS_OF), f));
         assertTrue(e.getMessage().contains("monthFrom"));
+    }
+
+    // --- compare with (2026-11-09, the user: variance against the prior period) ----------------------------------
+
+    @Test
+    void thePriorPeriodIsTheSameNumberOfMonthsImmediatelyBefore() {
+        tz.co.nlolo.lifeplatform.reporting.api.CompareWith prior = tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD;
+        YearMonth[] one = ReportFilter.months(YearMonth.of(2026, 10), YearMonth.of(2026, 10)).withCompareWith(prior)
+            .comparisonMonths();
+        assertEquals(YearMonth.of(2026, 9), one[0]);
+        assertEquals(YearMonth.of(2026, 9), one[1]);
+        YearMonth[] quarter = ReportFilter.months(YearMonth.of(2026, 7), YearMonth.of(2026, 9)).withCompareWith(prior)
+            .comparisonMonths();
+        assertEquals(YearMonth.of(2026, 4), quarter[0]);
+        assertEquals(YearMonth.of(2026, 6), quarter[1]);
+        YearMonth[] month = ReportFilter.month(YearMonth.of(2026, 1)).withCompareWith(prior).comparisonMonths();
+        assertEquals(YearMonth.of(2025, 12), month[0]);
+    }
+
+    @Test
+    void theSamePeriodLastYearIsTheSameMonthsAYearEarlier() {
+        YearMonth[] last = ReportFilter.months(YearMonth.of(2026, 1), YearMonth.of(2026, 10))
+            .withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.SAME_PERIOD_LAST_YEAR).comparisonMonths();
+        assertEquals(YearMonth.of(2025, 1), last[0]);
+        assertEquals(YearMonth.of(2025, 10), last[1]);
+        assertNull(ReportFilter.months(YearMonth.of(2026, 1), YearMonth.of(2026, 10)).comparisonMonths(),
+            "comparing with nothing is no comparison");
+    }
+
+    @Test
+    void aReportThatDoesNotCompareRefusesCompareWith() {
+        ReportFilter f = ReportFilter.month(YearMonth.of(2026, 9))
+            .withCompareWith(tz.co.nlolo.lifeplatform.reporting.api.CompareWith.PRIOR_PERIOD);
+        assertThrows(ReportParameterException.class, () -> ReportFilters.validate(accounting(DateFilterKind.MONTH), f));
+        assertDoesNotThrow(() -> ReportFilters.validate(accounting(DateFilterKind.MONTH).comparingPeriods(), f));
     }
 }

@@ -12,7 +12,20 @@ import java.util.List;
  */
 public record ReportDefinitionView(String key, String title, String description, ReportCategory category,
                                    DateFilterKind dateFilterKind, List<GroupBy> groupByOptions, boolean comparable,
-                                   boolean requiresAccount) {
+                                   boolean requiresAccount, boolean comparesPeriods) {
+
+    /** Every report before the redesign, which compares with no other period (2026-11-09). */
+    public ReportDefinitionView(String key, String title, String description, ReportCategory category,
+                                DateFilterKind dateFilterKind, List<GroupBy> groupByOptions, boolean comparable,
+                                boolean requiresAccount) {
+        this(key, title, description, category, dateFilterKind, groupByOptions, comparable, requiresAccount, false);
+    }
+
+    /** The same report, offering "compare with" the prior period or the same period last year. */
+    public ReportDefinitionView comparingPeriods() {
+        return new ReportDefinitionView(key, title, description, category, dateFilterKind, groupByOptions, comparable,
+            requiresAccount, true);
+    }
 
     /** A report that takes any account, or none -- every report but the general ledger. */
     public ReportDefinitionView(String key, String title, String description, ReportCategory category,
