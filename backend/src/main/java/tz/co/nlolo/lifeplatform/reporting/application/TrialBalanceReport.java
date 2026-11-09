@@ -1,17 +1,20 @@
 package tz.co.nlolo.lifeplatform.reporting.application;
 
 import org.springframework.stereotype.Component;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.reporting.api.DateFilterKind;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportCategory;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportFigure;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.domain.Figures;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,25 +22,23 @@ import java.util.UUID;
 
 import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.MONEY;
 import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.TEXT;
-import static tz.co.nlolo.lifeplatform.reporting.application.Sections.col;
 
 /**
- * Every posted account's position through the chosen period, and the one assertion a ledger must always be
- * able to make.
+ * Every posted account's month: where it opened, what was debited and credited to it in the month, and where it
+ * closed -- and the one assertion a ledger must always be able to make.
  *
- * <p>Cumulative, not one month's movement: a trial balance states where the books STAND at a date. The rows
- * carry each account's OWN debits and credits -- a trial balance lists what was posted where, and the roll-up
- * belongs to the statements that summarise it.
+ * <p>2026-11-09, the user: "not user friendly at all". The month and the position no longer mix: debits and credits
+ * are the MONTH's (they were inception-to-date beside a month's opening and movement), the account's code and name
+ * read as one column, and Type and Currency -- the code says the one, and the book has one currency -- are gone. Each
+ * row is opening + debits - credits = closing in the account's normal direction.
  *
- * <p>The totals are the ledger's own, not a sum of the rows: {@code TrialBalanceView} computes them from own
- * figures precisely so nothing downstream re-adds rolled balances and reports a sound ledger as wildly out.
- * Whether it balances is likewise the ledger's answer, never a comparison of two decimal strings made here.
+ * <p>The ledger check is the ledger's own: cumulative debits against credits through the month, never a sum made here.
  */
 @Component
 public class TrialBalanceReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("trial-balance", "Trial balance",
-        "Every posted account's opening balance, movement in the month, debits, credits and closing balance, and whether"
+        "Every posted account's opening balance, the month's debits and credits, and its closing balance; and whether"
             + " the ledger balances.",
         ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), false);
 
@@ -55,51 +56,41 @@ public class TrialBalanceReport implements Report {
     @Override
     public List<ReportSection> run(UUID tenantId, ReportFilter f, Labels labels) {
         TrialBalanceView ledger = finaccounting.trialBalanceThrough(f.monthFrom().toString());
-
-        // Where each account stood at the end of the month before, and how far it moved since (2026-11-09).
-        java.util.Map<String, java.math.BigDecimal> opening = new java.util.HashMap<>();
-        TrialBalanceView before = finaccounting.trialBalanceThrough(f.monthFrom().minusMonths(1).toString());
-        if (before != null) {
-            for (tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView a : before.accounts()) {
-                opening.put(a.accountCode(), a.balance());
-            }
+        Map<String, BigDecimal> opening = balances(finaccounting.trialBalanceThrough(f.monthFrom().minusMonths(1).toString()));
+        TrialBalanceView month = finaccounting.trialBalance(f.monthFrom().toString());
+        Map<String, AccountBalanceView> moved = new HashMap<>();
+        if (month != null) {
+            for (AccountBalanceView a : month.accounts()) moved.put(a.accountCode(), a);
         }
 
-        List<ReportColumn> columns = List.of(col("accountCode", "Account", TEXT), col("name", "Name", TEXT),
-            col("accountType", "Type", TEXT), col("currency", "Currency", TEXT),
-            col("opening", "Opening", MONEY), col("movement", "Movement", MONEY),
-            col("debit", "Debit", MONEY), col("credit", "Credit", MONEY), col("balance", "Balance", MONEY));
+        List<ReportColumn> columns = List.of(new ReportColumn("account", "Account", TEXT),
+            new ReportColumn("opening", "Opening", MONEY), new ReportColumn("debit", "Debits", MONEY),
+            new ReportColumn("credit", "Credits", MONEY), new ReportColumn("balance", "Closing", MONEY));
 
         // The accounts that were posted TO. A summary account carries no postings of its own, so it would be a
         // row of two zeroes beside a balance it inherited -- and the roll-up belongs to the statements, not here.
         List<Map<String, String>> rows = ledger.accounts().stream()
             .filter(a -> a.postingAllowed() && LedgerAccounts.posted(a)).map(a -> {
-            Map<String, String> row = new LinkedHashMap<>();
-            row.put("accountCode", a.accountCode());
-            row.put("name", a.name());
-            row.put("accountType", a.accountType().name());
-            row.put("currency", a.currency());
-            java.math.BigDecimal was = opening.getOrDefault(a.accountCode(), java.math.BigDecimal.ZERO);
-            row.put("opening", Figures.money(was));
-            row.put("movement", Figures.money(a.balance().subtract(was)));
-            row.put("debit", Figures.money(a.ownDebit()));
-            row.put("credit", Figures.money(a.ownCredit()));
-            row.put("balance", Figures.money(a.balance()));
-            return row;
-        }).toList();
+                AccountBalanceView m = moved.get(a.accountCode());
+                Map<String, String> row = new LinkedHashMap<>();
+                row.put("account", a.accountCode() + " " + a.name());
+                row.put("accountCode", a.accountCode());
+                row.put("opening", Figures.money(opening.getOrDefault(a.accountCode(), BigDecimal.ZERO)));
+                row.put("debit", Figures.money(m == null ? BigDecimal.ZERO : m.ownDebit()));
+                row.put("credit", Figures.money(m == null ? BigDecimal.ZERO : m.ownCredit()));
+                row.put("balance", Figures.money(a.balance()));
+                return row;
+            }).toList();
 
         Map<String, String> totals = new LinkedHashMap<>();
-        totals.put("accountCode", "Total");
-        totals.put("name", "");
-        totals.put("accountType", "");
-        totals.put("currency", rows.isEmpty() ? "" : rows.get(0).get("currency"));
+        totals.put("account", "Total");
         totals.put("opening", "");
-        totals.put("movement", "");
-        totals.put("debit", Figures.money(ledger.totalDebit()));
-        totals.put("credit", Figures.money(ledger.totalCredit()));
+        totals.put("debit", Figures.money(month == null ? BigDecimal.ZERO : month.totalDebit()));
+        totals.put("credit", Figures.money(month == null ? BigDecimal.ZERO : month.totalCredit()));
         totals.put("balance", "");
 
-        List<ReportColumn> check = List.of(col("status", "Check", TEXT), col("difference", "Difference", MONEY));
+        List<ReportColumn> check = List.of(new ReportColumn("status", "Check", TEXT),
+            new ReportColumn("difference", "Difference", MONEY));
         BigDecimal difference = ledger.totalDebit().subtract(ledger.totalCredit()).abs();
         Map<String, String> checkRow = new LinkedHashMap<>();
         checkRow.put("status", ledger.balanced()
@@ -110,5 +101,26 @@ public class TrialBalanceReport implements Report {
         return List.of(
             new ReportSection("Balances through " + f.monthFrom(), columns, rows, totals),
             new ReportSection("Ledger check", check, List.of(checkRow), Map.of()));
+    }
+
+    /** The month's debits and credits, and the ledger's difference -- zero, or the first thing anyone must look at. */
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        List<ReportSection> sections = run(tenantId, f, labels);
+        Map<String, String> totals = sections.get(0).totals();
+        String difference = sections.get(1).rows().get(0).get("difference");
+        List<ReportFigure> figures = List.of(
+            new ReportFigure("debit", "Debits in the month", totals.get("debit"), null, null, null, null, true),
+            new ReportFigure("credit", "Credits in the month", totals.get("credit"), null, null, null, null, true),
+            new ReportFigure("difference", "Out of balance", difference, null, null, null, null, true));
+        return new ReportBody(sections, figures, null, null);
+    }
+
+    private static Map<String, BigDecimal> balances(TrialBalanceView view) {
+        Map<String, BigDecimal> out = new HashMap<>();
+        if (view != null) {
+            for (AccountBalanceView a : view.accounts()) out.put(a.accountCode(), a.balance());
+        }
+        return out;
     }
 }

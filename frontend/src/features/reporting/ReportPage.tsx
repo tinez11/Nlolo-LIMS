@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { exportReport, type ExportFormat } from '@/api/reporting';
 import { PageHeader } from '@/components/PageHeader';
+import { Panel } from '@/components/Panel';
 import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,8 @@ import { ReportFilterBar } from './ReportFilterBar';
 import { ReportSectionTable } from './ReportSectionTable';
 import { ReportFigures } from './ReportFigures';
 import { ReportTree } from './ReportTree';
+import { ReportSwitcher } from './ReportSwitcher';
+import { reportAreas } from './reportAreas';
 import { BridgeChart } from '@/components/charts/BridgeChart';
 import { stateFromSearch, toParams, validateFilters } from './reportParams';
 
@@ -73,9 +76,11 @@ export function ReportPage() {
     <>
       <PageHeader
         title={definition.title}
+        breadcrumb={[{ label: 'Reports', to: '/staff/reports' }]}
         description={current ? [current.filterSummary, current.comparisonLabel].filter(Boolean).join(' · ') : definition.description}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {catalogue.data && <ReportSwitcher areas={reportAreas(catalogue.data)} currentKey={reportKey} />}
             {(['xlsx', 'csv', 'pdf'] as const).map((f) => (
               <Button key={f} size="sm" variant="secondary" onClick={() => void download(f)} disabled={!current}>
                 {f === 'xlsx' ? 'Excel' : f.toUpperCase()}
@@ -111,10 +116,11 @@ export function ReportPage() {
           <>
             <ReportFigures figures={current.figures} comparisonLabel={current.comparisonLabel} />
             {current.chart && current.chart.bars.length > 0 && (
-              <section className="rounded-xl border border-border bg-surface p-4 shadow-card">
-                <h2 className="mb-2 font-display text-sm font-semibold text-heading">{current.chart.description}</h2>
-                <BridgeChart bars={current.chart.bars} description={current.chart.description} />
-              </section>
+              <Panel title={current.chart.description}>
+                <div className="px-4 pb-4">
+                  <BridgeChart bars={current.chart.bars} description={current.chart.description} />
+                </div>
+              </Panel>
             )}
             {/* A section whose lines open to what they are made of is a tree (2026-11-09); the rest stay tables. */}
             {current.sections.map((section) =>

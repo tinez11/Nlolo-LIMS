@@ -20,9 +20,14 @@ public interface Report {
 
     List<ReportSection> run(UUID tenantId, ReportFilter filter, Labels labels);
 
-    /** Sections plus headline figures, a chart and a comparison (2026-11-09). A report without them answers sections. */
+    /**
+     * Sections plus headline figures, a chart and a comparison (2026-11-09). A report that works out none of its own
+     * heads the page with its first total row -- the same figures, already summed here, that close its first table
+     * (2026-11-09, the user: "still too basic inside").
+     */
     default ReportBody body(UUID tenantId, ReportFilter filter, Labels labels) {
-        return ReportBody.of(run(tenantId, filter, labels));
+        List<ReportSection> sections = run(tenantId, filter, labels);
+        return new ReportBody(sections, Sections.figuresFromTotals(sections), null, null);
     }
 
     /** What one of this report's lines is made of: the computation tree (2026-11-09). Only some reports have one. */

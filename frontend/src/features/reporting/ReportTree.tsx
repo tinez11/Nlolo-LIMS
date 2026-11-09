@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { getReportParts, type ReportColumn, type ReportParams, type ReportParts, type ReportSection } from '@/api/reporting';
+import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatCell } from './reportParams';
@@ -149,15 +150,17 @@ export function ReportTree({ reportKey, params, section }: { reportKey: string; 
   }
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{section.title}</h2>
+    <Panel
+      title={section.title}
+      subtitle="Open a line to see what it is made of, down to the postings."
+      actions={
         <div className="flex gap-1">
           <Button size="sm" variant="ghost" onClick={expandAll}>Expand all</Button>
           <Button size="sm" variant="ghost" onClick={() => setOpened({})}>Collapse all</Button>
         </div>
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-card">
+      }
+    >
+      <div className="overflow-x-auto rounded-b-xl">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">{section.title}</caption>
           <thead className="bg-band">
@@ -183,7 +186,7 @@ export function ReportTree({ reportKey, params, section }: { reportKey: string; 
           </tbody>
         </table>
       </div>
-    </section>
+    </Panel>
   );
 }
 
