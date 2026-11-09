@@ -3,10 +3,8 @@ package tz.co.nlolo.lifeplatform.omnichannel.domain;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -26,6 +24,11 @@ public final class DocumentXlsx {
     private DocumentXlsx() {}
 
     public static byte[] render(CustomerDocument d) {
+        return render(d, tz.co.nlolo.lifeplatform.organisation.api.Letterhead.fallback());
+    }
+
+    /** Under the company's letterhead, headings in its colour, set up to print (2026-11-09, organisation settings). */
+    public static byte[] render(CustomerDocument d, tz.co.nlolo.lifeplatform.organisation.api.Letterhead letterhead) {
         try (XSSFWorkbook book = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = book.createSheet(sheetName(d.title()));
             Font boldFont = book.createFont();
@@ -39,10 +42,7 @@ public final class DocumentXlsx {
             CellStyle label = book.createCellStyle();
             CellStyle value = book.createCellStyle();
             value.setFont(boldFont);
-            CellStyle head = book.createCellStyle();
-            head.setFont(boldFont);
-            head.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-            head.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            CellStyle head = tz.co.nlolo.lifeplatform.organisation.api.BrandedXlsx.heading(book, letterhead);
             head.setBorderBottom(BorderStyle.THIN);
             CellStyle money = book.createCellStyle();
             money.setDataFormat(book.createDataFormat().getFormat("#,##0.00"));
@@ -54,8 +54,7 @@ public final class DocumentXlsx {
             totalValue.setFont(boldFont);
             totalValue.setAlignment(HorizontalAlignment.RIGHT);
 
-            int r = 0;
-            set(sheet.createRow(r++), 0, d.issuer(), label);
+            int r = tz.co.nlolo.lifeplatform.organisation.api.BrandedXlsx.letterhead(book, sheet, letterhead);
             set(sheet.createRow(r++), 0, d.title(), title);
             r++;
             for (CustomerDocument.Field f : d.header()) {
@@ -96,7 +95,8 @@ public final class DocumentXlsx {
             r++;
             for (String note : d.notes()) set(sheet.createRow(r++), 0, note, label);
 
-            sheet.createFreezePane(0, headerRow + 1);
+            tz.co.nlolo.lifeplatform.organisation.api.BrandedXlsx.finish(sheet, letterhead, headerRow, d.columns().size(),
+                headerRow + d.rows().size());
             for (int i = 0; i < d.columns().size(); i++) {
                 sheet.autoSizeColumn(i);
                 sheet.setColumnWidth(i, Math.min(Math.max(sheet.getColumnWidth(i), 12 * 256), 45 * 256));

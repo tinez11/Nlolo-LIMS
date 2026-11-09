@@ -59,6 +59,7 @@ import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
 import { UserDetailPage } from '@/features/admin/UserDetailPage';
 import { UsersPage } from '@/features/admin/UsersPage';
+import { OrganisationPage } from '@/features/organisation/OrganisationPage';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
 import { CustomerClaimPage } from '@/features/customer/CustomerClaimPage';
@@ -406,6 +407,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'regulatory-returns': ['returns.view'], 'regulatory-returns/:returnId': ['returns.view'],
   reports: ['reports.view'], 'reports/:reportKey': ['reports.view'], 'solvency-factors': ['reports.view'],
   users: ['users.view'], 'users/new': ['users.manage'], 'users/:userId': ['users.view'], roles: ['users.view'],
+  organisation: ['organisation.manage'],
   'roles/new': ['roles.manage'], 'roles/:roleId': ['users.view'],
 };
 
@@ -533,6 +535,8 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'users/new', element: <NewUserPage />, reach: 'drill-in' },
   { path: 'users/:userId', element: <UserDetailPage />, reach: 'drill-in' },
   { path: 'roles', element: <RolesPage />, reach: { group: 'administration', label: 'Roles', icon: ShieldCheck } },
+  // Settings → Organisation (2026-11-09): the company, its branding, signatories and branches.
+  { path: 'organisation', element: <OrganisationPage />, reach: { group: 'administration', label: 'Organisation', icon: Building2 } },
   { path: 'roles/new', element: <NewRolePage />, reach: 'drill-in' },
   { path: 'roles/:roleId', element: <RoleDetailPage />, reach: 'drill-in' },
   { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },

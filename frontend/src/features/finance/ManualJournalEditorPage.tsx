@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { useManualJournalsStore } from '@/store/manualJournalsStore';
 import { useReferenceCodes } from '@/store/refdataStore';
+import { useBranchCodes } from '@/store/organisationStore';
 import {
   blankJournal,
   blankLine,
@@ -54,7 +55,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
   const templates = useManualJournalsStore((s) => s.templates);
   const loadTemplates = useManualJournalsStore((s) => s.loadTemplates);
   const reasons = useReferenceCodes('JOURNAL_REASON');
-  const branches = useReferenceCodes('BRANCH');
+  const branches = useBranchCodes();
   const [templateId, setTemplateId] = useState('');
 
   useEffect(() => {

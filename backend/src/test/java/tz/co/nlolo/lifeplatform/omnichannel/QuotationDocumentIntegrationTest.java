@@ -138,7 +138,7 @@ class QuotationDocumentIntegrationTest {
             "MONTHLY", 120, null, null, null, List.of()));
 
         // The platform's customer-document look: the issuer over the title, as on the policy schedule.
-        assertThat(text).contains("NLOLO LIFE").contains("Premium quotation");
+        assertThat(text).contains("Nlolo Life").contains("Premium quotation");
         assertThat(text).contains(nameOf(applicant));
         assertThat(text).contains("Quotation Term");
         // What it pays, in the table: the death benefit against the life insured.
@@ -294,9 +294,9 @@ class QuotationDocumentIntegrationTest {
             throw new IllegalStateException(e);
         }
 
-        assertThat(text).contains("NLOLO LIFE").contains("Group funeral scheme quotation");
+        assertThat(text).contains("Nlolo Life").contains("Group funeral scheme quotation");
         assertThat(text).contains(nameOf(association));
-        assertThat(text).contains("TZS 5,000.00 per member a month");
+        assertThat(text.replaceAll("\\s+", " ")).contains("TZS 5,000.00 per member a month");
         // The plan as people know it, by name, with the code beside it.
         assertThat(text).contains("Familia B (B)");
         assertThat(text).contains("M001").contains("Juma Ali").contains("5,000,000.00");

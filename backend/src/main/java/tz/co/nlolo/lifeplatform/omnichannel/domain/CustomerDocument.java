@@ -10,9 +10,18 @@ import java.util.List;
  * the two downloads can never say different things.
  *
  * @param landscape a wide table (the payment schedule's nine columns) prints across the page
+ * @param issuedOn  the day it was issued -- a receipt's day received, an advice's day paid -- so a reprint carries the
+ *                  signatory in force then (2026-11-09); null for today
  */
 public record CustomerDocument(String issuer, String title, List<Field> header, List<Column> columns,
-                               List<List<Object>> rows, List<Field> totals, List<String> notes, boolean landscape) {
+                               List<List<Object>> rows, List<Field> totals, List<String> notes, boolean landscape,
+                               LocalDate issuedOn) {
+
+    /** A document issued today: its signatory is today's. */
+    public CustomerDocument(String issuer, String title, List<Field> header, List<Column> columns,
+                            List<List<Object>> rows, List<Field> totals, List<String> notes, boolean landscape) {
+        this(issuer, title, header, columns, rows, totals, notes, landscape, null);
+    }
 
     public CustomerDocument {
         header = List.copyOf(header);

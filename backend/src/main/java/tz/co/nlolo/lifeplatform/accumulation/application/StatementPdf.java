@@ -1,105 +1,58 @@
 package tz.co.nlolo.lifeplatform.accumulation.application;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import tz.co.nlolo.lifeplatform.accumulation.api.LedgerEntryView;
 import tz.co.nlolo.lifeplatform.accumulation.api.StatementView;
+import tz.co.nlolo.lifeplatform.organisation.api.BrandedDocument;
+import tz.co.nlolo.lifeplatform.organisation.api.BrandedPdf;
+import tz.co.nlolo.lifeplatform.organisation.api.Letterhead;
+import tz.co.nlolo.lifeplatform.organisation.api.SignatureStamp;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
- * The statement as a PDF, laid out from the SAME {@link StatementView} the console shows (rule 5).
- *
- * <p>Standard-14 Helvetica only: no font file to ship, and every glyph a statement needs (digits,
- * Latin letters, the comma and full stop) is in it. A long statement continues onto further pages.
+ * The statement as a PDF, laid out from the SAME {@link StatementView} the console shows (rule 5) -- since 2026-11-09 in
+ * the company's own letterhead and signed by its statements signatory (organisation settings): the balances as facts,
+ * each kind of movement as its own table with its total, the closing balance beneath.
  */
 final class StatementPdf {
     private StatementPdf() {}
 
     private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final float MARGIN = 50f;
-    private static final float LINE = 14f;
 
-    static byte[] render(StatementView s, String insurerName) {
-        try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Writer w = new Writer(doc);
-            w.line(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14, insurerName + " -- savings account statement");
-            w.text("Policy " + s.policyNumber() + "    Period " + DMY.format(s.periodFrom()) + " to " + DMY.format(s.periodTo()));
-            w.gap();
-            w.text("Opening balance " + DMY.format(s.periodFrom()) + ":  " + money(s.openingBalance(), s.currency()));
-            w.gap();
-            for (StatementView.Group g : s.groups()) {
-                w.line(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11,
-                    StatementLabels.of(g.type()) + "  (" + money(g.total(), s.currency()) + ")");
-                for (LedgerEntryView e : g.entries()) {
-                    w.text("   " + DMY.format(e.effectiveDate()) + "   " + money(e.amount(), s.currency())
-                        + (e.reason() != null ? "   " + e.reason() : ""));
-                }
-                w.gap();
+    static byte[] render(StatementView s, Letterhead letterhead, SignatureStamp signature) {
+        List<BrandedDocument.Table> tables = new ArrayList<>();
+        for (StatementView.Group g : s.groups()) {
+            List<BrandedDocument.Row> rows = new ArrayList<>();
+            for (LedgerEntryView e : g.entries()) {
+                rows.add(BrandedDocument.Row.of(List.of(DMY.format(e.effectiveDate()), money(e.amount()),
+                    e.reason() == null ? "" : e.reason())));
             }
-            w.line(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12,
-                "Closing balance " + DMY.format(s.periodTo()) + ":  " + money(s.closingBalance(), s.currency()));
-            w.text("Includes every entry up to number " + s.lastSeq() + ". A later correction appears on the next statement.");
-            w.close();
-            doc.save(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not render the statement for " + s.policyNumber(), e);
+            rows.add(new BrandedDocument.Row(List.of("Total", money(g.total()), ""), BrandedDocument.Style.TOTAL, 0));
+            tables.add(new BrandedDocument.Table(StatementLabels.of(g.type()),
+                List.of(new BrandedDocument.Column("Date", false, 1.2f),
+                    new BrandedDocument.Column("Amount (" + s.currency() + ")", true, 1.4f),
+                    new BrandedDocument.Column("Detail", false, 4f)), rows));
         }
+        return BrandedPdf.render(new BrandedDocument("Savings account statement",
+            "From " + DMY.format(s.periodFrom()) + " to " + DMY.format(s.periodTo()),
+            List.of(new BrandedDocument.Field("Policy number", s.policyNumber()),
+                new BrandedDocument.Field("Period", DMY.format(s.periodFrom()) + " to " + DMY.format(s.periodTo())),
+                new BrandedDocument.Field("Opening balance", s.currency() + " " + money(s.openingBalance())),
+                new BrandedDocument.Field("Closing balance", s.currency() + " " + money(s.closingBalance()))),
+            List.of(), List.of(), null, tables,
+            List.of(new BrandedDocument.Field("Closing balance " + DMY.format(s.periodTo()),
+                s.currency() + " " + money(s.closingBalance()))),
+            List.of("Includes every entry up to number " + s.lastSeq() + ". A later correction appears on the next statement."),
+            false, false, signature), letterhead);
     }
 
-    private static String money(BigDecimal amount, String currency) {
-        return currency + " " + new DecimalFormat("#,##0.00;-#,##0.00", DecimalFormatSymbols.getInstance(Locale.ROOT)).format(amount);
-    }
-
-    /** Writes top to bottom, starting a new page when one fills. */
-    private static final class Writer {
-        private final PDDocument doc;
-        private PDPageContentStream stream;
-        private float y;
-
-        Writer(PDDocument doc) throws IOException {
-            this.doc = doc;
-            newPage();
-        }
-
-        private void newPage() throws IOException {
-            if (stream != null) stream.close();
-            PDPage page = new PDPage(PDRectangle.A4);
-            doc.addPage(page);
-            stream = new PDPageContentStream(doc, page);
-            y = page.getMediaBox().getHeight() - MARGIN;
-        }
-
-        void text(String s) throws IOException {
-            line(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10, s);
-        }
-
-        void line(PDType1Font font, float size, String s) throws IOException {
-            if (y < MARGIN) newPage();
-            stream.beginText();
-            stream.setFont(font, size);
-            stream.newLineAtOffset(MARGIN, y);
-            // Standard-14 fonts encode WinAnsi only; anything else (a reason a person typed) is
-            // replaced rather than allowed to fail the whole statement.
-            stream.showText(s.replaceAll("[^\\x20-\\x7E]", "?"));
-            stream.endText();
-            y -= LINE;
-        }
-
-        void gap() { y -= LINE / 2; }
-
-        void close() throws IOException { stream.close(); }
+    private static String money(BigDecimal amount) {
+        return new DecimalFormat("#,##0.00;-#,##0.00", DecimalFormatSymbols.getInstance(Locale.ROOT)).format(amount);
     }
 }

@@ -115,6 +115,13 @@ public class DistributionApiImpl implements DistributionApi {
     private final ApplicationEventPublisher eventPublisher;
 
     private final ReferenceDataApi referenceDataApi;
+    /** The company's own branches (2026-11-09, organisation settings); absent in a module test, which uses the shared list. */
+    private tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setOrganisation(tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
+    }
     /** IFRS 17 I3b: the commission withholding rate in force (user decision 7). */
     private final tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi;
     /** Money movement step 4: a commission payout is released by a second person unless payouts.approve-own. */
@@ -774,8 +781,7 @@ public class DistributionApiImpl implements DistributionApi {
         if (channel == null || !channel.isAgentChannel()) {
             throw new DistributionValidationException("An agent sells through AGENT, BROKER or BANCASSURANCE");
         }
-        if (homeBranch != null && referenceDataApi.getCodes("BRANCH").stream()
-                .noneMatch(c -> c.code().equals(homeBranch))) {
+        if (homeBranch != null && !knownBranch(homeBranch)) {
             throw new DistributionValidationException("Unknown branch " + homeBranch);
         }
     }
@@ -862,5 +868,11 @@ public class DistributionApiImpl implements DistributionApi {
         } catch (ProductNotFoundException e) {
             return Optional.empty();
         }
+    }
+
+    /** One of the company's active branches (organisation settings), else one on the shared BRANCH list. */
+    private boolean knownBranch(String code) {
+        if (organisation != null) return organisation.isActiveBranch(code);
+        return referenceDataApi.getCodes("BRANCH").stream().anyMatch(c -> c.code().equals(code));
     }
 }

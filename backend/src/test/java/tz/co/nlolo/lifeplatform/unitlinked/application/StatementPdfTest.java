@@ -41,12 +41,13 @@ class StatementPdfTest {
                     new BigDecimal("1.000000"), new BigDecimal("-800.00"))),
             new BigDecimal("90000.00"), charges, new BigDecimal("0.00"), "TZS");
 
-        byte[] pdf = StatementPdf.render(data, "Nlolo Life");
+        // In a letterhead (2026-11-09, organisation settings): the platform's own here, unsigned.
+        byte[] pdf = StatementPdf.render(data, tz.co.nlolo.lifeplatform.organisation.api.Letterhead.fallback(), null);
 
         try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
             String text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
             assertThat(text).contains("UL-2026-000123", "EQ1", "BD1", "No price yet", "TZS 103,860.00",
-                "Allocation charge:  TZS 10,000.00", "at 1.250000 (30/12/2026)");
+                "Allocation charge", "10,000.00", "1.250000 (30/12/2026)", "Unit-linked statement", "Nlolo Life");
             assertThat(text).doesNotContain("TZS 0.00 (");
         }
     }

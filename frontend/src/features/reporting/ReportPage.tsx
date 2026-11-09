@@ -56,7 +56,9 @@ export function ReportPage() {
     try {
       const blob = await exportReport(reportKey, params, format);
       const stamp = new Date().toISOString().slice(0, 10);
-      saveBlob(blob, `${reportKey}-${stamp}.${format}`);
+      // A CSV of a report with several tables comes back as a zip of one CSV per table.
+      const extension = blob.type === 'application/zip' ? 'zip' : format;
+      saveBlob(blob, `${reportKey}-${stamp}.${extension}`);
     } catch {
       setExportError('The file could not be produced. Run the report again, then retry.');
     }

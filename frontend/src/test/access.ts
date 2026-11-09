@@ -26,7 +26,7 @@ const ALL = [
   'commission.pay', 'funds.view', 'funds.manage', 'funds.approve', 'products.view', 'products.manage', 'products.charges',
   'products.declare', 'products.declare-approve', 'reports.view', 'reports.rebuild', 'reports.solvency-factors',
   'communications.view',
-  'communications.templates', 'audit.view', 'users.view', 'users.manage', 'roles.manage',
+  'communications.templates', 'audit.view', 'users.view', 'users.manage', 'roles.manage', 'organisation.manage',
 ];
 
 /**

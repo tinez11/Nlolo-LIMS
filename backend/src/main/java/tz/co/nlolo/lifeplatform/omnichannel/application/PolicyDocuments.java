@@ -354,7 +354,8 @@ public class PolicyDocuments {
                 new Field("Received from", r.payerRef() != null ? r.payerRef() : "-"),
                 new Field("Received on", DMY.format(receivedOn(r))),
                 new Field("How", how))),
-            columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))), notes, false);
+            columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))), notes, false,
+            receivedOn(r));
     }
 
     // ---- payout advices (2026-11-09, receipts step 4: the user could not find a receipt for money paid out) ----
@@ -387,7 +388,7 @@ public class PolicyDocuments {
         return new CustomerDocument(ISSUER, "Payout advice " + a.adviceNumber(), header(policy, productName(policy), facts),
             columns, rows, List.of(new Field("Amount paid", money(a.amount(), a.currency()))),
             List.of("This advice confirms that the amount above was paid. Quote the advice number in any question about"
-                + " this payment."), false);
+                + " this payment."), false, a.paidOn());
     }
 
     private static tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine adviceLine(

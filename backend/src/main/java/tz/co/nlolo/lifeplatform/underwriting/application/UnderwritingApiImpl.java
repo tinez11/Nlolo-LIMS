@@ -65,6 +65,13 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProductApi productApi;
     private final DistributionApi distributionApi;
     private final ReferenceDataApi referenceDataApi;
+    /** The company's own branches (2026-11-09, organisation settings); absent in a module test, which uses the shared list. */
+    private tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setOrganisation(tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
+    }
     private final RulesEnginePort rulesEnginePort;
     private final ApplicationEventPublisher eventPublisher;
     private final MedicalDisclosureRepository medicalDisclosureRepository;
@@ -1486,8 +1493,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                 .noneMatch(c -> c.code().equals(salesChannel))) {
             throw new UnderwritingValidationException("Unknown sales channel " + salesChannel);
         }
-        if (branchCode == null || referenceDataApi.getCodes("BRANCH").stream()
-                .noneMatch(c -> c.code().equals(branchCode))) {
+        if (branchCode == null || !knownBranch(branchCode)) {
             throw new UnderwritingValidationException("Unknown branch " + branchCode);
         }
         underwritingCase.recordSale(salesChannel, branchCode);
@@ -1502,5 +1508,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.lockSale(java.time.Instant.now());
             underwritingCaseRepository.save(c);
         });
+    }
+
+    /** One of the company's active branches (organisation settings), else one on the shared BRANCH list. */
+    private boolean knownBranch(String code) {
+        if (organisation != null) return organisation.isActiveBranch(code);
+        return referenceDataApi.getCodes("BRANCH").stream().anyMatch(c -> c.code().equals(code));
     }
 }

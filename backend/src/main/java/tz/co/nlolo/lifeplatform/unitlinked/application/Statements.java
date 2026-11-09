@@ -48,7 +48,6 @@ import java.util.UUID;
 @Component
 class Statements {
 
-    static final String INSURER = "Nlolo Life";
 
     /** Money the customer put in, and money paid out to them: a switch's legs are neither, they stay invested. */
     private static final Set<UnitEntry.Type> PAID_OUT = EnumSet.of(UnitEntry.Type.DEATH_SALE, UnitEntry.Type.SURRENDER_SALE,
@@ -64,10 +63,13 @@ class Statements {
     private final PolicyApi policyApi;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation;
 
     Statements(UnitEntryRepository entries, FundRepository funds, FundPriceRepository prices,
                UnitStatementRepository statements, DocumentApi documentApi, PolicyApi policyApi,
-               ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock) {
+               ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock,
+               tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi organisation) {
+        this.organisation = organisation;
         this.entries = entries;
         this.funds = funds;
         this.prices = prices;
@@ -145,7 +147,9 @@ class Statements {
         UUID tenantId = TenantContext.get();
         PolicyView policy = policyApi.getPolicy(policyNumber);
         StatementData data = build(policyNumber, from, to);
-        byte[] pdf = StatementPdf.render(data, INSURER);
+        // In the company's letterhead, signed by its statements signatory on the period's last day (2026-11-09).
+        byte[] pdf = StatementPdf.render(data, organisation.letterhead(), organisation.signatory(
+            tz.co.nlolo.lifeplatform.organisation.api.DocumentKind.STATEMENT, to).orElse(null));
         // The upload is the one side effect a rollback cannot undo (accumulation's statements make the same trade).
         String ref = documentApi.upload("policy:" + policyNumber, DocumentType.ACCOUNT_STATEMENT, by,
             new ByteArrayInputStream(pdf), pdf.length, "application/pdf",

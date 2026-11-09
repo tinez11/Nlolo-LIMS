@@ -55,5 +55,8 @@ public enum DocumentType {
     IFRS17_RESULTS,
 
     /** IFRS 17 I5a: the appointed actuary's report an engine run's approval rests on. */
-    ACTUARIAL_REPORT
+    ACTUARIAL_REPORT,
+
+    /** 2026-11-09, organisation settings: a company's logo or a signatory's signature image. The general bucket. */
+    BRANDING_IMAGE
 }

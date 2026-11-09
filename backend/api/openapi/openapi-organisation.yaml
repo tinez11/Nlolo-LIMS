@@ -1,0 +1,314 @@
+openapi: 3.1.0
+info:
+  title: Organisation API
+  version: "0.1.0-draft"
+  description: >
+    The company's own settings (spec 2026-11-09-organisation-settings-design.md): its profile, branding and document
+    layout, the people who sign its documents, and its branches. Read and changed with organisation.manage
+    (administrators); the branch list and the logo are read by any staff member.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /organisation/settings:
+    get:
+      summary: Everything on the Organisation settings page
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganisationSettings' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/profile:
+    put:
+      summary: Save the company's profile
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Profile' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/branding:
+    put:
+      summary: Save the branding and document layout
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Branding' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Branding' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/logo:
+    get:
+      summary: The company's logo, or 404 when it has none
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The image
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+        '404': { description: No logo }
+    post:
+      summary: Upload the logo (PNG or JPEG, up to 1 MB)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '204': { description: Uploaded }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    delete:
+      summary: Remove the logo
+      security:
+        - staffAuth: []
+      responses:
+        '204': { description: Removed }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/signatories:
+    post:
+      summary: Add a signatory
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatoryInput' }
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signatory' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/signatories/{signatoryId}:
+    put:
+      summary: Change a signatory -- what they sign, from and until when
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: signatoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatoryInput' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signatory' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/signatories/{signatoryId}/signature:
+    get:
+      summary: A signatory's signature image, or 404 when none is uploaded
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: signatoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The image
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+        '404': { description: No signature }
+    post:
+      summary: Upload a signatory's signature image (PNG or JPEG, up to 1 MB)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: signatoryId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signatory' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/branches:
+    get:
+      summary: The company's branches, the head office first
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The branches
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Branch' } }
+  /organisation/branches/{code}:
+    put:
+      summary: Add or change a branch
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Branch' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Branch' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /organisation/preview:
+    post:
+      summary: A sample receipt in a draft profile and branding, before they are saved
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile, branding]
+              properties:
+                profile: { $ref: '#/components/schemas/Profile' }
+                branding: { $ref: '#/components/schemas/Branding' }
+      responses:
+        '200':
+          description: The sample
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    staffAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
+          scopes: {}
+  responses:
+    Problem:
+      description: A setting that cannot be saved, in words an administrator can act on
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [legalName]
+      properties:
+        legalName: { type: string }
+        tradingName: { type: [string, 'null'] }
+        registrationNumber: { type: [string, 'null'], description: "TIRA registration number" }
+        tin: { type: [string, 'null'] }
+        address: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        website: { type: [string, 'null'] }
+        tagline: { type: [string, 'null'] }
+        headOfficeBranch: { type: [string, 'null'] }
+    Branding:
+      type: object
+      additionalProperties: false
+      required: [primaryColour, secondaryColour, typeface, layout, paper, hasLogo]
+      properties:
+        primaryColour: { type: string, description: "#RRGGBB" }
+        secondaryColour: { type: string, description: "#RRGGBB" }
+        typeface: { type: string, enum: [SANS, SERIF] }
+        layout: { type: string, enum: [CLASSIC, BANDED, MINIMAL] }
+        paper: { type: string, enum: [A4, LETTER] }
+        footerText: { type: [string, 'null'] }
+        reportConfidentiality: { type: [string, 'null'] }
+        hasLogo: { type: boolean, description: "Read-only" }
+    SignatoryInput:
+      type: object
+      additionalProperties: false
+      required: [name, title, effectiveFrom, signs]
+      properties:
+        name: { type: string }
+        title: { type: string }
+        effectiveFrom: { type: string, format: date }
+        retiredOn: { type: [string, 'null'], format: date }
+        signs: { type: array, items: { $ref: '#/components/schemas/DocumentKind' } }
+    Signatory:
+      type: object
+      additionalProperties: false
+      required: [signatoryId, name, title, effectiveFrom, signs, hasSignature]
+      properties:
+        signatoryId: { type: string, format: uuid }
+        name: { type: string }
+        title: { type: string }
+        effectiveFrom: { type: string, format: date }
+        retiredOn: { type: [string, 'null'], format: date }
+        signs: { type: array, items: { $ref: '#/components/schemas/DocumentKind' } }
+        hasSignature: { type: boolean }
+    DocumentKind:
+      type: string
+      enum: [POLICY_SCHEDULE, RECEIPT, PAYOUT_ADVICE, QUOTATION, STATEMENT]
+    Branch:
+      type: object
+      additionalProperties: false
+      required: [code, name, active, headOffice]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        address: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        manager: { type: [string, 'null'] }
+        active: { type: boolean }
+        headOffice: { type: boolean, description: "Read-only: set on the profile" }
+    OrganisationSettings:
+      type: object
+      additionalProperties: false
+      required: [profile, branding, signatories, branches]
+      properties:
+        profile: { $ref: '#/components/schemas/Profile' }
+        branding: { $ref: '#/components/schemas/Branding' }
+        signatories: { type: array, items: { $ref: '#/components/schemas/Signatory' } }
+        branches: { type: array, items: { $ref: '#/components/schemas/Branch' } }
