@@ -235,7 +235,26 @@ final class StatementReports {
     static String readable(String sourceEvent) {
         if (sourceEvent == null) return "";
         String name = sourceEvent.contains(".") ? sourceEvent.substring(sourceEvent.lastIndexOf('.') + 1) : sourceEvent;
-        String words = name.replaceAll("([a-z])([A-Z])", "$1 $2").replace('_', ' ').toLowerCase(Locale.ROOT);
+        // "PAARevenueEarned" -> "PAA revenue earned": an acronym keeps its capitals, every other word is lower case.
+        String spaced = name.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2")
+            .replace('_', ' ').trim();
+        StringBuilder out = new StringBuilder();
+        for (String word : spaced.split("\\s+")) {
+            if (word.isEmpty()) continue;
+            boolean acronym = word.length() > 1 && word.equals(word.toUpperCase(Locale.ROOT));
+            if (out.length() > 0) out.append(' ');
+            out.append(acronym ? word : word.toLowerCase(Locale.ROOT));
+        }
+        String words = out.toString();
         return words.isEmpty() ? "" : Character.toUpperCase(words.charAt(0)) + words.substring(1);
+    }
+
+    /** "Jan to Nov 2026", "Oct 2026": a period short enough to label a chart bar. */
+    static String shortSpan(java.time.YearMonth from, java.time.YearMonth to) {
+        DateTimeFormatter month = DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH);
+        DateTimeFormatter monthYear = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH);
+        if (from.equals(to)) return monthYear.format(from);
+        return from.getYear() == to.getYear() ? month.format(from) + " to " + monthYear.format(to)
+            : monthYear.format(from) + " to " + monthYear.format(to);
     }
 }

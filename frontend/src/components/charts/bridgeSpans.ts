@@ -22,3 +22,22 @@ export function bridgeSpans(bars: readonly BridgeBar[]): { from: number; to: num
   }
   return spans;
 }
+
+/** A bar's label in at most two lines of about {@code perLine} characters, the second ending in "…" if it must. */
+export function labelLines(label: string, perLine: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of label.split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length <= perLine || !line) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length <= 2) return lines;
+  const second = lines.slice(1).join(' ');
+  return [lines[0]!, second.length > perLine ? `${second.slice(0, perLine - 1)}…` : second];
+}

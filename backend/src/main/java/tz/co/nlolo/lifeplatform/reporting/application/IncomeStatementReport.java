@@ -103,9 +103,16 @@ public class IncomeStatementReport implements Report {
         for (String id : List.of("revenue", "service-result", "profit")) {
             headline.add(StatementReports.figure(line(id), figures.get(id), true));
         }
-        return new ReportBody(sections, headline, compares ? bridge(figures, ledgers) : null,
-            StatementReports.comparisonLabel(f.comparisonMonths()));
+        YearMonth[] compared = f.comparisonMonths();
+        return new ReportBody(sections, headline, compares ? bridge(figures, ledgers,
+                StatementReports.shortSpan(compared[0], compared[1]), StatementReports.shortSpan(f.monthFrom(), f.monthTo()))
+                : null,
+            StatementReports.comparisonLabel(compared));
     }
+
+    /** A bar's name: short enough to sit under a bar (2026-11-09, the user saw the full names collide). */
+    private static final Map<String, String> SHORT = Map.of("revenue", "Revenue", "service-expenses", "Service expenses",
+        "reinsurance", "Reinsurance", "finance", "Finance and investment", "other", "Other expenses and tax");
 
     @Override
     public ReportParts parts(UUID tenantId, String lineId, ReportFilter f, int page, Labels labels) {
@@ -114,18 +121,19 @@ public class IncomeStatementReport implements Report {
     }
 
     /** From the compared period's profit to this period's, one bar per line's effect on the profit. */
-    private static ReportChart bridge(Map<String, Statement.Figures> figures, StatementReports.Ledgers ledgers) {
+    private static ReportChart bridge(Map<String, Statement.Figures> figures, StatementReports.Ledgers ledgers,
+                                      String priorShort, String currentShort) {
         List<ReportChart.Bar> bars = new ArrayList<>();
-        bars.add(new ReportChart.Bar(ledgers.priorLabel(), Figures.money(figures.get("profit").prior()), "START"));
+        bars.add(new ReportChart.Bar("Profit " + priorShort, Figures.money(figures.get("profit").prior()), "START"));
         for (Statement.Part mover : MOVERS) {
             BigDecimal effect = figures.get(mover.ref()).change();
             if (mover.sign() < 0) effect = effect.negate();
-            bars.add(new ReportChart.Bar(line(mover.ref()).label(), Figures.money(effect.abs()),
+            bars.add(new ReportChart.Bar(SHORT.get(mover.ref()), Figures.money(effect.abs()),
                 effect.signum() >= 0 ? "UP" : "DOWN"));
         }
-        bars.add(new ReportChart.Bar(ledgers.currentLabel(), Figures.money(figures.get("profit").current()), "END"));
+        bars.add(new ReportChart.Bar("Profit " + currentShort, Figures.money(figures.get("profit").current()), "END"));
         return new ReportChart("BRIDGE", "How the profit moved from " + ledgers.priorLabel() + " to "
-            + ledgers.currentLabel() + ", line by line", bars);
+            + ledgers.currentLabel(), bars);
     }
 
     private StatementReports.Ledgers ledgers(ReportFilter f) {

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/cn';
 import { useChartWidth } from './useChartWidth';
 import { niceMax } from './chartScale';
-import { bridgeSpans, type BridgeBar } from './bridgeSpans';
+import { bridgeSpans, labelLines, type BridgeBar } from './bridgeSpans';
 
 export type { BridgeBar } from './bridgeSpans';
 
@@ -59,8 +59,11 @@ export function BridgeChart({ bars, description, height = 220 }: { bars: BridgeB
               <text x={left + width / 2} y={top - 6} textAnchor="middle" className="fill-foreground text-xs font-semibold tabular-nums">
                 {words}{NUMBER.format(Number(b.value))}
               </text>
+              {/* Up to two lines under its bar, so neighbours never run into each other. */}
               <text x={left + width / 2} y={H - B + 16} textAnchor="middle" className="fill-muted-foreground text-xs">
-                {b.label.length > 18 ? `${b.label.slice(0, 17)}…` : b.label}
+                {labelLines(b.label, Math.max(8, Math.floor(band / 7))).map((line, k) => (
+                  <tspan key={k} x={left + width / 2} dy={k === 0 ? 0 : 14}>{line}</tspan>
+                ))}
               </text>
             </g>
           );

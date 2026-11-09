@@ -100,7 +100,7 @@ export function ReportFilterBar({
         {kind === 'MONTH_RANGE' && field('monthTo', 'Last period', 'month')}
         {/* Non-wrapping label, for the reason the product select records below: a wrapping label would take
             its accessible name from every option inside it. */}
-        {ledgerReport && (
+        {ledgerReport && definition.requiresAccount && (
           <div className="flex flex-col gap-1 text-xs">
             <label htmlFor="report-accountCode">Account</label>
             <select id="report-accountCode" value={state.accountCode} onChange={set('accountCode')} className={SELECT}>
@@ -130,24 +130,30 @@ export function ReportFilterBar({
         )}
         {/* Category first, then product (2026-10-26). The category only narrows the product list here -- a
             report's query takes a product, not a category. */}
-        <ProductFilter
-          products={products}
-          category={category}
-          productId={state.productId}
-          onChange={(next) => {
-            setCategory(next.category);
-            setState((s) => ({ ...s, productId: next.productId }));
-          }}
-        />
-        <label className="flex flex-col gap-1 text-xs" htmlFor="report-clientType">
-          Client type
-          <select id="report-clientType" value={state.clientType} onChange={set('clientType')} className={SELECT}>
-            <option value="">All clients</option>
-            <option value="INDIVIDUAL">Individuals</option>
-            <option value="CORPORATE">Corporates</option>
-            <option value="GROUP">Groups</option>
-          </select>
-        </label>
+        {/* A ledger report reads the ledger, which has no product or client to narrow by: those filters did nothing
+            there, and a filter that does nothing is a figure that looks narrowed and is not (2026-11-09). */}
+        {!ledgerReport && (
+          <ProductFilter
+            products={products}
+            category={category}
+            productId={state.productId}
+            onChange={(next) => {
+              setCategory(next.category);
+              setState((s) => ({ ...s, productId: next.productId }));
+            }}
+          />
+        )}
+        {!ledgerReport && (
+          <label className="flex flex-col gap-1 text-xs" htmlFor="report-clientType">
+            Client type
+            <select id="report-clientType" value={state.clientType} onChange={set('clientType')} className={SELECT}>
+              <option value="">All clients</option>
+              <option value="INDIVIDUAL">Individuals</option>
+              <option value="CORPORATE">Corporates</option>
+              <option value="GROUP">Groups</option>
+            </select>
+          </label>
+        )}
         <Button type="submit" size="sm" variant="primary">
           Run report
         </Button>
