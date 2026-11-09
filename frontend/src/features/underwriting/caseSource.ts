@@ -16,7 +16,7 @@ export const CASE_SOURCE_LABEL: Record<CaseSource, string> = {
 
 export const CASE_SOURCE_HINT: Record<CaseSource, string> = {
   CUSTOMER_ONLINE: 'The customer applied in the portal, priced and with their health answers.',
-  PUBLIC_ONLINE: 'Applied through the public quote link with no login: a new client, KYC pending, whose phone was confirmed by a texted code. Check who they are before deciding.',
+  PUBLIC_ONLINE: 'New client, not yet verified.',
   CALL_BACK: 'The customer asked an adviser in the portal and gave no amount. Call them to agree the cover, then complete the proposal.',
   AGENT: 'Submitted by an agent.',
   STAFF: 'Opened in the office.',

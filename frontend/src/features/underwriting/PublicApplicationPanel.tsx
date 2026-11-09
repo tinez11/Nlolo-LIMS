@@ -28,12 +28,12 @@ export function PublicApplicationPanel({ caseId }: { caseId: string }) {
   const current = result?.for === caseId ? result : null;
   if (!current) return null;
   if (current.error) {
-    return <Panel title="Applied online with no login"><div className="px-4 pb-4"><InlineError error={current.error} /></div></Panel>;
+    return <Panel title="Applied online"><div className="px-4 pb-4"><InlineError error={current.error} /></div></Panel>;
   }
   const v = current.view!;
   const matches = v.possibleExistingClients;
   return (
-    <Panel title="Applied online with no login" subtitle="Through the public quote link. A new client, KYC pending.">
+    <Panel title="Applied online">
       <div className="space-y-3 px-4 pb-4">
         {matches.length > 0 && (
           <div role="alert" className="rounded-md border border-status-warning-fg/40 bg-status-warning-bg p-3 text-sm text-status-warning-fg">
@@ -42,7 +42,7 @@ export function PublicApplicationPanel({ caseId }: { caseId: string }) {
               {matches.length === 1 ? 'Possible existing client' : `${matches.length} possible existing clients`}
             </p>
             <p className="mt-1 text-foreground">
-              Same phone, or same name and date of birth. Nothing was merged: check who this is before deciding.
+              Same phone, or same name and date of birth.
             </p>
             <ul className="mt-2 space-y-1 text-foreground">
               {matches.map((m) => (
