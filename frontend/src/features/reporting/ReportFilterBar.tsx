@@ -47,7 +47,9 @@ export function ReportFilterBar({
   // name an account the chart does not have.
   // The ledger statements read the ledger, which has no product or client; the claims reports, also by month, do.
   // The solvency reports read the ledger too (2026-11-09).
-  const ledgerReport = definition.category === 'ACCOUNTING' || definition.category === 'SOLVENCY';
+  // The solvency, reinsurance and commission reports read their own books, which take no product or client filter
+  // (2026-11-09): a filter that does nothing is a figure that looks narrowed and is not.
+  const ledgerReport = ['ACCOUNTING', 'SOLVENCY', 'REINSURANCE', 'COMMISSIONS'].includes(definition.category);
   const [accounts, setAccounts] = useState<ChartOfAccountView[]>([]);
   useEffect(() => {
     if (!ledgerReport) return;

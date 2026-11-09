@@ -166,6 +166,13 @@ public interface DistributionApi {
     List<CommissionStatementView> listStatements(UUID agentId, String period);
     List<CommissionAccrualView> listAccruals(UUID statementId);
 
+    /** Every agent's accruals and clawbacks booked in the months {@code fromPeriod}..{@code toPeriod} (YYYY-MM), for the
+     * commission reports (2026-11-09). */
+    List<CommissionAccrualView> listAccrualsBetween(String fromPeriod, String toPeriod);
+
+    /** Every agent's statements for those months, whatever their state. */
+    List<CommissionStatementView> listStatementsBetween(String fromPeriod, String toPeriod);
+
     /** Staff ask (commission.pay) to pay a CLOSED (or previously PAYOUT_FAILED) statement. It waits at
      * AWAITING_PAYOUT_APPROVAL for a second person; nothing is published yet (money movement step 4). */
     void requestStatementPayout(UUID statementId, String payeeRef, String idempotencyKey, String requestedBy);

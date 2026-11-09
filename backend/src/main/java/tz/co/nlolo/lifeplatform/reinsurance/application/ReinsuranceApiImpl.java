@@ -52,19 +52,22 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private final Bordereaux bordereaux;
     private final BordereauJob bordereauJob;
     private final ReinsuranceStatements statements;
+    private final StatementSettlements settlements;
 
     public ReinsuranceApiImpl(ReinsuranceTreatyRepository treatyRepository,
                                CessionRepository cessionRepository,
                                ClaimRecoveryRepository claimRecoveryRepository,
                                Bordereaux bordereaux,
                                BordereauJob bordereauJob,
-                               ReinsuranceStatements statements) {
+                               ReinsuranceStatements statements,
+                               StatementSettlements settlements) {
         this.treatyRepository = treatyRepository;
         this.cessionRepository = cessionRepository;
         this.claimRecoveryRepository = claimRecoveryRepository;
         this.bordereaux = bordereaux;
         this.bordereauJob = bordereauJob;
         this.statements = statements;
+        this.settlements = settlements;
     }
 
     // ---- the quarterly statement (IFRS 17 I3d): ReinsuranceStatements ---------------------------------------------
@@ -105,6 +108,11 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     @Override
     public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView getStatement(UUID statementId) {
         return statements.get(statementId);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.SettlementView.Open openSettlement(UUID statementId) {
+        return settlements.open(statementId);
     }
 
     @Override

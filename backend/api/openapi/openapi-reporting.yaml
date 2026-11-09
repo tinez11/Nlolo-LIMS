@@ -214,7 +214,7 @@ components:
         key: { type: string }
         title: { type: string }
         description: { type: string }
-        category: { type: string, enum: [MANAGEMENT, ACCOUNTING, CLAIMS, SOLVENCY] }
+        category: { type: string, enum: [MANAGEMENT, ACCOUNTING, CLAIMS, SOLVENCY, REINSURANCE, COMMISSIONS] }
         dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
         groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
         comparable: { type: boolean, description: "Accepts compareAsOf" }

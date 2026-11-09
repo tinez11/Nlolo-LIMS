@@ -475,8 +475,8 @@ class ReportQueriesIntegrationTest {
                 "premium-collections", "clients",
                 "trial-balance", "general-ledger", "balance-sheet", "income-statement",
                 "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
-                "early-claims", "claims-outstanding",
-                "capital-adequacy", "stress-tests", "solvency-forecast");
+                "early-claims", "claims-outstanding", "claims-net-of-reinsurance",
+                "capital-adequacy", "stress-tests", "solvency-forecast", "reinsurance", "commissions");
     }
 
     @Test

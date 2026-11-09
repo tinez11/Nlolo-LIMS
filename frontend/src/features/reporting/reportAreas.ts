@@ -29,6 +29,11 @@ const ELSEWHERE: { area: string; entry: ReportEntry; permissions: string[] }[] =
     permissions: ['reinsurance.view'],
   },
   {
+    area: 'commissions',
+    entry: { key: 'agent-statements', title: 'Agent statements', description: 'Each agent’s monthly statement, lines and payout.', to: '/staff/agents' },
+    permissions: ['agents.view'],
+  },
+  {
     area: 'solvency',
     entry: { key: 'solvency-factors', title: 'Solvency factors', description: 'The risk charges, thresholds and shocks the solvency reports use.', to: '/staff/solvency-factors' },
     permissions: ['reports.view'],
@@ -56,6 +61,8 @@ function areaOf(definition: ReportDefinition): string {
   if (definition.category === 'ACCOUNTING') return 'accounting';
   if (definition.category === 'CLAIMS') return 'claims';
   if (definition.category === 'SOLVENCY') return 'solvency';
+  if (definition.category === 'REINSURANCE') return 'reinsurance';
+  if (definition.category === 'COMMISSIONS') return 'commissions';
   if (definition.key === 'clients') return 'clients';
   return 'policies';
 }

@@ -734,6 +734,21 @@ public class DistributionApiImpl implements DistributionApi {
 
     @Override
     @Transactional(readOnly = true)
+    public List<CommissionAccrualView> listAccrualsBetween(String fromPeriod, String toPeriod) {
+        UUID tenantId = TenantContext.get();
+        return toAccrualViews(tenantId,
+            commissionAccrualRepository.findByTenantIdAndPeriodBetweenOrderByPeriodAsc(tenantId, fromPeriod, toPeriod));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommissionStatementView> listStatementsBetween(String fromPeriod, String toPeriod) {
+        return commissionStatementRepository
+            .findByTenantIdAndPeriodBetweenOrderByPeriodAsc(TenantContext.get(), fromPeriod, toPeriod)
+            .stream().map(this::toStatementView).toList();
+    }
+
+    @Override
     public List<CommissionStatementView> listStatementsAwaitingPayoutApproval() {
         return commissionStatementRepository
             .findByTenantIdAndStatusOrderByPeriod(TenantContext.get(), StatementStatus.AWAITING_PAYOUT_APPROVAL)
