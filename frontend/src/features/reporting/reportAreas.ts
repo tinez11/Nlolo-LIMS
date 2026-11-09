@@ -29,6 +29,11 @@ const ELSEWHERE: { area: string; entry: ReportEntry; permissions: string[] }[] =
     permissions: ['reinsurance.view'],
   },
   {
+    area: 'solvency',
+    entry: { key: 'solvency-factors', title: 'Solvency factors', description: 'The risk charges, thresholds and shocks the solvency reports use.', to: '/staff/solvency-factors' },
+    permissions: ['reports.view'],
+  },
+  {
     area: 'regulatory',
     entry: { key: 'tira-returns', title: 'TIRA returns', description: 'Regulatory returns, generated and filed.', to: '/staff/regulatory-returns' },
     permissions: ['returns.view'],
@@ -50,6 +55,7 @@ const ORDER: { id: string; title: string }[] = [
 function areaOf(definition: ReportDefinition): string {
   if (definition.category === 'ACCOUNTING') return 'accounting';
   if (definition.category === 'CLAIMS') return 'claims';
+  if (definition.category === 'SOLVENCY') return 'solvency';
   if (definition.key === 'clients') return 'clients';
   return 'policies';
 }

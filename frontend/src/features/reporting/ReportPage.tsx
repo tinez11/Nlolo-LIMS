@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { exportReport, type ExportFormat } from '@/api/reporting';
@@ -14,6 +15,7 @@ import { ReportSectionTable } from './ReportSectionTable';
 import { ReportFigures } from './ReportFigures';
 import { ReportTree } from './ReportTree';
 import { ReportSwitcher } from './ReportSwitcher';
+import { ReportTrend } from './ReportTrend';
 import { reportAreas } from './reportAreas';
 import { BridgeChart } from '@/components/charts/BridgeChart';
 import { stateFromSearch, toParams, validateFilters } from './reportParams';
@@ -81,6 +83,11 @@ export function ReportPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             {catalogue.data && <ReportSwitcher areas={reportAreas(catalogue.data)} currentKey={reportKey} />}
+            {definition.category === 'SOLVENCY' && (
+              <Button asChild size="sm" variant="secondary">
+                <Link to="/staff/solvency-factors">Factors</Link>
+              </Button>
+            )}
             {(['xlsx', 'csv', 'pdf'] as const).map((f) => (
               <Button key={f} size="sm" variant="secondary" onClick={() => void download(f)} disabled={!current}>
                 {f === 'xlsx' ? 'Excel' : f.toUpperCase()}
@@ -114,11 +121,30 @@ export function ReportPage() {
           <ErrorPanel error={result.error} onRetry={() => params && void runReport(reportKey, params)} />
         ) : current && params ? (
           <>
+            {/* What a reader must know before trusting the figures -- placeholder factors, an approximation -- above
+                them, never in a footnote (2026-11-09, the solvency reports). */}
+            {current.notices.length > 0 && (
+              <ul className="space-y-1.5" aria-label="Before you read these figures">
+                {current.notices.map((n) => (
+                  <li key={n} className="flex items-start gap-2 rounded-lg bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span>{n}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <ReportFigures figures={current.figures} comparisonLabel={current.comparisonLabel} />
-            {current.chart && current.chart.bars.length > 0 && (
+            {current.chart && current.chart.kind === 'BRIDGE' && current.chart.bars.length > 0 && (
               <Panel title={current.chart.description}>
                 <div className="px-4 pb-4">
                   <BridgeChart bars={current.chart.bars} description={current.chart.description} />
+                </div>
+              </Panel>
+            )}
+            {current.chart && current.chart.kind === 'TREND' && current.chart.series.length > 0 && (
+              <Panel title={current.chart.description}>
+                <div className="px-4 pb-4">
+                  <ReportTrend chart={current.chart} />
                 </div>
               </Panel>
             )}

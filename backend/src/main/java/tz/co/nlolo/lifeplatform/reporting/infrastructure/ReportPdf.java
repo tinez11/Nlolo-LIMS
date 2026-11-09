@@ -32,6 +32,10 @@ final class ReportPdf {
             w.text(BOLD, 14, MARGIN, result.title());
             w.newLine();
             w.text(REGULAR, 9, MARGIN, result.filterSummary() + "    Generated " + result.generatedAt());
+            for (String notice : result.notices()) {
+                w.newLine();
+                w.text(BOLD, 9, MARGIN, notice);
+            }
             w.newLine();
             for (ReportSection section : result.sections()) {
                 w.gap();

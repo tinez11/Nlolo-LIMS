@@ -22,6 +22,7 @@ final class ReportCsv {
         try (CSVPrinter csv = new CSVPrinter(out, CSVFormat.DEFAULT)) {
             csv.printRecord(result.title());
             csv.printRecord(result.filterSummary());
+            for (String notice : result.notices()) csv.printRecord(notice);
             csv.println();
             for (ReportSection section : result.sections()) {
                 csv.printRecord(section.title());

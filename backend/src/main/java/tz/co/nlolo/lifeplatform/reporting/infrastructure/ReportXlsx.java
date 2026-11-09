@@ -45,6 +45,12 @@ final class ReportXlsx {
             Row generated = about.createRow(2);
             generated.createCell(0).setCellValue("Generated");
             generated.createCell(1).setCellValue(result.generatedAt().toString());
+            int noticeRow = 3;
+            for (String notice : result.notices()) {
+                Row n = about.createRow(noticeRow++);
+                n.createCell(0).setCellValue("Note");
+                n.createCell(1).setCellValue(notice);
+            }
 
             Set<String> names = new HashSet<>(Set.of("About"));
             for (ReportSection section : result.sections()) {

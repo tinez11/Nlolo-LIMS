@@ -38,6 +38,12 @@ public interface ReportingApi {
     /** Policies in force on {@code asOf}, per product category, scoped as {@link #policiesIssuedByMonth} is. */
     List<CategoryCount> policiesInForceByCategory(LocalDate asOf, Set<UUID> agentIds);
 
+    /** Every version of the solvency factors, newest first, ending with the built-in placeholder set (2026-11-09). */
+    List<SolvencyFactorSetView> solvencyFactorSets();
+
+    /** Publishes a new version. @throws ReportParameterException for factors it cannot use, in words. */
+    SolvencyFactorSetView publishSolvencyFactorSet(NewSolvencyFactorSet set, String publishedBy);
+
     RebuildStatusView startRebuild(String requestedBy);
 
     RebuildStatusView rebuildStatus();

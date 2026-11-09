@@ -55,3 +55,17 @@ export function startRebuild(): Promise<RebuildStatus> {
 export function getRebuildStatus(): Promise<RebuildStatus> {
   return get<RebuildStatus>('/reports/rebuild/status');
 }
+
+export type SolvencyFactorSet = components['schemas']['SolvencyFactorSet'];
+export type NewSolvencyFactorSet = components['schemas']['NewSolvencyFactorSet'];
+export type SolvencyFactors = components['schemas']['SolvencyFactors'];
+
+/** Every version of the solvency factors, newest first, ending with the built-in placeholder set (2026-11-09). */
+export function listSolvencyFactorSets(): Promise<SolvencyFactorSet[]> {
+  return get<SolvencyFactorSet[]>('/reports/settings/solvency-factors');
+}
+
+/** Publishes a new version; a version is never edited. */
+export function publishSolvencyFactorSet(set: NewSolvencyFactorSet): Promise<SolvencyFactorSet> {
+  return post<SolvencyFactorSet>('/reports/settings/solvency-factors', set);
+}

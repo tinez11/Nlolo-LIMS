@@ -152,7 +152,7 @@ export function ReportTree({ reportKey, params, section }: { reportKey: string; 
   return (
     <Panel
       title={section.title}
-      subtitle="Open a line to see what it is made of, down to the postings."
+      subtitle="Open a line to see what it is made of, and that it adds up."
       actions={
         <div className="flex gap-1">
           <Button size="sm" variant="ghost" onClick={expandAll}>Expand all</Button>

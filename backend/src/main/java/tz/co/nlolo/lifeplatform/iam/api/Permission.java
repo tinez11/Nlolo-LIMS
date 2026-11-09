@@ -132,6 +132,8 @@ public enum Permission {
 
     REPORTS_VIEW("reports.view", Area.REPORTS, "See reports", "Management and accounting reports."),
     REPORTS_REBUILD("reports.rebuild", Area.REPORTS, "Rebuild reports", "Rebuild the reporting store."),
+    REPORTS_SOLVENCY_FACTORS("reports.solvency-factors", Area.REPORTS, "Set solvency factors",
+        "Publish a new version of the risk charges, thresholds and stress shocks the solvency reports use."),
 
     COMMUNICATIONS_VIEW("communications.view", Area.COMMUNICATIONS, "See messages sent", "Messages sent and the templates."),
     COMMUNICATIONS_TEMPLATES("communications.templates", Area.COMMUNICATIONS, "Edit message templates",
