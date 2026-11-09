@@ -118,6 +118,15 @@ public interface FinaccountingApi {
      */
     TrialBalanceView trialBalanceBetween(String fromPeriod, String toPeriod);
 
+    /**
+     * One page of the postings behind {@code accountCode} -- and every account beneath it -- from {@code fromPeriod}
+     * through {@code toPeriod}, oldest first, with the totals of the whole span (2026-11-09, the reports'
+     * computation tree). {@code size} is capped at 500.
+     *
+     * @throws FinaccountingValidationException when the account is not in the chart or the span is reversed
+     */
+    AccountPostingsView accountPostings(String accountCode, String fromPeriod, String toPeriod, int page, int size);
+
     /** Not paged, deliberately: a chart of accounts is bounded reference data (36 rows per tenant
      * as {@code ChartOfAccountBlueprint} seeds it, a few hundred at most for a real
      * Finance-authored chart), so there is no unbounded-growth exposure here of the kind
