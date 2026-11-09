@@ -180,3 +180,25 @@ Later: the investments register and ALM, then ORSA, then AML (each designed sepa
 - TIRA's Risk-Based Capital guideline (factors, combination formula, thresholds, return template) is needed to replace the placeholders.
 - The large-claim threshold (default 20m) and the claims turnaround target (default 30 days) are settings; the user may set them.
 - Swahili for reports is out of scope: the staff console is English.
+
+## 10. Batch 3 as built (2026-11-09)
+
+- **Factor sets** live in `reporting.solvency_factor_set` (V3), one JSON document per version, insert only. A month uses
+  the newest version in force at its end; with none, the built-in placeholder set (version 0, `PlaceholderFactors`).
+  Rates are written in per cent ("4" is 4%). Published from `/staff/solvency-factors` with the new permission
+  `reports.solvency-factors` (built-in ADMIN; iam V3 grants it to existing tenants' admin roles).
+- **Available capital** = 3000 equity + the year's result not yet closed into it (credit − debit of classes 4000–8000)
+  − inadmissible assets (placeholder: 1375, 1385, 1610, 1620, 1650, 1750). No separate "approved reserves": 3220
+  statutory reserve is already inside equity.
+- **Required capital**: each charge is its accounts' balances × rate, each account rounded to the cent, so the tree adds
+  up exactly; a risk is never negative (a "raised to zero" line shows when it would be). Operational = rate × class 4000
+  revenue over the 12 months to the month. Combination √(I² + M² + C²) + O, or a simple sum.
+- **Thresholds** (placeholder): MCR 100%, SCR 125%, PCR 150%. The lowest is "the minimum" in the stress test.
+- **Stress test** ranks shocks by capital over required capital after the shock, not by the ratio: with negative
+  capital a shock that raises required capital makes the ratio less negative.
+- **Forecast**: least-squares line through up to 24 months of the ledger (leading empty months dropped); the range is
+  ± one standard deviation of the months around the line (cumulative on capital). The other risk charges are held
+  where they stand; the operational charge is re-read on the trailing 12 months' premium. The in-force book's
+  scheduled premium is NOT used yet.
+- Every solvency report carries `notices` (the amber strip): the placeholder warning, and the method or approximation.
+  Exports print them under the header.

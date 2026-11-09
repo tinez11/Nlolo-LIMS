@@ -211,4 +211,62 @@ class ReportingContractTest {
                 .with(staff(tenant, "FINANCE_APPROVER")))
             .andExpect(status().isBadRequest());
     }
+
+    // ---- Solvency and risk (batch 3, 2026-11-09) ---------------------------------------------------
+
+    /** An empty ledger requires nothing, so it has no ratio -- and the placeholder factors say so on the report. */
+    @Test
+    void theSolvencyReportsRunOnAnEmptyLedgerAndCarryThePlaceholderStrip() throws Exception {
+        for (String key : new String[] { "capital-adequacy", "stress-tests", "solvency-forecast" }) {
+            mockMvc.perform(get("/reports/" + key).param("monthFrom", "2026-09").with(staff(tenant, "FINANCE_OFFICER")))
+                .andExpect(status().isOk())
+                .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+                .andExpect(jsonPath("$.notices[0]").value(startsWith("Placeholder risk charges, not TIRA's")));
+        }
+        mockMvc.perform(get("/reports/capital-adequacy/parts").param("monthFrom", "2026-09").param("lineId", "required")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.balanced").value(true));
+    }
+
+    private static final String FACTORS = """
+        {"name":"TIRA 2025","effectiveFrom":"2026-01-01","placeholder":false,"factors":{
+          "insurance":[{"key":"life","label":"Life","accounts":["2110"],"percent":4}],
+          "market":[{"key":"equities","label":"Equities","accounts":["1230"],"percent":25}],
+          "credit":[{"key":"receivables","label":"Receivables","accounts":["1300"],"percent":5}],
+          "operationalPercent":3,"inadmissible":["1610"],"combination":"ROOT_SUM_OF_SQUARES",
+          "thresholds":[{"key":"MCR","label":"Minimum capital requirement (MCR)","ratioPercent":100}],
+          "shocks":[{"key":"equities","label":"Equities fall 20%","kind":"ASSETS","accounts":["1230"],"percent":-20}]}}
+        """;
+
+    /** Published by someone who may, it is the version a month after it is worked out on, and the strip goes. */
+    @Test
+    void aPublishedFactorSetReplacesThePlaceholderFromItsDate() throws Exception {
+        mockMvc.perform(post("/reports/settings/solvency-factors").contentType("application/json").content(FACTORS)
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/reports/settings/solvency-factors").contentType("application/json").content(FACTORS)
+                .with(staff(tenant, "ADMIN")))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(get("/reports/settings/solvency-factors").with(staff(tenant, "FINANCE_APPROVER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$[0].version").value(1))
+            .andExpect(jsonPath("$[1].version").value(0));
+        mockMvc.perform(get("/reports/capital-adequacy").param("monthFrom", "2026-09").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.notices").isEmpty())
+            .andExpect(jsonPath("$.sections[2].rows[0].version").value("Version 1"));
+    }
+
+    @Test
+    void aFactorSetItCannotUseIs400InWords() throws Exception {
+        mockMvc.perform(post("/reports/settings/solvency-factors").contentType("application/json")
+                .content(FACTORS.replace("\"percent\":25", "\"percent\":250")).with(staff(tenant, "ADMIN")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("Equities: the rate must be between 0% and 100%."));
+    }
 }

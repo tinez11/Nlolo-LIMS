@@ -46,7 +46,8 @@ export function ReportFilterBar({
   // An accounting report reads the ledger, so it offers the chart rather than a free-text code that could
   // name an account the chart does not have.
   // The ledger statements read the ledger, which has no product or client; the claims reports, also by month, do.
-  const ledgerReport = definition.category === 'ACCOUNTING';
+  // The solvency reports read the ledger too (2026-11-09).
+  const ledgerReport = definition.category === 'ACCOUNTING' || definition.category === 'SOLVENCY';
   const [accounts, setAccounts] = useState<ChartOfAccountView[]>([]);
   useEffect(() => {
     if (!ledgerReport) return;

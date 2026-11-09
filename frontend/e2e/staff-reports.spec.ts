@@ -187,6 +187,30 @@ test.describe('staff reports', () => {
     expect((await download).suggestedFilename()).toMatch(/^policies-in-force-\d{4}-\d{2}-\d{2}\.xlsx$/);
   });
 
+  /**
+   * 2026-11-09, batch 3: capital adequacy on placeholder factors says so above its figures, and its required capital
+   * opens to the risk charges and states that they add up. No figures asserted: the dev book moves with every spec.
+   */
+  test('capital adequacy says its factors are placeholders and its required capital adds up', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Capital adequacy (RBC)', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Capital adequacy (RBC)' })).toBeVisible();
+    await page.getByLabel('Period', { exact: true }).fill('2026-10');
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    await expect(page.getByLabel('Headline figures')).toContainText('Capital adequacy ratio', { timeout: 30_000 });
+    await expect(page.getByLabel('Before you read these figures')).toContainText("Placeholder risk charges, not TIRA's");
+    await expect(page.getByRole('heading', { name: 'Against the thresholds' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show what makes up Required capital' }).click();
+    await expect(page.getByRole('cell', { name: 'Insurance risk' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^✓ .* = /).first()).toBeVisible();
+    await expect(page.getByText(/^Does not add up/)).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Factors' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Solvency factors' })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Thresholds' })).toContainText('Minimum capital requirement (MCR)');
+  });
+
   test('a cohort report asks for months and a clients report for both a date and a period', async ({ page }) => {
     await page.goto('/staff/reports/persistency');
     await expect(page.getByLabel('First activation month')).toBeVisible({ timeout: 15_000 });

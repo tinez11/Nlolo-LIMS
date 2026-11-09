@@ -127,6 +127,38 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /reports/settings/solvency-factors:
+    get:
+      summary: Every version of the solvency factors, newest first, ending with the built-in placeholder set
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The versions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SolvencyFactorSet' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Publish a new version of the solvency factors (reports.solvency-factors)
+      description: "A version is never edited: a past month re-runs on the version in force at its end."
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewSolvencyFactorSet' }
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolvencyFactorSet' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /reports/rebuild:
     post:
       summary: Rebuild this tenant's reporting data from the audit journal (ADMIN)
@@ -182,7 +214,7 @@ components:
         key: { type: string }
         title: { type: string }
         description: { type: string }
-        category: { type: string, enum: [MANAGEMENT, ACCOUNTING, CLAIMS] }
+        category: { type: string, enum: [MANAGEMENT, ACCOUNTING, CLAIMS, SOLVENCY] }
         dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
         groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
         comparable: { type: boolean, description: "Accepts compareAsOf" }
@@ -215,7 +247,7 @@ components:
     ReportResult:
       type: object
       additionalProperties: false
-      required: [key, title, filterSummary, generatedAt, sections, figures]
+      required: [key, title, filterSummary, generatedAt, sections, figures, notices]
       properties:
         key: { type: string }
         title: { type: string }
@@ -225,6 +257,10 @@ components:
         figures: { type: array, items: { $ref: '#/components/schemas/ReportFigure' } }
         chart: { anyOf: [ { type: 'null' }, { $ref: '#/components/schemas/ReportChart' } ] }
         comparisonLabel: { type: [string, 'null'] }
+        notices:
+          type: array
+          description: "What a reader must know before trusting the figures, such as placeholder solvency factors (2026-11-09)"
+          items: { type: string }
     ReportFigure:
       type: object
       additionalProperties: false
@@ -242,9 +278,9 @@ components:
     ReportChart:
       type: object
       additionalProperties: false
-      required: [kind, description, bars]
+      required: [kind, description, bars, series]
       properties:
-        kind: { type: string, enum: [BRIDGE] }
+        kind: { type: string, enum: [BRIDGE, TREND] }
         description: { type: string }
         bars:
           type: array
@@ -256,6 +292,87 @@ components:
               label: { type: string }
               value: { type: string }
               kind: { type: string, enum: [START, UP, DOWN, END] }
+        series:
+          type: array
+          description: "A TREND chart's lines; empty on a BRIDGE"
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, dashed, points]
+            properties:
+              label: { type: string }
+              dashed: { type: boolean, description: "A projection rather than what happened" }
+              points:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [period]
+                  properties:
+                    period: { type: string }
+                    value: { type: [string, 'null'], description: "Null is a gap: nothing to draw for that period" }
+    SolvencyCharge:
+      type: object
+      additionalProperties: false
+      required: [key, label, accounts, percent]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        accounts: { type: array, items: { type: string } }
+        percent: { type: number, description: "A rate in per cent: 4 is four per cent" }
+    SolvencyThreshold:
+      type: object
+      additionalProperties: false
+      required: [key, label, ratioPercent]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        ratioPercent: { type: number }
+    SolvencyShock:
+      type: object
+      additionalProperties: false
+      required: [key, label, kind, accounts]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        kind: { type: string, enum: [ASSETS, INSURANCE, LOSS] }
+        accounts: { type: array, items: { type: string } }
+        percent: { type: [number, 'null'] }
+        amount: { type: [number, 'null'] }
+    SolvencyFactors:
+      type: object
+      additionalProperties: false
+      required: [insurance, market, credit, operationalPercent, inadmissible, combination, thresholds, shocks]
+      properties:
+        insurance: { type: array, items: { $ref: '#/components/schemas/SolvencyCharge' } }
+        market: { type: array, items: { $ref: '#/components/schemas/SolvencyCharge' } }
+        credit: { type: array, items: { $ref: '#/components/schemas/SolvencyCharge' } }
+        operationalPercent: { type: number }
+        inadmissible: { type: array, items: { type: string } }
+        combination: { type: string, enum: [ROOT_SUM_OF_SQUARES, SIMPLE_SUM] }
+        thresholds: { type: array, items: { $ref: '#/components/schemas/SolvencyThreshold' } }
+        shocks: { type: array, items: { $ref: '#/components/schemas/SolvencyShock' } }
+    SolvencyFactorSet:
+      type: object
+      additionalProperties: false
+      required: [version, name, effectiveFrom, placeholder, factors]
+      properties:
+        version: { type: integer, description: "0 is the built-in placeholder set" }
+        name: { type: string }
+        effectiveFrom: { type: string, format: date }
+        placeholder: { type: boolean }
+        createdBy: { type: [string, 'null'] }
+        createdAt: { type: [string, 'null'], format: date-time }
+        factors: { $ref: '#/components/schemas/SolvencyFactors' }
+    NewSolvencyFactorSet:
+      type: object
+      additionalProperties: false
+      required: [name, effectiveFrom, placeholder, factors]
+      properties:
+        name: { type: string }
+        effectiveFrom: { type: string, format: date }
+        placeholder: { type: boolean }
+        factors: { $ref: '#/components/schemas/SolvencyFactors' }
     ReportParts:
       type: object
       additionalProperties: false

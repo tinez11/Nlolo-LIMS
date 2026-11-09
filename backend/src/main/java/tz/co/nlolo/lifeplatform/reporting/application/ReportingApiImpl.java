@@ -14,6 +14,8 @@ import tz.co.nlolo.lifeplatform.reporting.api.ReportNotFoundException;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportResult;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
+import tz.co.nlolo.lifeplatform.reporting.api.NewSolvencyFactorSet;
+import tz.co.nlolo.lifeplatform.reporting.api.SolvencyFactorSetView;
 
 import tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportQueries;
 
@@ -39,16 +41,19 @@ public class ReportingApiImpl implements ReportingApi {
         "trial-balance", "general-ledger", "balance-sheet", "income-statement",
         // Claims (2026-11-09): what was incurred, the ratio to premium, what became of claims, the money, the time.
         "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
-        "early-claims", "claims-outstanding");
+        "early-claims", "claims-outstanding",
+        // Solvency and risk (2026-11-09): the ratio, the ratio under shocks, the ratio ahead.
+        "capital-adequacy", "stress-tests", "solvency-forecast");
 
     private final Map<String, Report> reports = new LinkedHashMap<>();
     private final LabelsFactory labelsFactory;
     private final RebuildService rebuildService;
     private final Clock clock;
     private final ReportQueries queries;
+    private final SolvencyFactorSets solvencyFactorSets;
 
     public ReportingApiImpl(List<Report> beans, LabelsFactory labelsFactory, RebuildService rebuildService,
-                            ReportingClock clock, ReportQueries queries) {
+                            ReportingClock clock, ReportQueries queries, SolvencyFactorSets solvencyFactorSets) {
         beans.stream().sorted(Comparator.comparingInt(r -> {
             int i = ORDER.indexOf(r.definition().key());
             return i < 0 ? Integer.MAX_VALUE : i;
@@ -57,6 +62,7 @@ public class ReportingApiImpl implements ReportingApi {
         this.rebuildService = rebuildService;
         this.clock = clock.clock();
         this.queries = queries;
+        this.solvencyFactorSets = solvencyFactorSets;
     }
 
     @Override
@@ -92,7 +98,7 @@ public class ReportingApiImpl implements ReportingApi {
         Labels labels = labelsFactory.create();
         ReportBody body = report.body(TenantContext.get(), filter, labels);
         return new ReportResult(key, report.definition().title(), FilterSummary.describe(report.definition(), filter, labels),
-            Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel());
+            Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel(), body.notices());
     }
 
     @Override
@@ -101,6 +107,16 @@ public class ReportingApiImpl implements ReportingApi {
         if (report == null) throw new ReportNotFoundException(key);
         ReportFilters.validate(report.definition(), filter);
         return report.parts(TenantContext.get(), lineId, filter, page, labelsFactory.create());
+    }
+
+    @Override
+    public List<SolvencyFactorSetView> solvencyFactorSets() {
+        return solvencyFactorSets.all(TenantContext.get());
+    }
+
+    @Override
+    public SolvencyFactorSetView publishSolvencyFactorSet(NewSolvencyFactorSet set, String publishedBy) {
+        return solvencyFactorSets.publish(TenantContext.get(), set, publishedBy);
     }
 
     @Override

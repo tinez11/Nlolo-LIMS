@@ -24,7 +24,8 @@ const ALL = [
   'ledger.manage', 'ledger.approve', 'ifrs17.view', 'ifrs17.manage', 'ifrs17.approve', 'reinsurance.view',
   'reinsurance.manage', 'reinsurance.approve', 'returns.view', 'returns.manage', 'agents.view', 'agents.manage',
   'commission.pay', 'funds.view', 'funds.manage', 'funds.approve', 'products.view', 'products.manage', 'products.charges',
-  'products.declare', 'products.declare-approve', 'reports.view', 'reports.rebuild', 'communications.view',
+  'products.declare', 'products.declare-approve', 'reports.view', 'reports.rebuild', 'reports.solvency-factors',
+  'communications.view',
   'communications.templates', 'audit.view', 'users.view', 'users.manage', 'roles.manage',
 ];
 

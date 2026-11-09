@@ -8,13 +8,16 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.FileDownloadResponses;
+import tz.co.nlolo.lifeplatform.reporting.api.NewSolvencyFactorSet;
 import tz.co.nlolo.lifeplatform.reporting.api.RebuildStatusView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportResult;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
+import tz.co.nlolo.lifeplatform.reporting.api.SolvencyFactorSetView;
 
 import java.util.List;
 import java.util.Map;
@@ -63,6 +66,27 @@ public class ReportController {
         ReportExporter.Export export = exporter.export(reportingApi.run(reportKey, ReportFilterParams.parse(query)),
             query.get("format"));
         return FileDownloadResponses.fileResponse(export.bytes(), export.contentType(), export.fileName(), export.fileName());
+    }
+
+    /**
+     * The solvency factors (2026-11-09): every version, newest first, ending with the built-in placeholder set. Mapped
+     * under /reports/settings so it can never be read as a report key.
+     */
+    @GetMapping("/reports/settings/solvency-factors")
+    @PreAuthorize("@access.can('reports.view')")
+    public List<SolvencyFactorSetView> solvencyFactorSets() {
+        return reportingApi.solvencyFactorSets();
+    }
+
+    /** A new version of the solvency factors. Versions are never edited: a past month re-runs on its own. */
+    @PostMapping("/reports/settings/solvency-factors")
+    @PreAuthorize("@access.can('reports.solvency-factors')")
+    public ResponseEntity<SolvencyFactorSetView> publishSolvencyFactorSet(@RequestBody NewSolvencyFactorSet set,
+                                                                          @AuthenticationPrincipal Jwt jwt) {
+        String by = jwt.getClaimAsString("name");
+        if (by == null || by.isBlank()) by = jwt.getClaimAsString("preferred_username");
+        if (by == null || by.isBlank()) by = jwt.getSubject();
+        return ResponseEntity.status(HttpStatus.CREATED).body(reportingApi.publishSolvencyFactorSet(set, by));
     }
 
     @PostMapping("/reports/rebuild")

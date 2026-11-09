@@ -114,6 +114,7 @@ import {
   ProductsPage,
   RegulatoryReturnDetailPage,
   ReportsPage,
+  SolvencyFactorsPage,
   RegulatoryReturnsPage,
   CreateTreatyPage,
   TreatiesPage,
@@ -403,7 +404,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'treaties/:treatyId/bordereaux/:bordereauId': ['reinsurance.view'],
   'treaties/:treatyId/statements/:statementId': ['reinsurance.view'], 'reinsurance-statements': ['reinsurance.view'],
   'regulatory-returns': ['returns.view'], 'regulatory-returns/:returnId': ['returns.view'],
-  reports: ['reports.view'], 'reports/:reportKey': ['reports.view'],
+  reports: ['reports.view'], 'reports/:reportKey': ['reports.view'], 'solvency-factors': ['reports.view'],
   users: ['users.view'], 'users/new': ['users.manage'], 'users/:userId': ['users.view'], roles: ['users.view'],
   'roles/new': ['roles.manage'], 'roles/:roleId': ['users.view'],
 };
@@ -797,6 +798,7 @@ const STAFF_SCREENS: Screen[] = [
   // One menu item; the report list lives inside the page (2026-11-09, the reports redesign).
   { path: 'reports', element: <ReportsPage />, reach: { group: 'reports', label: 'Reports', icon: ChartColumn } },
   { path: 'reports/:reportKey', element: <ReportsPage />, reach: 'drill-in' },
+  { path: 'solvency-factors', element: <SolvencyFactorsPage />, reach: 'drill-in' },
 ];
 
 /**
