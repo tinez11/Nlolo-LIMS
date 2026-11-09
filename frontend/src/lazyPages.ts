@@ -122,11 +122,8 @@ export const RegulatoryReturnDetailPage = lazy(() =>
 export const RegulatoryReturnsPage = lazy(() =>
   import('@/features/regreporting/RegulatoryReturnsPage').then((m) => ({ default: m.RegulatoryReturnsPage })),
 );
-export const ReportsCataloguePage = lazy(() =>
-  import('@/features/reporting/ReportsCataloguePage').then((m) => ({ default: m.ReportsCataloguePage })),
-);
-export const ReportPage = lazy(() =>
-  import('@/features/reporting/ReportPage').then((m) => ({ default: m.ReportPage })),
+export const ReportsPage = lazy(() =>
+  import('@/features/reporting/ReportsPage').then((m) => ({ default: m.ReportsPage })),
 );
 export const CreateTreatyPage = lazy(() =>
   import('@/features/reinsurance/CreateTreatyPage').then((m) => ({ default: m.CreateTreatyPage })),

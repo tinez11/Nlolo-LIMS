@@ -19,6 +19,8 @@ export interface ReportFilterState {
   monthTo: string;
   /** One chart account, four digits. Required by general-ledger. */
   accountCode: string;
+  /** What the figures are compared with (2026-11-09): PRIOR_PERIOD, SAME_PERIOD_LAST_YEAR or NONE. */
+  compareWith: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -45,10 +47,12 @@ export function defaultFilters(definition: ReportDefinition, today: Date): Repor
     monthFrom: kind === 'MONTH' ? isoMonth(today) : kind === 'MONTH_RANGE' ? `${today.getFullYear()}-01` : '',
     monthTo: kind === 'MONTH_RANGE' ? isoMonth(today) : '',
     accountCode: '',
+    // A statement opens compared with the period before -- the variance the user asked for (2026-11-09).
+    compareWith: definition.comparesPeriods ? 'PRIOR_PERIOD' : '',
   };
 }
 
-const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId', 'monthFrom', 'monthTo', 'accountCode'];
+const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId', 'monthFrom', 'monthTo', 'accountCode', 'compareWith'];
 
 export function stateFromSearch(definition: ReportDefinition, search: URLSearchParams, today: Date): ReportFilterState {
   const state = defaultFilters(definition, today);
@@ -79,7 +83,9 @@ export function toParams(definition: ReportDefinition, state: ReportFilterState)
   }
   // The ledger is organised by YYYY-MM and carries no posting date, so an accounting report takes months.
   if (kind === 'MONTH') put('monthFrom');
-  if (kind === 'MONTH' && definition.comparable) put('compareAsOf');
+  // A report that compares periods takes compareWith; the older date comparison stays for the rest.
+  if (definition.comparesPeriods) put('compareWith');
+  else if (kind === 'MONTH' && definition.comparable) put('compareAsOf');
   if (kind === 'MONTH_RANGE') {
     put('monthFrom');
     put('monthTo');
