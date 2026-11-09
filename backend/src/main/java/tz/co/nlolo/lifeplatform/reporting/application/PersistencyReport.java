@@ -6,6 +6,8 @@ import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportCategory;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportChart;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportFigure;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.domain.AnnualisedPremium;
@@ -20,6 +22,7 @@ import tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportQueries.CohortRow
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -86,10 +89,19 @@ public class PersistencyReport implements Report {
         }
 
         Map<String, Tally> byDimension = new TreeMap<>();
+        Map<YearMonth, Tally> byCohort = new TreeMap<>();
         Tally all = new Tally();
         for (CohortPolicy p : policies.values()) {
             StatusTimeline timeline = new StatusTimeline(p.changes());
             if (timeline.ever(PolicyStatus.CANCELLED_FREE_LOOK)) continue;
+            // Each activation month as its own cohort too (2026-11-09, batch 4): the trend across cohorts.
+            Tally cohort = byCohort.computeIfAbsent(YearMonth.from(p.activatedOn()), k -> new Tally());
+            cohort.policies++;
+            for (int m : List.of(13, 25)) {
+                if (!PersistencyMonths.reached(YearMonth.from(p.activatedOn()), m, today)) continue;
+                boolean persists = timeline.inForceOn(PersistencyMonths.measuredOn(p.activatedOn(), m));
+                cohort.counts.computeIfAbsent(m, k -> new long[1])[0] += persists ? 1 : 0;
+            }
             for (Tally t : List.of(byDimension.computeIfAbsent(p.dimension(), k -> new Tally()), all)) {
                 t.policies++;
                 t.premium = t.premium.add(p.annualised());
@@ -112,7 +124,53 @@ public class PersistencyReport implements Report {
         rows.sort(Comparator.comparing((Map<String, String> r) -> r.get("dimension")));
         String title = "Activated " + f.cohortFrom() + " to " + f.cohortTo()
             + (months.isEmpty() ? " — no persistency month reached yet" : "");
-        return List.of(new ReportSection(title, columns, rows, rows.isEmpty() ? Map.of() : row("Total", all, months)));
+        return List.of(new ReportSection(title, columns, rows, rows.isEmpty() ? Map.of() : row("Total", all, months)),
+            cohorts(byCohort, today));
+    }
+
+    /** Each activation month: its policies and how many were still in force at months 13 and 25, once reached. */
+    private static ReportSection cohorts(Map<YearMonth, Tally> byCohort, LocalDate today) {
+        List<ReportColumn> columns = List.of(col("cohort", "Activated in", TEXT), col("policies", "Policies", COUNT),
+            col("month13", "Month 13 %", PERCENT), col("month25", "Month 25 %", PERCENT));
+        List<Map<String, String>> rows = new ArrayList<>();
+        byCohort.forEach((month, t) -> {
+            Map<String, String> row = new LinkedHashMap<>();
+            row.put("cohort", month.toString());
+            row.put("policies", Figures.count(t.policies));
+            for (int m : List.of(13, 25)) {
+                row.put("month" + m, PersistencyMonths.reached(month, m, today) && t.counts.containsKey(m)
+                    ? Figures.percent(BigDecimal.valueOf(t.counts.get(m)[0]), BigDecimal.valueOf(t.policies)) : "");
+            }
+            rows.add(row);
+        });
+        return new ReportSection("By activation month", columns, rows, Map.of());
+    }
+
+    /** The cohort's persistency at months 13 and 25 as headline figures, and the trend across activation months. */
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        List<ReportSection> sections = run(tenantId, f, labels);
+        Map<String, String> totals = sections.get(0).totals();
+        List<ReportFigure> figures = Sections.present(
+            Sections.compared("month13ByCount", "13th-month persistency", totals, null, "PERCENT", "UP", true),
+            Sections.compared("month25ByCount", "25th-month persistency", totals, null, "PERCENT", "UP", true),
+            Sections.compared("policies", "Policies in the cohort", totals, null, "COUNT", null, true),
+            Sections.compared("month13ByPremium", "13th month, by premium", totals, null, "PERCENT", "UP", false),
+            Sections.compared("month25ByPremium", "25th month, by premium", totals, null, "PERCENT", "UP", false));
+
+        List<Map<String, String>> cohorts = sections.get(1).rows();
+        ReportChart chart = null;
+        if (cohorts.stream().anyMatch(r -> !r.get("month13").isEmpty())) {
+            List<ReportChart.Series> series = new ArrayList<>();
+            for (String m : List.of("13", "25")) {
+                series.add(new ReportChart.Series("Month " + m, false, cohorts.stream()
+                    .map(r -> new ReportChart.Point(r.get("cohort"), r.get("month" + m).isEmpty() ? null : r.get("month" + m)))
+                    .toList()));
+            }
+            chart = new ReportChart("TREND", "Persistency at months 13 and 25, by the month the policies began",
+                List.of(), series, "PERCENT");
+        }
+        return new ReportBody(sections, figures, chart, null);
     }
 
     private static Map<String, String> row(String label, Tally t, List<Integer> months) {

@@ -16,14 +16,22 @@ const FILL: Record<BridgeBar['kind'], string> = {
   DOWN: 'fill-chart-5',
 };
 
-const NUMBER = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const MONEY = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 /**
  * A bridge (waterfall) from a start figure to an end figure, one floating bar per step that raised or lowered it
  * (2026-11-09, the reports redesign). <b>It draws; it does not compute:</b> each step is placed on the one before,
  * which is geometry, and every label is the server's own figure. Rises and falls are named in words beside the colour.
  */
-export function BridgeChart({ bars, description, height = 220 }: { bars: BridgeBar[]; description: string; height?: number }) {
+export function BridgeChart({ bars, description, height = 220, unit = 'MONEY' }: {
+  bars: BridgeBar[];
+  description: string;
+  height?: number;
+  /** COUNT for a movement of policies (2026-11-09): "12", not "12.00". */
+  unit?: 'MONEY' | 'COUNT' | 'PERCENT';
+}) {
+  const NUMBER = unit === 'COUNT' ? WHOLE : MONEY;
   const [wrap, W] = useChartWidth<HTMLDivElement>();
   const H = height;
   const spans = bridgeSpans(bars);

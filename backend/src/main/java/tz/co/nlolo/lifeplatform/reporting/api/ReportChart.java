@@ -12,16 +12,23 @@ import java.util.List;
  *
  * @param kind        BRIDGE or TREND
  * @param description what the chart shows, in words, for a screen reader
+ * @param unit        MONEY, COUNT or PERCENT -- how every value on it is written (2026-11-09, batch 4: a movement of
+ *                    policies is not "12.00")
  */
-public record ReportChart(String kind, String description, List<Bar> bars, List<Series> series) {
+public record ReportChart(String kind, String description, List<Bar> bars, List<Series> series, String unit) {
 
     public ReportChart {
         bars = bars == null ? List.of() : List.copyOf(bars);
         series = series == null ? List.of() : List.copyOf(series);
+        unit = unit == null ? "MONEY" : unit;
     }
 
     public ReportChart(String kind, String description, List<Bar> bars) {
-        this(kind, description, bars, List.of());
+        this(kind, description, bars, List.of(), "MONEY");
+    }
+
+    public ReportChart(String kind, String description, List<Bar> bars, List<Series> series) {
+        this(kind, description, bars, series, "MONEY");
     }
 
     /** @param kind START, UP, DOWN or END -- a start or end figure, or a step that raised or lowered it */

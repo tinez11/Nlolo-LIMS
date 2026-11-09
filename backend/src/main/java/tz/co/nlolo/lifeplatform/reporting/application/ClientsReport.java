@@ -34,7 +34,7 @@ public class ClientsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("clients", "Clients",
         "Clients by type and KYC status, individuals by age band and sex, and every group or corporate scheme with "
             + "its lives covered, joiners and leavers.",
-        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false);
+        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods();
 
     private final ReportQueries queries;
 
@@ -45,6 +45,29 @@ public class ClientsReport implements Report {
     @Override
     public ReportDefinitionView definition() {
         return DEFINITION;
+    }
+
+    /**
+     * New clients against the period before or the same period last year, and the two lists a manager acts on: clients
+     * whose identity is not yet verified, and clients with no policy in force (2026-11-09, batch 4).
+     */
+    @Override
+    public ReportBody body(UUID tenantId, ReportFilter f, Labels labels) {
+        List<ReportSection> sections = run(tenantId, f, labels);
+        java.time.LocalDate[] span = f.comparisonSpan();
+        Map<String, String> now = new LinkedHashMap<>(sections.get(0).totals());
+        Map<String, String> before = span == null ? null
+            : run(tenantId, f.withPeriod(span[0], span[1]), labels).get(0).totals();
+        if (!now.isEmpty()) {
+            now.put("kycNotVerified", Figures.count(Long.parseLong(now.get("total")) - Long.parseLong(now.get("kycVerified"))));
+        }
+        return new ReportBody(sections, Sections.present(
+            Sections.compared("total", "Clients", now, null, "COUNT", "UP", true),
+            Sections.compared("newInPeriod", "New in the period", now, before, "COUNT", "UP", true),
+            Sections.compared("kycNotVerified", "Identity not yet verified", now, null, "COUNT", "DOWN", true),
+            Sections.compared("withoutPolicyInForce", "No policy in force", now, null, "COUNT", "DOWN", false),
+            Sections.compared("kycRejected", "KYC rejected", now, null, "COUNT", "DOWN", false)),
+            null, Sections.comparedWith(span));
     }
 
     @Override

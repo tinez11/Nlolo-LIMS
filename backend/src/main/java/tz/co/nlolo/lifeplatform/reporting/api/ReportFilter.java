@@ -98,6 +98,34 @@ public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from
             with == null ? CompareWith.NONE : with);
     }
 
+    /**
+     * For a report on a date (2026-11-09, batch 4): the date it is compared with -- a month earlier, or a year earlier.
+     * Null when it compares with nothing.
+     */
+    public java.time.LocalDate comparisonDate() {
+        if (compareWith == null || compareWith == CompareWith.NONE || asOf == null) return null;
+        return compareWith == CompareWith.SAME_PERIOD_LAST_YEAR ? asOf.minusYears(1) : asOf.minusMonths(1);
+    }
+
+    /**
+     * For a report over a span of days (2026-11-09, batch 4): the span it is compared with -- the same length
+     * immediately before, or the same days a year earlier. A span of whole months moves by whole months, so October is
+     * compared with September, not with 31 August to 30 September. Null when it compares with nothing.
+     */
+    public java.time.LocalDate[] comparisonSpan() {
+        if (compareWith == null || compareWith == CompareWith.NONE || from == null || to == null) return null;
+        if (compareWith == CompareWith.SAME_PERIOD_LAST_YEAR) {
+            return new java.time.LocalDate[] { from.minusYears(1), to.minusYears(1) };
+        }
+        boolean wholeMonths = from.getDayOfMonth() == 1 && to.equals(YearMonth.from(to).atEndOfMonth());
+        if (wholeMonths) {
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(YearMonth.from(from), YearMonth.from(to)) + 1;
+            return new java.time.LocalDate[] { from.minusMonths(months), YearMonth.from(to).minusMonths(months).atEndOfMonth() };
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1;
+        return new java.time.LocalDate[] { from.minusDays(days), from.minusDays(1) };
+    }
+
     /** Whether this run compares with another span of months (2026-11-09, the reports redesign). */
     public boolean compares() {
         return compareWith != null && compareWith != CompareWith.NONE && monthFrom != null;

@@ -79,7 +79,7 @@ export function ReportFilterBar({
     <form onSubmit={submit} aria-label="Report filters" className="space-y-2 border-b border-border pb-4">
       <div className="flex flex-wrap items-end gap-3">
         {(kind === 'AS_OF' || kind === 'AS_OF_AND_PERIOD') && field('asOf', 'As of', 'date')}
-        {kind === 'AS_OF' && definition.comparable && field('compareAsOf', 'Compare with', 'date')}
+        {kind === 'AS_OF' && definition.comparable && !definition.comparesPeriods && field('compareAsOf', 'Compare with', 'date')}
         {(kind === 'PERIOD' || kind === 'AS_OF_AND_PERIOD') && field('from', 'From', 'date')}
         {(kind === 'PERIOD' || kind === 'AS_OF_AND_PERIOD') && field('to', 'To', 'date')}
         {kind === 'COHORT' && field('cohortFrom', 'First activation month', 'month')}
@@ -92,8 +92,8 @@ export function ReportFilterBar({
           <label className="flex flex-col gap-1 text-xs" htmlFor="report-compareWith">
             Compare with
             <select id="report-compareWith" value={state.compareWith} onChange={set('compareWith')} className={SELECT}>
-              <option value="PRIOR_PERIOD">{kind === 'MONTH' ? 'The month before' : 'The period before'}</option>
-              <option value="SAME_PERIOD_LAST_YEAR">{kind === 'MONTH' ? 'The same month last year' : 'The same period last year'}</option>
+              <option value="PRIOR_PERIOD">{kind === 'MONTH' ? 'The month before' : kind === 'AS_OF' ? 'A month earlier' : 'The period before'}</option>
+              <option value="SAME_PERIOD_LAST_YEAR">{kind === 'MONTH' ? 'The same month last year' : kind === 'AS_OF' ? 'A year earlier' : 'The same period last year'}</option>
               <option value="NONE">Nothing</option>
             </select>
           </label>

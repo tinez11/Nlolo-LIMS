@@ -278,9 +278,10 @@ components:
     ReportChart:
       type: object
       additionalProperties: false
-      required: [kind, description, bars, series]
+      required: [kind, description, bars, series, unit]
       properties:
         kind: { type: string, enum: [BRIDGE, TREND] }
+        unit: { type: string, enum: [MONEY, COUNT, PERCENT], description: "How every value on the chart is written" }
         description: { type: string }
         bars:
           type: array
