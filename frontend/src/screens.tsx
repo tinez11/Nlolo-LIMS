@@ -113,8 +113,7 @@ import {
   ProductDetailPage,
   ProductsPage,
   RegulatoryReturnDetailPage,
-  ReportsCataloguePage,
-  ReportPage,
+  ReportsPage,
   RegulatoryReturnsPage,
   CreateTreatyPage,
   TreatiesPage,
@@ -795,8 +794,9 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'reinsurance-returns', label: 'Regulatory returns', icon: Receipt },
   },
   { path: 'regulatory-returns/:returnId', element: <RegulatoryReturnDetailPage />, reach: 'drill-in' },
-  { path: 'reports', element: <ReportsCataloguePage />, reach: { group: 'reports', label: 'Reports', icon: ChartColumn } },
-  { path: 'reports/:reportKey', element: <ReportPage />, reach: 'drill-in' },
+  // One menu item; the report list lives inside the page (2026-11-09, the reports redesign).
+  { path: 'reports', element: <ReportsPage />, reach: { group: 'reports', label: 'Reports', icon: ChartColumn } },
+  { path: 'reports/:reportKey', element: <ReportsPage />, reach: 'drill-in' },
 ];
 
 /**

@@ -22,6 +22,7 @@ const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparab
   groupByOptions: ['PRODUCT', 'AGENT'],
   comparable,
   requiresAccount: false,
+  comparesPeriods: false,
 });
 
 const TODAY = new Date(2026, 9, 11); // 11 October 2026, local time

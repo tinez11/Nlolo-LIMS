@@ -11,7 +11,18 @@ export type ReportResult = components['schemas']['ReportResult'];
 export type ReportSection = components['schemas']['ReportSection'];
 export type ReportColumn = components['schemas']['ReportColumn'];
 export type RebuildStatus = components['schemas']['RebuildStatus'];
+export type ReportFigure = components['schemas']['ReportFigure'];
+export type ReportChart = components['schemas']['ReportChart'];
+export type ReportParts = components['schemas']['ReportParts'];
 export type ReportParams = Record<string, string>;
+
+/**
+ * What one line of a report is made of -- the computation tree (2026-11-09). The same filters as the report; `page`
+ * pages a leaf account's postings.
+ */
+export function getReportParts(key: string, lineId: string, params: ReportParams, page = 0): Promise<ReportParts> {
+  return get<ReportParts>(`/reports/${encodeURIComponent(key)}/parts`, { params: { ...params, lineId, page: String(page) } });
+}
 export type ExportFormat = 'xlsx' | 'csv' | 'pdf';
 
 const ACCEPT: Record<ExportFormat, string> = {

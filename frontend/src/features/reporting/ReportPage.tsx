@@ -10,6 +10,9 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReportingStore } from '@/store/reportingStore';
 import { ReportFilterBar } from './ReportFilterBar';
 import { ReportSectionTable } from './ReportSectionTable';
+import { ReportFigures } from './ReportFigures';
+import { ReportTree } from './ReportTree';
+import { BridgeChart } from '@/components/charts/BridgeChart';
 import { stateFromSearch, toParams, validateFilters } from './reportParams';
 
 /**
@@ -70,7 +73,7 @@ export function ReportPage() {
     <>
       <PageHeader
         title={definition.title}
-        description={current?.filterSummary ?? definition.description}
+        description={current ? [current.filterSummary, current.comparisonLabel].filter(Boolean).join(' · ') : definition.description}
         actions={
           <div className="flex gap-2">
             {(['xlsx', 'csv', 'pdf'] as const).map((f) => (
@@ -104,9 +107,25 @@ export function ReportPage() {
           <InlineError lead="The report could not run" error={result.error} />
         ) : result.status === 'error' && result.error ? (
           <ErrorPanel error={result.error} onRetry={() => params && void runReport(reportKey, params)} />
-        ) : (
-          current?.sections.map((section) => <ReportSectionTable key={section.title} section={section} />)
-        )}
+        ) : current && params ? (
+          <>
+            <ReportFigures figures={current.figures} comparisonLabel={current.comparisonLabel} />
+            {current.chart && current.chart.bars.length > 0 && (
+              <section className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                <h2 className="mb-2 font-display text-sm font-semibold text-heading">{current.chart.description}</h2>
+                <BridgeChart bars={current.chart.bars} description={current.chart.description} />
+              </section>
+            )}
+            {/* A section whose lines open to what they are made of is a tree (2026-11-09); the rest stay tables. */}
+            {current.sections.map((section) =>
+              section.rows.some((r) => r['_lineId']) ? (
+                <ReportTree key={section.title} reportKey={reportKey} params={params} section={section} />
+              ) : (
+                <ReportSectionTable key={section.title} section={section} />
+              ),
+            )}
+          </>
+        ) : null}
       </div>
     </>
   );

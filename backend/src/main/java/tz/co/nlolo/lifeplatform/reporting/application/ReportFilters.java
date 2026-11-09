@@ -60,6 +60,8 @@ final class ReportFilters {
             }
         }
         refuse(f.compareAsOf() != null && !d.comparable(), "compareAsOf does not apply to " + key);
+        refuse(f.compareWith() != null && f.compareWith() != tz.co.nlolo.lifeplatform.reporting.api.CompareWith.NONE
+            && !d.comparesPeriods(), "compareWith does not apply to " + key);
         refuse(f.groupBy() != null && !d.groupByOptions().contains(f.groupBy()),
             key + " cannot be grouped by " + f.groupBy());
         refuse(f.clientType() != null && !CLIENT_TYPES.contains(f.clientType()),

@@ -15,11 +15,11 @@ import java.util.UUID;
 public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from, LocalDate to, YearMonth cohortFrom,
                            YearMonth cohortTo, UUID productId, String productCategory, UUID agentId, String salesChannel,
                            String branchCode, String clientType, GroupBy groupBy,
-                           YearMonth monthFrom, YearMonth monthTo, String accountCode) {
+                           YearMonth monthFrom, YearMonth monthTo, String accountCode, CompareWith compareWith) {
 
     public static ReportFilter none() {
         return new ReportFilter(null, null, null, null, null, null, null, null, null, null, null, null, null,
-            null, null, null);
+            null, null, null, CompareWith.NONE);
     }
 
     public static ReportFilter asOf(LocalDate asOf) {
@@ -32,7 +32,7 @@ public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from
 
     public static ReportFilter cohort(YearMonth from, YearMonth to) {
         return new ReportFilter(null, null, null, null, from, to, null, null, null, null, null, null, null,
-            null, null, null);
+            null, null, null, CompareWith.NONE);
     }
 
     /** One accounting period -- a MONTH report. */
@@ -47,32 +47,32 @@ public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from
 
     public ReportFilter withAsOf(LocalDate date) {
         return new ReportFilter(date, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory, agentId,
-            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
     public ReportFilter withPeriod(LocalDate start, LocalDate end) {
         return new ReportFilter(asOf, compareAsOf, start, end, cohortFrom, cohortTo, productId, productCategory, agentId,
-            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
     public ReportFilter withCompareAsOf(LocalDate date) {
         return new ReportFilter(asOf, date, from, to, cohortFrom, cohortTo, productId, productCategory, agentId,
-            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
     public ReportFilter withGroupBy(GroupBy by) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory, agentId,
-            salesChannel, branchCode, clientType, by, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, clientType, by, monthFrom, monthTo, accountCode, compareWith);
     }
 
     public ReportFilter withClientType(String type) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory, agentId,
-            salesChannel, branchCode, type, groupBy, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, type, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
     public ReportFilter withProductId(UUID id) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, id, productCategory, agentId,
-            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode);
+            salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
     /**
@@ -84,12 +84,38 @@ public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from
      */
     public ReportFilter withMonths(YearMonth firstMonth, YearMonth lastMonth) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory,
-            agentId, salesChannel, branchCode, clientType, groupBy, firstMonth, lastMonth, accountCode);
+            agentId, salesChannel, branchCode, clientType, groupBy, firstMonth, lastMonth, accountCode, compareWith);
     }
 
     public ReportFilter withAccountCode(String code) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory,
-            agentId, salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, code);
+            agentId, salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, code, compareWith);
+    }
+
+    public ReportFilter withCompareWith(CompareWith with) {
+        return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory,
+            agentId, salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode,
+            with == null ? CompareWith.NONE : with);
+    }
+
+    /** Whether this run compares with another span of months (2026-11-09, the reports redesign). */
+    public boolean compares() {
+        return compareWith != null && compareWith != CompareWith.NONE && monthFrom != null;
+    }
+
+    /**
+     * The months this run is compared with: the same number of months immediately before, or the same months a year
+     * earlier. Null when it compares with nothing. A MONTH report's single month is a one-month span.
+     */
+    public YearMonth[] comparisonMonths() {
+        if (!compares()) {
+            return null;
+        }
+        YearMonth last = monthTo != null ? monthTo : monthFrom;
+        long length = java.time.temporal.ChronoUnit.MONTHS.between(monthFrom, last) + 1;
+        return compareWith == CompareWith.SAME_PERIOD_LAST_YEAR
+            ? new YearMonth[] { monthFrom.minusYears(1), last.minusYears(1) }
+            : new YearMonth[] { monthFrom.minusMonths(length), last.minusMonths(length) };
     }
 
     public GroupBy groupByOr(GroupBy fallback) {

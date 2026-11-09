@@ -687,6 +687,29 @@ class FinaccountingApiIntegrationTest {
             .isEqualByComparingTo("37.00");
     }
 
+    /**
+     * The reports' computation tree (2026-11-09): an account opens to its postings across a span, a page at a time,
+     * with totals of the whole span -- and a summary account to every posting beneath it.
+     */
+    @Test
+    void anAccountOpensToItsPostingsAcrossASpanWithTheSpansTotals() {
+        tenantWithThreeMonthsPosted();
+
+        tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView leaf =
+            finaccountingApi.accountPostings("1140", "2026-08", "2026-09", 0, 1);
+        assertThat(leaf.count()).as("August's and September's postings, not July's").isEqualTo(2);
+        assertThat(leaf.postings()).hasSize(1);
+        assertThat(leaf.postings().get(0).period()).isEqualTo("2026-08");
+        assertThat(leaf.debitTotal()).as("the whole span, not the page").isEqualByComparingTo("37.00");
+
+        tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView summary =
+            finaccountingApi.accountPostings("1000", "2026-07", "2026-09", 0, 50);
+        assertThat(summary.debitTotal()).as("1140 rolls up into 1100 and 1000").isEqualByComparingTo("137.00");
+
+        assertThatThrownBy(() -> finaccountingApi.accountPostings("9999", "2026-07", "2026-09", 0, 50))
+            .isInstanceOf(FinaccountingValidationException.class);
+    }
+
     /** A range running backwards is a caller's mistake, refused in words rather than returning an empty ledger. */
     @Test
     void aRangeEndingBeforeItStartsIsRefused() {

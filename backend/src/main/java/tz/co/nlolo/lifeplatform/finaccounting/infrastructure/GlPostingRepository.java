@@ -27,6 +27,27 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
      *  (finaccounting/V3) exactly -- not scoped to a period, unlike the finder above. */
     boolean existsByTenantIdAndAccountCode(UUID tenantId, String accountCode);
 
+    /** One page of the postings to these accounts across a span of periods, oldest first (the reports' tree). */
+    @Query("""
+        select p from GlPosting p
+         where p.tenantId = :tenantId and p.accountCode in :codes
+           and p.period >= :fromPeriod and p.period <= :toPeriod
+         order by p.period, p.createdAt, p.postingId
+        """)
+    List<GlPosting> pageForAccounts(@Param("tenantId") UUID tenantId, @Param("codes") Collection<String> codes,
+                                    @Param("fromPeriod") String fromPeriod, @Param("toPeriod") String toPeriod,
+                                    org.springframework.data.domain.Pageable page);
+
+    /** The same span's DR and CR totals and counts, at most two rows. */
+    @Query("""
+        select p.direction, sum(p.amount), count(p) from GlPosting p
+         where p.tenantId = :tenantId and p.accountCode in :codes
+           and p.period >= :fromPeriod and p.period <= :toPeriod
+         group by p.direction
+        """)
+    List<Object[]> totalsForAccounts(@Param("tenantId") UUID tenantId, @Param("codes") Collection<String> codes,
+                                     @Param("fromPeriod") String fromPeriod, @Param("toPeriod") String toPeriod);
+
     /**
      * DR and CR totals per account -- the aggregation this module never had.
      *

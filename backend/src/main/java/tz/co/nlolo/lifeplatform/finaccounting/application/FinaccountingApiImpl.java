@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.finaccounting.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountPostingsView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountHasChildrenException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
@@ -285,6 +286,53 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         UUID tenantId = TenantContext.get();
         return assemble(tenantId, fromPeriod + ".." + toPeriod,
             glPostingRepository.sumByAccountAndDirectionBetween(tenantId, fromPeriod, toPeriod));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AccountPostingsView accountPostings(String accountCode, String fromPeriod, String toPeriod, int page,
+                                               int size) {
+        if (fromPeriod.compareTo(toPeriod) > 0) {
+            throw new FinaccountingValidationException(
+                "The first period must not be after the last; got " + fromPeriod + " to " + toPeriod);
+        }
+        UUID tenantId = TenantContext.get();
+        List<ChartOfAccount> chart = chartOfAccountRepository.findByTenantIdOrderByAccountCodeAsc(tenantId);
+        if (chart.stream().noneMatch(a -> a.getAccountCode().equals(accountCode))) {
+            throw new FinaccountingValidationException("No account " + accountCode + " in the chart of accounts");
+        }
+        // The account and every account beneath it: a summary account's balance is its descendants' postings.
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>(List.of(accountCode));
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (ChartOfAccount a : chart) {
+                if (a.getParentCode() != null && codes.contains(a.getParentCode()) && codes.add(a.getAccountCode())) {
+                    grew = true;
+                }
+            }
+        }
+        int capped = Math.max(1, Math.min(size, 500));
+        BigDecimal debit = ZERO;
+        BigDecimal credit = ZERO;
+        long count = 0;
+        for (Object[] row : glPostingRepository.totalsForAccounts(tenantId, codes, fromPeriod, toPeriod)) {
+            BigDecimal sum = (BigDecimal) row[1];
+            if (row[0] == PostingDirection.DR) {
+                debit = debit.add(sum);
+            } else {
+                credit = credit.add(sum);
+            }
+            count += (Long) row[2];
+        }
+        List<AccountPostingsView.Posting> postings = glPostingRepository.pageForAccounts(tenantId, codes, fromPeriod,
+                toPeriod, org.springframework.data.domain.PageRequest.of(Math.max(0, page), capped)).stream()
+            .map(p -> new AccountPostingsView.Posting(p.getPostingId(), p.getJournalEntryId(), p.getAccountCode(),
+                p.getPeriod(), p.getCreatedAt(), p.getDirection(), p.getAmount(), p.getCurrency(), p.getPolicyNumber(),
+                p.getSourceEvent(), p.getSourceRef()))
+            .toList();
+        return new AccountPostingsView(accountCode, fromPeriod, toPeriod, debit, credit, count, Math.max(0, page),
+            capped, postings);
     }
 
     /**

@@ -13,6 +13,9 @@ public interface ReportingApi {
     /** @throws ReportNotFoundException for an unknown key; @throws ReportParameterException for a filter the report cannot take */
     ReportResult run(String key, ReportFilter filter);
 
+    /** What one line of a report is made of -- the computation tree (2026-11-09). 404 for a line it does not have. */
+    ReportParts parts(String key, String lineId, ReportFilter filter, int page);
+
     /**
      * Premiums collected per month, {@code from} through {@code to} inclusive, oldest first, one entry per month and
      * currency. A month in which nothing was collected is ABSENT rather than zero: the caller decides whether a gap is

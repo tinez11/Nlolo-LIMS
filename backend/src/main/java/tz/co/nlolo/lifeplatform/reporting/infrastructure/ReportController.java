@@ -48,6 +48,15 @@ public class ReportController {
         return reportingApi.run(reportKey, ReportFilterParams.parse(query));
     }
 
+    /** What one line is made of -- the computation tree (2026-11-09). The same filters as the report. */
+    @GetMapping("/reports/{reportKey}/parts")
+    @PreAuthorize("@access.can('reports.view')")
+    public tz.co.nlolo.lifeplatform.reporting.api.ReportParts parts(@PathVariable String reportKey,
+            @RequestParam String lineId, @RequestParam(defaultValue = "0") int page,
+            @RequestParam Map<String, String> query) {
+        return reportingApi.parts(reportKey, lineId, ReportFilterParams.parse(query), page);
+    }
+
     @GetMapping("/reports/{reportKey}/export")
     @PreAuthorize("@access.can('reports.view')")
     public ResponseEntity<byte[]> export(@PathVariable String reportKey, @RequestParam Map<String, String> query) {

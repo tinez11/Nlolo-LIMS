@@ -37,7 +37,8 @@ import static tz.co.nlolo.lifeplatform.reporting.application.Sections.col;
 public class TrialBalanceReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("trial-balance", "Trial balance",
-        "Every posted account's debits, credits and balance through the chosen period, and whether the ledger balances.",
+        "Every posted account's opening balance, movement in the month, debits, credits and closing balance, and whether"
+            + " the ledger balances.",
         ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), false);
 
     private final FinaccountingApi finaccounting;
@@ -55,8 +56,18 @@ public class TrialBalanceReport implements Report {
     public List<ReportSection> run(UUID tenantId, ReportFilter f, Labels labels) {
         TrialBalanceView ledger = finaccounting.trialBalanceThrough(f.monthFrom().toString());
 
+        // Where each account stood at the end of the month before, and how far it moved since (2026-11-09).
+        java.util.Map<String, java.math.BigDecimal> opening = new java.util.HashMap<>();
+        TrialBalanceView before = finaccounting.trialBalanceThrough(f.monthFrom().minusMonths(1).toString());
+        if (before != null) {
+            for (tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView a : before.accounts()) {
+                opening.put(a.accountCode(), a.balance());
+            }
+        }
+
         List<ReportColumn> columns = List.of(col("accountCode", "Account", TEXT), col("name", "Name", TEXT),
             col("accountType", "Type", TEXT), col("currency", "Currency", TEXT),
+            col("opening", "Opening", MONEY), col("movement", "Movement", MONEY),
             col("debit", "Debit", MONEY), col("credit", "Credit", MONEY), col("balance", "Balance", MONEY));
 
         // The accounts that were posted TO. A summary account carries no postings of its own, so it would be a
@@ -68,6 +79,9 @@ public class TrialBalanceReport implements Report {
             row.put("name", a.name());
             row.put("accountType", a.accountType().name());
             row.put("currency", a.currency());
+            java.math.BigDecimal was = opening.getOrDefault(a.accountCode(), java.math.BigDecimal.ZERO);
+            row.put("opening", Figures.money(was));
+            row.put("movement", Figures.money(a.balance().subtract(was)));
             row.put("debit", Figures.money(a.ownDebit()));
             row.put("credit", Figures.money(a.ownCredit()));
             row.put("balance", Figures.money(a.balance()));
@@ -79,6 +93,8 @@ public class TrialBalanceReport implements Report {
         totals.put("name", "");
         totals.put("accountType", "");
         totals.put("currency", rows.isEmpty() ? "" : rows.get(0).get("currency"));
+        totals.put("opening", "");
+        totals.put("movement", "");
         totals.put("debit", Figures.money(ledger.totalDebit()));
         totals.put("credit", Figures.money(ledger.totalCredit()));
         totals.put("balance", "");
