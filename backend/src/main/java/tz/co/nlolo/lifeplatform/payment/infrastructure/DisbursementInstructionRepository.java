@@ -19,6 +19,9 @@ public interface DisbursementInstructionRepository
     /** Finance's work queue for the EFT rail. Ordered oldest-first because the oldest unpaid
      * lender payout is the one that matters most. */
     List<DisbursementInstruction> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, String status);
+    /** A policy's payouts in one state, newest first (2026-11-09, the payout advice). */
+    List<DisbursementInstruction> findByTenantIdAndPolicyNumberAndStatusOrderByCreatedAtDesc(UUID tenantId,
+        String policyNumber, String status);
 
     List<DisbursementInstruction> findByTenantIdAndPurposeAndSourceRefOrderByCreatedAtDesc(UUID tenantId,
                                                                                            String purpose,

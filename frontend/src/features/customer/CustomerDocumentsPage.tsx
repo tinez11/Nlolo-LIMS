@@ -18,6 +18,7 @@ import { Panel } from '@/components/Panel';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { DownloadButtons } from '@/features/documents/DownloadButtons';
+import { PayoutAdvices } from '@/features/documents/PayoutAdvices';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate, formatInstant } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
@@ -108,6 +109,7 @@ function PolicyDocuments({ policy }: { policy: CustomerPolicySummary }) {
           </DocRow>
         )}
         <Receipts policyNumber={n} />
+        <PaymentsToYou policyNumber={n} />
       </ul>
       {error && <div className="px-4 pb-3"><InlineError error={error} /></div>}
     </Panel>
@@ -182,6 +184,31 @@ function Receipts({ policyNumber }: { policyNumber: string }) {
                     ))}
                   </ul>
                 )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * What we have paid the customer on the policy, each with its payout advice (2026-11-09, receipts step 4): the receipts'
+ * counterpart for money going out. Loaded when opened, like the receipts.
+ */
+function PaymentsToYou({ policyNumber }: { policyNumber: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-hover">
+        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Payments to you</span>
+          <span className="block text-xs text-muted-foreground">A payout advice for every payment we have made to you.</span>
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-border pt-2">
+          <PayoutAdvices policyNumber={policyNumber} emptyText="We have not paid anything on this policy yet." />
         </div>
       )}
     </li>

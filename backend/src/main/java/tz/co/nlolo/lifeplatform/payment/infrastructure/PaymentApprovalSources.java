@@ -25,10 +25,24 @@ class PaymentApprovalSources {
         return ApprovalSource.of("receipt", "Deposits to confirm", "Confirm", "collections.approve",
             limit -> ApprovalSource.Pending.of(receipts.awaitingApproval().stream()
                 .map(r -> new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(),
-                    Receipts.words(r.method()) + " " + r.reference() + (r.loanId() != null ? " · loan repayment"
+                    capital(Receipts.words(r.method())) + " " + r.reference() + (r.loanId() != null ? " · loan repayment"
                         : "ACCOUNT_TOP_UP".equals(r.purpose()) ? " · savings deposit"
                         : "UL_TOP_UP".equals(r.purpose()) ? " · fund top-up" : ""),
-                    r.amount(), r.currency(), r.recordedBy(), r.recordedAt()))
+                    r.amount(), r.currency(), r.recordedBy(), r.recordedAt(), depositLine(r)))
                 .toList(), limit));
+    }
+
+    /** "Mobile money", not "mobile money", at the head of a row (2026-11-09). */
+    static String capital(String words) {
+        return words == null || words.isEmpty() ? "" : Character.toUpperCase(words.charAt(0)) + words.substring(1);
+    }
+
+    /** Who paid, when it was received, and the recorder's note -- the second line of a deposit to confirm (2026-11-09). */
+    static String depositLine(tz.co.nlolo.lifeplatform.payment.api.ReceiptView r) {
+        StringBuilder s = new StringBuilder();
+        if (r.payerRef() != null && !r.payerRef().isBlank()) s.append("From ").append(r.payerRef());
+        if (r.receivedOn() != null) s.append(s.isEmpty() ? "Received " : " · received ").append(ApprovalSource.day(r.receivedOn()));
+        if (r.note() != null && !r.note().isBlank()) s.append(s.isEmpty() ? "" : " · ").append("“").append(r.note().trim()).append("”");
+        return s.isEmpty() ? null : s.toString();
     }
 }

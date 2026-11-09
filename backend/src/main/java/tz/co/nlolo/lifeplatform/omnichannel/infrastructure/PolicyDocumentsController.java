@@ -113,6 +113,25 @@ public class PolicyDocumentsController {
         return file(documents.receiptDocument(policyNumber, receiptId), "pdf", "receipt-" + policyNumber + "-" + receiptId);
     }
 
+    /** Every payment made on the policy, newest first (2026-11-09, the payout advice). */
+    @GetMapping("/policies/{policyNumber}/payout-advices")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
+    public java.util.List<tz.co.nlolo.lifeplatform.omnichannel.api.PayoutAdviceLine> payoutAdvices(
+            @PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return documents.payoutAdvices(policyNumber);
+    }
+
+    /** One payout advice as a PDF. */
+    @GetMapping("/policies/{policyNumber}/payout-advices/{disbursementId}/pdf")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
+    public ResponseEntity<byte[]> payoutAdvice(@PathVariable String policyNumber, @PathVariable java.util.UUID disbursementId,
+                                               @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return file(documents.payoutAdviceDocument(policyNumber, disbursementId), "pdf",
+            "payout-advice-" + policyNumber + "-" + disbursementId);
+    }
+
     private static ResponseEntity<byte[]> file(CustomerDocument document, String format, String name) {
         boolean pdf = "pdf".equalsIgnoreCase(format);
         if (!pdf && !"xlsx".equalsIgnoreCase(format)) {

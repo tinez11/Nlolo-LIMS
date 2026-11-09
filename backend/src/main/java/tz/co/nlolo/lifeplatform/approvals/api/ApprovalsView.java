@@ -23,9 +23,11 @@ public record ApprovalsView(long actionable, List<Group> groups) {
     /**
      * @param amount null where the row moves no money (a price, an election)
      * @param yours  the viewer asked for this, so somebody else must sign it
+     * @param detail who is paid and how, or the reason given, where the owning module says (2026-11-09)
+     * @param clientName the policyholder's name, for a row on a policy (2026-11-09)
      */
     public record Row(String reference, String policyNumber, String summary, Money amount, String requestedBy,
-                      String requestedByName, Instant requestedAt, boolean yours) {}
+                      String requestedByName, Instant requestedAt, boolean yours, String detail, String clientName) {}
 
     /** The platform's money: a decimal string and its currency, never a JSON number. */
     public record Money(String amount, String currencyCode) {

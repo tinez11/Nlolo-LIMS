@@ -24,8 +24,22 @@ test.describe('approvals inbox', () => {
     await page.getByRole('button', { name: 'Everything you approve' }).click();
     await expect(page.getByRole('region', { name: 'Savings withdrawals' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Payouts to approve' })).toBeVisible();
-    // And the books' approvals are the finance approver's, not theirs.
-    await expect(page.getByRole('region', { name: 'Manual journals' })).toHaveCount(0);
+    // Which kinds show follows the person's permissions, not their role (2026-10-26): dev's staff.finance was given
+    // ledger.approve on 2026-11-08, so manual journals are theirs here. ApprovalsTest pins the permission rule itself.
+  });
+
+  /** 2026-11-09, the user: "many info there" -- a row is what it is and whose money; the rest opens in a drawer. */
+  test('a request opens every fact in a drawer that leads to the page that acts', async ({ page }) => {
+    await page.goto('/staff/approvals?show=all');
+    await expect(page.getByText(/\d+ waiting for you ·/)).toBeVisible({ timeout: 30_000 });
+    const details = page.getByRole('button', { name: /^Details of / }).first();
+    test.skip((await details.count()) === 0, 'nothing waits for staff.finance on this stack');
+    await details.click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByText('Waiting', { exact: true })).toBeVisible();
+    await expect(drawer.getByText('Asked by', { exact: true })).toBeVisible();
+    await drawer.getByRole('button', { name: 'Close' }).first().click();
+    await expect(drawer).toHaveCount(0);
   });
 });
 

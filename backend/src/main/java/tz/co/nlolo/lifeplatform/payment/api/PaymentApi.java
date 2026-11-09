@@ -67,6 +67,12 @@ public interface PaymentApi {
      */
     java.util.List<ReceiptView> receiptsForPolicy(String policyNumber);
 
+    /**
+     * Every payout made on a policy that reached its payee, newest first (2026-11-09, the payout advice): a claim, a
+     * surrender, a withdrawal, an annuity or survival instalment -- everything that left through a disbursement.
+     */
+    java.util.List<DisbursementStatusView> payoutsForPolicy(String policyNumber);
+
     /** One amount received, by its id, whatever its state. */
     java.util.Optional<ReceiptView> findReceipt(java.util.UUID receiptId);
 

@@ -79,8 +79,22 @@ class PayoutApprovalSources {
         return new ApprovalSource.Pending(page.getTotalElements(), page.getContent().stream()
             .map(p -> new ApprovalSource.Item(p.instalmentId().toString(), p.policyNumber(),
                 words(p.kind().name()) + " payout", p.currentAmount(), p.currency(),
-                reviewerAsked ? p.reviewedBy() : null, start(p.dueDate())))
+                reviewerAsked ? p.reviewedBy() : null, start(p.dueDate()), payoutLine(p)))
             .toList());
+    }
+
+    /**
+     * When it falls due and who it is paid to, and whether a review must confirm the life assured is alive (2026-11-09,
+     * the approvals page's second line).
+     */
+    static String payoutLine(PayoutInstalmentView p) {
+        StringBuilder s = new StringBuilder("Due ").append(ApprovalSource.day(p.dueDate()));
+        if (p.payeeRef() != null && !p.payeeRef().isBlank()) s.append(" · paid to ").append(p.payeeRef());
+        if (p.proofOfLifeRequired()) s.append(" · proof of life needed");
+        if (p.restatementReason() != null && !p.restatementReason().isBlank()) {
+            s.append(" · restated: ").append(p.restatementReason());
+        }
+        return s.toString();
     }
 
     private static String words(String constant) {

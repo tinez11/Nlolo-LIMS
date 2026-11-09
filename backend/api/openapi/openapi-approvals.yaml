@@ -143,3 +143,9 @@ components:
         yours:
           type: boolean
           description: The viewer asked for this, so somebody else must sign it.
+        detail:
+          type: [string, 'null']
+          description: A second line a signer needs before opening it -- who is paid and how, the reason given (2026-11-09).
+        clientName:
+          type: [string, 'null']
+          description: The policyholder's name, for a row on a policy (2026-11-09).

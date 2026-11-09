@@ -43,6 +43,7 @@ import { CoveredLivesPanel } from './CoveredLivesPanel';
 import { Ifrs17Classification } from './Ifrs17Classification';
 import { BalancePanel, BalanceStatementPanel } from './BalancePanel';
 import { InvoicesPanel } from './InvoicesPanel';
+import { PayoutAdvices } from '@/features/documents/PayoutAdvices';
 import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
 import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
@@ -516,6 +517,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               ) : undefined}
             >
               <InvoicesPanel policyNumber={policyNumber} />
+            </Panel>
+            {/* Money going out has its paper too (2026-11-09, the payout advice): every payment that reached its payee. */}
+            <Panel title="Payments made" subtitle="Claims, surrenders, withdrawals and instalments paid, each with its payout advice.">
+              <PayoutAdvices policyNumber={policyNumber} />
             </Panel>
             <Panel
               title="Payment schedule"

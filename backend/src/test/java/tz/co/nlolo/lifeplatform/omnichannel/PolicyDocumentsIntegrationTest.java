@@ -226,6 +226,51 @@ class PolicyDocumentsIntegrationTest {
             .andExpect(status().isForbidden());
     }
 
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /**
+     * Money going out has its paper too (2026-11-09, receipts step 4, the payout advice): a payout that reached its
+     * payee is listed under its advice number and prints what was paid, to whom, how and on which day. A payout still
+     * pending is not listed -- an advice says the money was paid.
+     */
+    @Test
+    void aPayoutThatReachedItsPayeeHasAnAdvice() throws Exception {
+        String policyNumber = paidSavingsPlan("MM-DOC-5");
+        UUID paid = UUID.randomUUID();
+        jdbc.update("INSERT INTO payment.disbursement_instruction (disbursement_id, tenant_id, idempotency_key, payee_ref,"
+            + " amount, currency, purpose, status, source_ref, method, gateway_reference, policy_number)"
+            + " VALUES (?, ?, ?, '+255700000001', 125000.00, 'TZS', 'CLAIM_SETTLEMENT', 'COMPLETED', 'claim-1',"
+            + " 'MOBILE_MONEY', 'GW-PAID-1', ?)", paid, TENANT, "advice-" + paid, policyNumber);
+        jdbc.update("INSERT INTO payment.disbursement_instruction (tenant_id, idempotency_key, payee_ref, amount, currency,"
+            + " purpose, status, source_ref, method, policy_number) VALUES (?, ?, '+255700000001', 5.00, 'TZS',"
+            + " 'WITHDRAWAL_PAYOUT', 'PENDING', 'w-1', 'MOBILE_MONEY', ?)", TENANT, "pending-" + paid, policyNumber);
+
+        String list = mockMvc.perform(staff(get("/policies/" + policyNumber + "/payout-advices")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].what").value("Claim settlement"))
+            .andExpect(jsonPath("$[0].method").value("Mobile money"))
+            .andExpect(jsonPath("$[0].adviceNumber").value(org.hamcrest.Matchers.matchesPattern("PA-\\d{4}-[0-9A-F]{8}")))
+            .andReturn().getResponse().getContentAsString();
+        String number = com.jayway.jsonpath.JsonPath.read(list, "$[0].adviceNumber");
+
+        byte[] advice = mockMvc.perform(staff(get("/policies/" + policyNumber + "/payout-advices/" + paid + "/pdf")))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/pdf"))
+            .andReturn().getResponse().getContentAsByteArray();
+        try (var doc = Loader.loadPDF(advice)) {
+            assertThat(new PDFTextStripper().getText(doc)).contains("Payout advice " + number, policyNumber,
+                "Claim settlement", "125,000.00", "+255700000001", "GW-PAID-1");
+        }
+
+        // Another customer gets neither the list nor the advice.
+        mockMvc.perform(get("/policies/" + policyNumber + "/payout-advices")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void aCustomerReadsOnlyTheirOwnPolicysDocuments() throws Exception {
         String policyNumber = paidSavingsPlan("MM-DOC-3");
