@@ -41,7 +41,8 @@ import java.util.concurrent.Executors;
 @Service
 public class RebuildService {
 
-    static final List<String> PREFIXES = List.of("party.", "policy.", "billing.");
+    // claims. since the claims reports (2026-11-09): without it a rebuild left every claim out of reporting.
+    static final List<String> PREFIXES = List.of("party.", "policy.", "billing.", "claims.");
     private static final int PAGE_SIZE = 500;
     private static final TypeReference<Map<String, Object>> MAP = new TypeReference<>() {};
     private static final Logger log = LoggerFactory.getLogger(RebuildService.class);
