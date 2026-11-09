@@ -7,7 +7,7 @@ import { changeWords, isGood } from './figureWords';
 import { ReportFigures } from './ReportFigures';
 
 const figure = (over: Partial<ReportFigure>): ReportFigure => ({
-  key: 'profit', label: 'Profit for the period', value: '412.60', prior: '381.70', change: '30.90',
+  key: 'profit', label: 'Profit for the period', value: '412.60', prior: '381.70', change: '30.90', unit: 'MONEY',
   changePercent: '8.1', goodWhen: 'UP', lead: true, ...over,
 });
 
@@ -52,5 +52,23 @@ describe('the bridge chart', () => {
     expect(screen.getByRole('img', { name: 'How the profit moved' })).toBeInTheDocument();
     expect(screen.getByText('Insurance revenue: up 72.40')).toBeInTheDocument();
     expect(screen.getByText('Insurance service expenses: down 52.40')).toBeInTheDocument();
+  });
+});
+
+/** 2026-11-09, the claims reports: a figure is written as its unit says; a percentage moves in points. */
+describe('figure units', () => {
+  it('writes counts whole, percentages with %, days with days, money with decimals', async () => {
+    const { formatFigure } = await import('./figureWords');
+    expect(formatFigure('41', 'COUNT')).toBe('41');
+    expect(formatFigure('38.4', 'PERCENT')).toBe('38.4%');
+    expect(formatFigure('9.4', 'DAYS')).toBe('9.4 days');
+    expect(formatFigure('1240.5', 'MONEY')).toBe('1,240.50');
+  });
+
+  it('says a percentage moved in points', () => {
+    expect(changeWords(figure({ unit: 'PERCENT', value: '38.4', prior: '35.3', change: '3.1', changePercent: null })))
+      .toBe('up 3.1 pts from 35.3%');
+    expect(changeWords(figure({ unit: 'COUNT', value: '41', prior: '36', change: '5', changePercent: '13.9' })))
+      .toBe('up 5 (13.9%) from 36');
   });
 });

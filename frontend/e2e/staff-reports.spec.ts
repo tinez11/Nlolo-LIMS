@@ -30,10 +30,36 @@ test.describe('staff reports -- rebuild', () => {
 test.describe('staff reports', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
-  test('a finance officer is not offered the rebuild', async ({ page }) => {
+  /**
+   * The rebuild goes by the permission, not the role (2026-11-09, the user: "I gave the permission to finance officer").
+   * The finance approver reads reports without it; the finance officer on dev has been given it.
+   */
+  test('someone without the rebuild permission is not offered it', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: 'e2e/.auth/staff-finance-approver.json' });
+    const page = await context.newPage();
+    try {
+      await page.goto('/staff/reports');
+      await expect(page.getByRole('link', { name: 'Policies in force' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: 'Rebuild reporting data' })).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  /** 2026-11-09, batch 2: a claims variance report, from the Claims area, compared with the period before. */
+  test('claims incurred compares with the period before and opens to its claims', async ({ page }) => {
     await page.goto('/staff/reports');
-    await expect(page.getByRole('link', { name: 'Policies in force' })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('button', { name: 'Rebuild reporting data' })).toHaveCount(0);
+    const list = page.getByRole('navigation', { name: 'Reports' });
+    await list.getByRole('button', { name: /Claims/ }).click();
+    await list.getByRole('link', { name: 'Claims incurred variance' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Claims incurred variance' })).toBeVisible();
+    await page.getByLabel('First period').fill('2026-01');
+    await page.getByLabel('Last period').fill('2026-12');
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    await expect(page.getByLabel('Headline figures')).toContainText('Claims incurred', { timeout: 30_000 });
+    await expect(page.getByLabel('Headline figures')).toContainText('Number of claims');
+    await expect(page.getByRole('heading', { name: 'Claims incurred by product' })).toBeVisible();
   });
 
   test('the products report lists each product and the policies behind it', async ({ page }) => {

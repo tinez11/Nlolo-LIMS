@@ -1,8 +1,8 @@
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import type { ReportFigure } from '@/api/reporting';
 import { cn } from '@/lib/cn';
-import { formatCell } from './reportParams';
-import { changeWords, isGood } from './figureWords';
+
+import { changeWords, formatFigure, isGood } from './figureWords';
 
 /**
  * The answer a report exists for, on the figures band, and the breakdown figures beneath it as tiles (2026-11-09,
@@ -21,7 +21,7 @@ export function ReportFigures({ figures, comparisonLabel }: { figures: ReportFig
             return (
               <div key={f.key} className="min-w-0">
                 <dt className="text-xs text-muted-foreground">{f.label}</dt>
-                <dd className="mt-1 text-display whitespace-nowrap">{formatCell('MONEY', f.value)}</dd>
+                <dd className="mt-1 text-display whitespace-nowrap">{formatFigure(f.value, f.unit)}</dd>
                 {words && <dd className="mt-1 text-xs text-muted-foreground">{words}</dd>}
               </div>
             );
@@ -37,7 +37,7 @@ export function ReportFigures({ figures, comparisonLabel }: { figures: ReportFig
             return (
               <li key={f.key} className="rounded-xl border border-border bg-surface p-4 shadow-card">
                 <p className="text-xs font-semibold text-muted-foreground">{f.label}</p>
-                <p className="mt-2 text-figure whitespace-nowrap">{formatCell('MONEY', f.value)}</p>
+                <p className="mt-2 text-figure whitespace-nowrap">{formatFigure(f.value, f.unit)}</p>
                 {changeWords(f) && (
                   <p
                     data-delta={good === null ? 'none' : good ? 'good' : 'bad'}
