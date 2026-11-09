@@ -228,6 +228,31 @@ test.describe('staff reports', () => {
       .toBeVisible({ timeout: 30_000 });
   });
 
+  /** 2026-11-09, batch 5: commissions earned to paid, reinsurance by treaty, and claims net of reinsurance. */
+  test('commissions, reinsurance and claims net of reinsurance run from their areas', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Commissions', exact: true }).click();
+    await page.getByLabel('First period').fill('2026-01');
+    await page.getByLabel('Last period').fill('2026-12');
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page.getByRole('heading', { name: /^Earned to paid, / })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel('Headline figures')).toContainText('Commission booked');
+
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Reinsurance', exact: true }).click();
+    await page.getByLabel('First period').fill('2026-01');
+    await page.getByLabel('Last period').fill('2026-12');
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page.getByRole('heading', { name: 'Treaties today' })).toBeVisible({ timeout: 30_000 });
+
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Claims net of reinsurance', exact: true }).click();
+    await page.getByLabel('First period').fill('2026-01');
+    await page.getByLabel('Last period').fill('2026-12');
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page.getByLabel('Headline figures')).toContainText('Kept (net of reinsurance)', { timeout: 30_000 });
+  });
+
   test('a cohort report asks for months and a clients report for both a date and a period', async ({ page }) => {
     await page.goto('/staff/reports/persistency');
     await expect(page.getByLabel('First activation month')).toBeVisible({ timeout: 15_000 });

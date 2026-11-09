@@ -107,6 +107,9 @@ public interface ReinsuranceApi {
 
     StatementView getStatement(UUID statementId);
 
+    /** What has been settled on a statement and what is still owed either way (2026-11-09, the reinsurance reports). */
+    SettlementView.Open openSettlement(UUID statementId);
+
     /** Newest first; null filters are ignored. At most 500. */
     List<StatementView> listStatements(String status, UUID treatyId);
 

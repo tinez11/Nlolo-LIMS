@@ -41,9 +41,11 @@ public class ReportingApiImpl implements ReportingApi {
         "trial-balance", "general-ledger", "balance-sheet", "income-statement",
         // Claims (2026-11-09): what was incurred, the ratio to premium, what became of claims, the money, the time.
         "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
-        "early-claims", "claims-outstanding",
+        "early-claims", "claims-outstanding", "claims-net-of-reinsurance",
         // Solvency and risk (2026-11-09): the ratio, the ratio under shocks, the ratio ahead.
-        "capital-adequacy", "stress-tests", "solvency-forecast");
+        "capital-adequacy", "stress-tests", "solvency-forecast",
+        // Reinsurance and commissions (2026-11-09, batch 5).
+        "reinsurance", "commissions");
 
     private final Map<String, Report> reports = new LinkedHashMap<>();
     private final LabelsFactory labelsFactory;

@@ -224,3 +224,20 @@ Later: the investments register and ALM, then ORSA, then AML (each designed sepa
   total in its API) and policyholders without portal access (the portal publishes no events and has no listing). Each
   needs an event or an API in its own module first.
 - **Policies by product** stays its own report (not folded into policies in force).
+
+## 12. Batch 5 as built (2026-11-09)
+
+- **Commissions** (MONTH_RANGE, compares): earned (first-year, renewal, overrides incl. supervisor overrides, bonuses)
+  − clawbacks (an accrual reversing another, or any negative accrual) = booked; − what the months' PAID statements
+  paid = booked, not yet paid. By agent; by product against premium collected (commission ÷ premium); unpaid
+  statements by months since their month (this or last, 2–3, 4–6, over 6). Read through two new distribution API
+  reads, `listAccrualsBetween` / `listStatementsBetween` (all agents). Not built: by branch and by supervisor, and the
+  plan's expected rate (the report shows the actual ratio only).
+- **Reinsurance** (MONTH_RANGE): every treaty with what it holds today (policies, sum at risk and premium ceded); the
+  statements whose quarter touches the months, with what is still owed either way after settlements (new
+  `ReinsuranceApi.openSettlement`). Not built: bordereau sent-vs-confirmed and net retained risk by product.
+- **Claims net of reinsurance** (C7, in Claims): each claim approved in the months, its recoverable (the sum of its
+  recovery records), and the net kept. "Received" per claim is not shown: recoveries are settled through the
+  quarterly statement as a whole.
+- Reporting may now read `reinsurance::api`. The product and client filters are hidden on these reports: they read
+  books that take neither.
