@@ -416,7 +416,7 @@ public class PolicyApiImpl implements PolicyApi {
         // Both events together for an immediate-cover issuance, so every downstream consumer
         // behaves exactly as it did before this change.
         if (startsCoverNow) {
-            publishPolicyActivated(policyNumber, tenantId, policy);
+            publishPolicyActivated(policyNumber, tenantId, policy, false);
         }
 
         return toView(policy);
@@ -435,7 +435,7 @@ public class PolicyApiImpl implements PolicyApi {
         }
         policy.activate();
         policyRepository.save(policy);
-        publishPolicyActivated(policyNumber, tenantId, policy);
+        publishPolicyActivated(policyNumber, tenantId, policy, true);
     }
 
     @Override
@@ -477,7 +477,7 @@ public class PolicyApiImpl implements PolicyApi {
      * surrender-charge band and the clawback window — and is the issue date of the contract, not
      * the activation date, which is why both appear here as separate keys.
      */
-    private void publishPolicyActivated(String policyNumber, UUID tenantId, Policy policy) {
+    private void publishPolicyActivated(String policyNumber, UUID tenantId, Policy policy, boolean byFirstPremium) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("policyNumber", policyNumber);
         payload.put("policyholderPartyId", policy.getPolicyholderPartyId());
@@ -491,6 +491,9 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("agentOfRecordId", policy.getAgentOfRecordId()); // nullable -- a direct sale
         payload.put("activatedAt", LocalDate.now().toString());
+        // An offer the customer paid for (2026-11-08), as opposed to cover that started at issue -- a migrated or
+        // converted book. The customer portal invites the first kind automatically, never the second.
+        payload.put("byFirstPremium", byFirstPremium);
         // What KIND of contract this is, so a consumer can tell one life from many without
         // reading policy back. GROUP_LIFE and CREDIT_LIFE are the two that insure a schedule of
         // members, and for those the sumAssured above is the TOTAL of that schedule rather than
@@ -3219,7 +3222,7 @@ public class PolicyApiImpl implements PolicyApi {
         // It survived because no test asked what an agent earned on a group scheme. The
         // individual path has had this line since M7.
         if (startsCoverNow) {
-            publishPolicyActivated(policyNumber, tenantId, policy);
+            publishPolicyActivated(policyNumber, tenantId, policy, false);
         }
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(

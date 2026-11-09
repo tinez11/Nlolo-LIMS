@@ -1,0 +1,6 @@
+# Test-wide overrides, layered over the main application.yml (Spring reads classpath:/config/ after classpath:/).
+app:
+  portal:
+    # Fixtures pay first premiums everywhere; an automatic invite would call Keycloak from every such test.
+    # PortalAccessIntegrationTest builds its own enabled instance to cover it.
+    auto-invite: false
