@@ -7,6 +7,13 @@ import { claimableStatus } from '@/lib/policyCapacity';
 
 const enc = encodeURIComponent;
 
+/**
+ * A policy that has ended for good (2026-11-10, the user, on a policy closed by a settled death claim still offering
+ * Deposit and Change beneficiaries). Nothing more is paid into it, nobody is named on it, nothing is lent against it.
+ * LAPSED and SUSPENDED are not here: either can come back, and a payment is how a lapse is cured.
+ */
+const CLOSED_FOR_GOOD = new Set(['SURRENDERED', 'MATURED', 'EXPIRED', 'NOT_TAKEN_UP', 'CANCELLED_FREE_LOOK', 'ANNUITY_ENDED']);
+
 /** Who may take a deposit on the one Deposit page: record money received, or ask a phone for it (2026-11-07). */
 const DEPOSIT_PERMISSIONS = ['collections.manage', 'policies.service', 'accounts.transact'];
 
@@ -69,18 +76,20 @@ export function policyActions(policy: {
       ? `&claimant=${enc(policy.policyholderPartyId)}` : '';
     actions.push({ label: 'Register a claim', to: `/staff/claims/new?policy=${n}${claimant}`, icon: ClipboardPlus });
   }
+  // A closed policy keeps only what looks back: a claim for an event while it was on cover, above, and its documents.
+  const open = !CLOSED_FOR_GOOD.has(policy.status ?? '');
   // One Deposit (2026-11-07, the user): every method on one page -- finance records money received, servicing asks a
   // phone for it. "Request payment" went with it.
-  if (canAny(...DEPOSIT_PERMISSIONS)) {
+  if (open && canAny(...DEPOSIT_PERMISSIONS)) {
     actions.push({ label: 'Deposit', to: `/staff/receipts/new?policy=${n}&from=policy`, icon: HandCoins });
   }
-  if (can('policies.service') && tabs.includes('beneficiaries')) {
+  if (open && can('policies.service') && tabs.includes('beneficiaries')) {
     actions.push({ label: 'Change beneficiaries', to: `${here}?tab=beneficiaries`, icon: Users });
   }
-  if (can('accounts.transact') && tabs.includes('account')) {
+  if (open && can('accounts.transact') && tabs.includes('account')) {
     actions.push({ label: 'Withdraw', to: `${here}?tab=account`, icon: ArrowDownToLine });
   }
-  if (can('loans.manage') && tabs.includes('loans')) {
+  if (open && can('loans.manage') && tabs.includes('loans')) {
     actions.push({ label: 'Loan', to: `${here}?tab=loans`, icon: Landmark });
   }
   if (valuePanel && SURRENDERABLE.includes(policy.status ?? '') && canAny('policies.surrender', 'policies.surrender-approve')) {
