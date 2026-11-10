@@ -90,6 +90,7 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
   const acting = useAnnuityStore((s) => s.acting[rule.ruleId]);
   const gates = approveRuleGates(rule, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
+  const ended = rule.status === 'APPROVED' && !!rule.effectiveTo && rule.effectiveTo < todayIso();
 
   return (
     <div role="listitem" className="space-y-2 px-4 py-2.5">
@@ -97,7 +98,14 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
         <span className="text-sm font-medium">
           {rule.ratePercent}% from {rule.payoutKinds.map((k) => KIND_LABEL[k] ?? k).join(', ')}
         </span>{' '}
-        <StatusBadge kind="withholdingRule" value={rule.status} />
+        {/* A rule past its last day withholds nothing more: it reads Ended, not Approved (2026-11-10). */}
+        {ended ? (
+          <span className="rounded-full bg-status-neutral-bg px-2 py-0.5 text-xs text-status-neutral-fg">
+            Ended {formatDate(rule.effectiveTo)}
+          </span>
+        ) : (
+          <StatusBadge kind="withholdingRule" value={rule.status} />
+        )}
         <p className="text-xs text-muted-foreground">
           From {formatDate(rule.effectiveFrom)}
           {rule.effectiveTo ? ` to ${formatDate(rule.effectiveTo)}` : ''} · {rule.legalReference} · proposed by <StaffName subject={rule.proposedBy} />
@@ -106,7 +114,7 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
         </p>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      {rule.status === 'APPROVED' && <EndRuleForm rule={rule} busy={acting?.status === 'loading'} />}
+      {rule.status === 'APPROVED' && !ended && <EndRuleForm rule={rule} busy={acting?.status === 'loading'} />}
       {rule.status === 'PROPOSED' && (
         <>
           <GatePanel gates={gates} title="Before approving" />
@@ -161,7 +169,7 @@ function ProposeForm() {
   const form = useForm<WithholdingRuleValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(withholdingRuleSchema),
-    defaultValues: { annuity: true, ratePercent: '', effectiveFrom: '', effectiveTo: '', legalReference: '' },
+    defaultValues: { payoutKinds: ['ANNUITY'], ratePercent: '', effectiveFrom: '', effectiveTo: '', legalReference: '' },
   });
 
   return (
@@ -170,7 +178,7 @@ function ProposeForm() {
       onSubmit={form.handleSubmit((v) =>
         void propose(
           {
-            payoutKinds: v.annuity ? ['ANNUITY'] : [],
+            payoutKinds: v.payoutKinds,
             ratePercent: Number(v.ratePercent),
             effectiveFrom: v.effectiveFrom,
             effectiveTo: v.effectiveTo === '' ? null : v.effectiveTo,
@@ -185,8 +193,14 @@ function ProposeForm() {
       <RequiredNote />
       <p className="text-xs font-medium">Propose a rule</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <FormField required label="Payout kinds" error={form.formState.errors.annuity?.message}>
-        <CheckboxField label="Annuity income" {...form.register('annuity')} />
+      {/* Every scheduled benefit (2026-11-10, the user: "it only shows annuity, there must be more"): the server takes any
+          kind, and which ones the law taxes is finance's to say. */}
+      <FormField required label="Payout kinds" error={form.formState.errors.payoutKinds?.message}>
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+          {Object.entries(KIND_LABEL).map(([kind, label]) => (
+            <CheckboxField key={kind} label={label} value={kind} {...form.register('payoutKinds')} />
+          ))}
+        </div>
       </FormField>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField required label="Rate (%)" error={form.formState.errors.ratePercent?.message}>

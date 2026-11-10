@@ -6,7 +6,8 @@ import { z } from 'zod';
  */
 export const withholdingRuleSchema = z
   .object({
-    annuity: z.boolean(),
+    /** Every scheduled benefit kind a rule may withhold from (2026-11-10: the form offered annuity income only). */
+    payoutKinds: z.array(z.string()),
     ratePercent: z
       .string()
       .trim()
@@ -17,8 +18,8 @@ export const withholdingRuleSchema = z
     legalReference: z.string().trim().min(1, 'A withholding rule names the law or ruling it applies').max(200),
   })
   .superRefine((v, ctx) => {
-    if (!v.annuity) {
-      ctx.addIssue({ code: 'custom', path: ['annuity'], message: 'Choose the payouts this rule withholds from' });
+    if (v.payoutKinds.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['payoutKinds'], message: 'Choose the payouts this rule withholds from' });
     }
     if (v.effectiveTo !== '' && v.effectiveFrom !== '' && v.effectiveTo < v.effectiveFrom) {
       ctx.addIssue({ code: 'custom', path: ['effectiveTo'], message: 'A withholding rule cannot end before it begins' });

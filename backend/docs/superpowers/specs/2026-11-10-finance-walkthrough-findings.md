@@ -18,6 +18,7 @@ fixed yet unless marked. Order is the order found.
 | D3 | An unpaid offer becomes Not taken up after 30 days even when its first premium is recorded but not yet confirmed (agent cash, or a deposit awaiting its second signature). | Proposed: the expiry sweep skips offers with money in transit. |
 | D4 | No cover while an agent holds the client's first premium. | Should cover date back to when the agent collected the cash, once confirmed? (business/underwriting) |
 | D5 | Kindelema's two CLive Savings policies (POL-5705F7FB paid, POL-8154F1A5 offer) were set up as 2,000,000 **monthly** for 13 months via the agent forms. | Was a single opening deposit intended? If so, cancel and reissue. |
+| D7 | Which payouts Tanzanian law requires tax withheld from (annuity income only, or also pension lump sums, maturities, ...). | Tax/compliance answer; decides what the withholding form offers. |
 | D6 | Dunning ladder days (7/14/21/30) and the 30-day offer validity are placeholders pending Collections / Underwriting sign-off. | Confirm the figures. |
 
 ## Open — to fix
@@ -55,6 +56,30 @@ fixed yet unless marked. Order is the order found.
 22. **No agent screen to record cash** (backend and SMS exist; dev data came from `scripts/dev-field-receipt-fixtures.sh`). Agreed: online only.
 23. Agent list of cash still held, with **"I've banked this"** + slip reference (backend on the branch, untested).
 24. "Ask to pay" (mobile money) for agents **already exists** — the agent Billing tab's Deposit link. Not to rebuild.
+
+### Paying out — Benefits due
+28. **No client name** on the list or the payout page: the payee is typed without the screen saying whose money it is.
+29. **Payee reference is free text** — no method choice (mobile money / bank), nothing pre-filled from the client's number on record. Same weakness as Deposits "From", on money going out.
+30. **Opens on All** (118 rows, mostly months away); should open on what needs action (Due, Reviewed, Failed, In doubt).
+31. **A late payout looks like one due today** (pension lump sum 5 days late, no warning).
+32. **Clicking the row did not open it**; only clicking the policy number did.
+
+### Paying out — Payment runs
+33. **Proof of life can only be recorded after a stream is suspended** (the form is on a held instalment only). No list of pensioners whose proof is due soon, no way to record it ahead, so every pensioner is suspended first each year and paid late.
+34. **No reminder to the pensioner** to confirm they are alive before the due date.
+35. "in this tenant" on Payment runs too (see 3).
+
+### Paying out — Payments to make, All payments out
+36. **Money paid to "nothing"**: the POL-A8BFAD09 pension lump sum (TZS 54,955.90) was reviewed with payee "nothing" and shows Completed by mobile money (2026-11-10 12:33). Validate payee numbers; default to the client's number on record.
+37. **One person reviewed and approved it 4 seconds apart** (staff.finance, payouts.approve-own). Ties to D2: drop the permission, or make acting alone show the payee and ask for a deliberate confirmation.
+38. **"To" shows the typed text** ("nothing", "MArtin") and never the client's name.
+39. **No proof of life asked on a pension lump sum** (survival benefits ask; the lump sum went out with none recorded).
+40. "in this tenant" on All payments out (see 3).
+
+### Paying out — Withholding rules
+41. ~~FIXED (withholding-kinds)~~ **An ended rule still reads Approved** and still offers Last day / End rule (the 5–9 Nov e2e rule); should read "Ended 9 Nov 2026" with no form.
+42. ~~FIXED (withholding-kinds)~~ **The form offered only Annuity income**; the backend accepts every payout kind and the list already labels them.
+43. **Proposed / approved by shown as raw ids.**
 
 ### Other
 25. Payouts e2e "reviewer is refused" fails on dev data (D2).
