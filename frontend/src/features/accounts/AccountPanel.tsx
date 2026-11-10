@@ -152,17 +152,34 @@ function Figures({ account }: { account: AccountView }) {
         <Field stacked label="Paid in" value={formatMoney(totals.paidIn)} note="Premiums, savings deposits and transfers in" />
         <Field stacked label="Paid out" value={formatMoney(totals.paidOut)} note="Savings withdrawals and other payments out" />
       </dl>
-      <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Two columns at most (2026-11-10): Field sets an 8rem label beside its value, and four across left the value
+          a few dozen pixels -- "TZS 203.6" on one line and "4" on the next, a different number. */}
+      <dl className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
         <Field label="Status" value={<StatusBadge kind="savingsAccount" value={account.status} />} />
         <Field label="Opened" value={formatDate(account.openedOn)} />
         <Field label="Interest credited" value={formatMoney(totals.interest)} />
         <Field label="Charges taken" value={formatMoney(totals.charges)} />
         {account.closedOn && (
-          <Field label="Closed" value={`${formatDate(account.closedOn)} (${account.closedReason ?? 'closed'})`} />
+          <Field label="Closed" value={`${formatDate(account.closedOn)}, ${closedBecause(account.closedReason)}`} />
         )}
       </dl>
     </div>
   );
+}
+
+/** Why the account closed, in words -- the server stores a code ("DEATH"), which is not something to show a person. */
+const CLOSED_BECAUSE: Record<string, string> = {
+  DEATH: 'after a death claim',
+  MATURED: 'at maturity',
+  VESTED: 'on vesting',
+  FREE_LOOK: 'cancelled in the free-look period',
+  EXHAUSTED: 'the balance ran out',
+  SURRENDERED: 'surrendered',
+};
+
+function closedBecause(reason: string | null | undefined): string {
+  if (!reason) return 'closed';
+  return CLOSED_BECAUSE[reason] ?? reason.toLowerCase().replace(/_/g, ' ');
 }
 
 /** How many ledger lines show before "Show all" -- the latest, since that is what a person checks first. */

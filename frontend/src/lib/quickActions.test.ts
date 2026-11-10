@@ -65,6 +65,18 @@ describe('policyActions', () => {
     expect(to('GROUP_LIFE')).toBe('/staff/claims/new?policy=S-1');
   });
 
+  /** 2026-11-10, the user: a policy closed by a settled death claim still offered Deposit and Change beneficiaries. */
+  it('offers nothing that pays in, names or lends on a policy that has ended for good', () => {
+    grantAccess('claims.register', 'collections.manage', 'policies.service', 'accounts.transact', 'loans.manage');
+    const tabs = ['beneficiaries', 'account', 'loans'];
+    expect(labels(policyActions({ policyNumber: 'POL-1', status: 'SURRENDERED' }, tabs, false)))
+      .toEqual(['Register a claim']);
+    expect(labels(policyActions({ policyNumber: 'POL-1', status: 'MATURED' }, tabs, false))).not.toContain('Deposit');
+    // A lapse can still be cured by paying, so Deposit stays.
+    expect(labels(policyActions({ policyNumber: 'POL-1', status: 'LAPSED' }, tabs, false)))
+      .toEqual(expect.arrayContaining(['Deposit', 'Change beneficiaries', 'Withdraw', 'Loan']));
+  });
+
   it('offers a tab only where the policy has it', () => {
     grantAccess('accounts.transact', 'loans.manage', 'policies.service');
     expect(labels(policyActions({ policyNumber: 'POL-1' }, ['overview'], false))).toEqual(['Deposit']);

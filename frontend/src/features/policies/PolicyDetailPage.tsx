@@ -787,7 +787,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           </dl>
 
           {/* TIMELINE -- how and when cover started. */}
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 md:grid-cols-2 2xl:grid-cols-3">
             <Field label="Issued" value={formatDate(policy.issueDate)} />
             {/*
               HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
@@ -847,7 +847,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               Rendered only when it differs from the policyholder -- on a self-insured policy,
               the common case, a second row repeating the same name would be noise that teaches
               people to skip the panel. */}
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 md:grid-cols-2 2xl:grid-cols-3">
             {policy.lifeAssuredPartyId &&
               policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
                 <Field
