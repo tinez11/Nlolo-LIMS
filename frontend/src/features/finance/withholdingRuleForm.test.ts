@@ -4,7 +4,7 @@ import { endRuleSchema, withholdingRuleSchema } from './withholdingRuleForm';
 const messages = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
   r.success ? [] : r.error!.issues.map((i) => i.message);
 
-const valid = { annuity: true, ratePercent: '10', effectiveFrom: '2026-11-01', effectiveTo: '', legalReference: 'Income Tax Act s.82' };
+const valid = { payoutKinds: ['ANNUITY'], ratePercent: '10', effectiveFrom: '2026-11-01', effectiveTo: '', legalReference: 'Income Tax Act s.82' };
 
 describe('withholdingRuleSchema', () => {
   it('accepts a rule for annuity income', () => {
@@ -22,7 +22,7 @@ describe('withholdingRuleSchema', () => {
     expect(messages(withholdingRuleSchema.safeParse({ ...valid, effectiveFrom: '' }))).toContain(
       'A withholding rule needs the date it takes effect',
     );
-    expect(messages(withholdingRuleSchema.safeParse({ ...valid, annuity: false }))).toContain(
+    expect(messages(withholdingRuleSchema.safeParse({ ...valid, payoutKinds: [] }))).toContain(
       'Choose the payouts this rule withholds from',
     );
   });
