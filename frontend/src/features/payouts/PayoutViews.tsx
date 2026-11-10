@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 
 const VIEWS = [
-  { key: 'instalments', label: 'Instalments', to: '/staff/payouts' },
-  { key: 'all', label: 'All payouts', to: '/staff/payouts/all' },
+  { key: 'instalments', label: 'Benefits due', to: '/staff/payouts' },
+  { key: 'all', label: 'All payments out', to: '/staff/payouts/all' },
 ] as const;
 
 /**
@@ -14,7 +14,7 @@ const VIEWS = [
  */
 export function PayoutViews({ current }: { current: (typeof VIEWS)[number]['key'] }) {
   return (
-    <nav aria-label="Payouts views" className="mb-3 flex flex-wrap gap-1.5">
+    <nav aria-label="Paying out views" className="mb-3 flex flex-wrap gap-1.5">
       {VIEWS.map((v) => (
         <Link
           key={v.key}

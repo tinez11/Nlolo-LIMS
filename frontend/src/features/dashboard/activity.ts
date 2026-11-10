@@ -9,7 +9,7 @@ const OUTCOME: Record<string, string> = {
 };
 
 /**
- * The register a payment is in -- Deposits for money in, All payouts for money out (money movement 6d) -- on the
+ * The register a payment is in -- Deposits for money in, All payments out for money out (money movement 6d) -- on the
  * event's policy when it names one: every state, so the payment is in the list.
  */
 function register(refs: Record<string, string>, state: 'done' | 'attention', list = '/staff/payments'): string {

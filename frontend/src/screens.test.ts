@@ -227,6 +227,7 @@ describe('screen manifest', () => {
     // one state -- in doubt or failed -- which is money somebody has to chase, never the volume of payments.
     expect(badged.sort()).toEqual([
       'Agent cash',
+      'All payments out',
       'Approvals',
       'Arrears',
       'Claims',
@@ -234,7 +235,6 @@ describe('screen manifest', () => {
       'Deposits',
       'Individuals',
       'Payments to make',
-      'Payouts',
       'Underwriting',
     ]);
   });
@@ -251,7 +251,7 @@ describe('screen manifest', () => {
     expect(countedFor('CUSTOMER_SERVICE_REP')).toEqual(['Corporate/Group', 'Individuals']);
     expect(countedFor('CLAIMS_ASSESSOR')).toEqual(['Claims']);
     expect(countedFor('FINANCE_OFFICER')).toEqual(
-      ['Agent cash', 'Approvals', 'Arrears', 'Deposits', 'Payments to make', 'Payouts']);
+      ['Agent cash', 'All payments out', 'Approvals', 'Arrears', 'Deposits', 'Payments to make']);
   });
 });
 

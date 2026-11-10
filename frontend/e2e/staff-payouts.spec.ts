@@ -72,7 +72,7 @@ test.describe('payouts register', () => {
 
   test('lists payouts and filters by one status at a time', async ({ page }) => {
     await page.goto('/staff/payouts');
-    await expect(page.getByRole('heading', { name: 'Payouts', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Benefits due', exact: true })).toBeVisible();
 
     // One filter at a time, like every other register here.
     await page.getByRole('button', { name: 'Due' }).click();
@@ -148,6 +148,6 @@ test.describe('the payouts queue is finance’s', () => {
   // The default staff identity is `staff.underwriter`, who has no business releasing money.
   test('an underwriter cannot reach it', async ({ page }) => {
     await page.goto('/staff/payouts');
-    await expect(page.getByRole('heading', { name: 'Payouts', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Benefits due', exact: true })).toHaveCount(0);
   });
 });

@@ -26,7 +26,7 @@ const STATES: { value: RegisterState; label: string }[] = [
   { value: 'all', label: 'All' },
 ];
 
-/** One register, two names (money movement 6d, design §5.1): money in is Deposits, money out All payouts. */
+/** One register, two names (money movement 6d, design §5.1): money in is Deposits, money out All payments out (renamed 2026-11-10). */
 const WORDS: Record<PaymentDirection, { title: string; one: string; many: string; description: string; empty: string }> = {
   IN: {
     title: 'Deposits',
@@ -37,7 +37,7 @@ const WORDS: Record<PaymentDirection, { title: string; one: string; many: string
     empty: 'Nothing is stuck with the provider and nothing has failed. A deposit lands here the moment the rail leaves it in doubt or refuses it.',
   },
   OUT: {
-    title: 'All payouts',
+    title: 'All payments out',
     one: 'payout',
     many: 'payouts',
     description:

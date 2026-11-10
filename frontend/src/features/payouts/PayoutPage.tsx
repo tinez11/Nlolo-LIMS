@@ -34,7 +34,7 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { StaffName } from '@/components/StaffName';
 
-const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
+const BREADCRUMB = [{ label: 'Benefits due', to: '/staff/payouts' }];
 
 /** `BenefitPayoutApiImpl.suspendStream`'s own wording, matched so the one clearable hold is
  *  distinguished from an arrears hold nobody here can clear. */

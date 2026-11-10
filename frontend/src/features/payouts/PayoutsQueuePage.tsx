@@ -133,7 +133,7 @@ export function PayoutsQueuePage() {
           description={
             status
               ? 'Nothing in this tenant currently has that status.'
-              : 'Payouts appear here as policies reach the dates their contracts promised.'
+              : 'Benefits appear here as policies reach the dates their contracts promised.'
           }
           {...(status
             ? { action: <Button size="sm" onClick={() => update({ status: undefined })}>Clear filter</Button> }
@@ -155,7 +155,7 @@ export function PayoutsQueuePage() {
           rows={rows}
           rowKey={(p) => p.instalmentId}
           onRowActivate={(p) => navigate(`/staff/payouts/${encodeURIComponent(p.instalmentId)}`)}
-          caption="Payouts"
+          caption="Benefits due"
         />
         {queue.data && (
           <Pager
@@ -171,8 +171,8 @@ export function PayoutsQueuePage() {
   return (
     <>
       <PageHeader
-        title="Payouts"
-        description="Each one is reviewed by one person and approved by another."
+        title="Benefits due"
+        description="Survival, maturity, annuity and pension benefits as they fall due. Each is reviewed by one person and approved by another; after an annuity's first instalment, the rest go in the daily payment run."
         count={<CountLine {...count} />}
       />
 

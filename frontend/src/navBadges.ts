@@ -118,7 +118,7 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
     title: (n) => `${plural(n, 'item', 'items')} waiting for your signature`,
   },
   /* Payments the rail left in doubt or refused (2026-10-27): each one somebody has to chase. Counted by direction
-     since money movement 6d, on the register that lists them -- Deposits and Payouts. */
+     since money movement 6d, on the register that lists them -- Deposits and All payments out. */
   'payments-attention': {
     load: async () => (await listPayments({ state: 'attention', direction: 'IN', page: 0, pageSize: 1 })).page.totalElements,
     title: (n) => `${plural(n, 'deposit', 'deposits')} stuck with the provider or failed`,
