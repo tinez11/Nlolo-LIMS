@@ -75,6 +75,19 @@ public interface BillingApi {
      */
     FieldReceiptView reconcileFieldReceipt(UUID receiptId, String reconciledBy);
 
+    /**
+     * The cash this agent has collected and the company has not yet received, oldest first (2026-11-10): what the
+     * agent is answerable for. Matched collections drop off.
+     */
+    java.util.List<FieldReceiptView> agentCash(UUID agentId);
+
+    /**
+     * The agent says they paid these collections in, under one bank slip or mobile-money reference (2026-11-10). Their
+     * word, for finance to match against -- each stays open until finance records the money and a second person
+     * confirms it. Only the agent's own collections; one already matched is refused.
+     */
+    java.util.List<FieldReceiptView> markAgentCashBanked(UUID agentId, java.util.List<UUID> receiptIds, String reference);
+
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
 

@@ -423,6 +423,66 @@ paths:
                   status: { type: string, enum: [PENDING_RECONCILIATION] }
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    get:
+      summary: The cash this agent holds (2026-11-10)
+      description: >
+        Collections the agent recorded that the company has not yet received, oldest first. Matched ones drop off.
+        Only the signed-in agent's own.
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The agent's open collections
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FieldReceiptView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /agents/{agentId}/field-receipts/banked:
+    post:
+      summary: The agent says they paid these collections in (2026-11-10)
+      description: >
+        One bank slip or mobile-money reference against one or more of the agent's own open collections. The agent's
+        word, for finance to match against: each stays open until finance records the money and a second person
+        confirms it. A collection already received is refused.
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [receiptIds, reference]
+              properties:
+                receiptIds:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                reference: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: The collections as they now stand
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FieldReceiptView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/balance:
     get:
       summary: What is on a policy's balance now (money movement step 2)
@@ -859,6 +919,17 @@ components:
           type: [string, "null"]
           format: date-time
           description: Null until a matching PaymentConfirmed arrives.
+        policyholderPartyId:
+          type: [string, "null"]
+          format: uuid
+          description: Who paid the agent (2026-11-10). Null when the policy could not be read.
+        bankedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the agent said they paid the cash in (2026-11-10). Their word, not money received.
+        bankedReference:
+          type: [string, "null"]
+          description: The bank slip or mobile-money reference the agent gave, for finance to match against.
     ReceivablesAging:
       description: >
         What is owed in ONE currency, aged into five bands (2026-10-15). All five bands are

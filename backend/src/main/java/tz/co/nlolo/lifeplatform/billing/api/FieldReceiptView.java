@@ -38,4 +38,9 @@ public record FieldReceiptView(
     /** PENDING_RECONCILIATION, RECONCILED, or RECONCILIATION_OVERDUE. */
     String status,
     /** Null until a matching payment is confirmed. */
-    Instant reconciledAt) {}
+    Instant reconciledAt,
+    /** Who paid the agent (2026-11-10): the queue named only the agent, the inbox only the client. Null if unreadable. */
+    UUID policyholderPartyId,
+    /** When the agent said they paid the cash in, and the slip or mobile-money reference they gave. Their word only. */
+    Instant bankedAt,
+    String bankedReference) {}

@@ -197,7 +197,7 @@ public class BillingApiImpl implements BillingApi {
             log.warn("Arrears notification sweep failed for tenant {}; the receipt queue continues", tenantId, e);
         }
 
-        return fieldReceiptRepository.search(tenantId, status, pageable).map(BillingApiImpl::toView);
+        return fieldReceiptRepository.search(tenantId, status, pageable).map(this::toView);
     }
 
     @Override
@@ -231,10 +231,60 @@ public class BillingApiImpl implements BillingApi {
         return toView(receipt);
     }
 
-    private static FieldReceiptView toView(FieldReceipt receipt) {
+    private FieldReceiptView toView(FieldReceipt receipt) {
         return new FieldReceiptView(receipt.getReceiptId(), receipt.getPolicyNumber(), receipt.getAgentId(),
             receipt.getAmount(), receipt.getCurrency(), receipt.getCapturedAtClient(),
-            receipt.getCapturedAtServer(), receipt.getStatus(), receipt.getReconciledAt());
+            receipt.getCapturedAtServer(), receipt.getStatus(), receipt.getReconciledAt(),
+            holderOf(receipt.getPolicyNumber()), receipt.getBankedAt(), receipt.getBankedReference());
+    }
+
+    /** Who paid the agent. A policy that cannot be read only leaves the name off; the cash is still listed. */
+    private UUID holderOf(String policyNumber) {
+        try {
+            return policyApi.getPolicy(policyNumber).policyholderPartyId();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    @Override
+    @Transactional
+    public java.util.List<FieldReceiptView> agentCash(UUID agentId) {
+        UUID tenantId = TenantContext.get();
+        try {
+            arrearsNotificationSweep.publishPending(tenantId);
+        } catch (RuntimeException e) {
+            log.warn("Arrears notification sweep failed for tenant {}; the agent's cash list continues", tenantId, e);
+        }
+        return fieldReceiptRepository.findByTenantIdAndAgentIdAndStatusNotOrderByCapturedAtServerAsc(
+            tenantId, agentId, "RECONCILED").stream().map(this::toView).toList();
+    }
+
+    @Override
+    @Transactional
+    public java.util.List<FieldReceiptView> markAgentCashBanked(UUID agentId, java.util.List<UUID> receiptIds,
+                                                                String reference) {
+        UUID tenantId = TenantContext.get();
+        if (receiptIds == null || receiptIds.isEmpty()) {
+            throw new IllegalArgumentException("Choose the collections you paid in");
+        }
+        java.util.List<FieldReceipt> receipts = new java.util.ArrayList<>();
+        for (UUID id : new java.util.LinkedHashSet<>(receiptIds)) {
+            FieldReceipt receipt = fieldReceiptRepository.findByReceiptIdAndTenantId(id, tenantId)
+                .filter(r -> r.getAgentId().equals(agentId))
+                // Another agent's collection is not this agent's to vouch for: the same 404 as one that does not exist.
+                .orElseThrow(() -> new FieldReceiptNotFoundException(id));
+            receipt.markBanked(reference);
+            receipts.add(receipt);
+        }
+        fieldReceiptRepository.saveAll(receipts);
+        for (FieldReceipt r : receipts) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptBanked", tenantId, Map.of(
+                "receiptId", r.getReceiptId(), "policyNumber", r.getPolicyNumber(), "agentId", agentId,
+                "amount", Map.of("amount", r.getAmount().toPlainString(), "currencyCode", r.getCurrency()),
+                "bankedReference", r.getBankedReference(), "bankedAt", r.getBankedAt().toString())));
+        }
+        return receipts.stream().map(this::toView).toList();
     }
 
     @Override

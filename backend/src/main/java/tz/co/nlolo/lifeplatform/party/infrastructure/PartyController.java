@@ -53,6 +53,19 @@ public class PartyController {
         this.documentApi = documentApi;
     }
 
+    /** Who an agent sold to; absent where the policy module is not loaded, and then only registration counts. */
+    private tz.co.nlolo.lifeplatform.party.api.AgentClients agentClients;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAgentClients(tz.co.nlolo.lifeplatform.party.api.AgentClients agentClients) {
+        this.agentClients = agentClients;
+    }
+
+    private boolean soldTo(Jwt jwt, UUID partyId) {
+        String agentParty = jwt.getClaimAsString("party_id");
+        return agentClients != null && agentParty != null && agentClients.isClientOf(UUID.fromString(agentParty), partyId);
+    }
+
     @PostMapping("/parties/individuals")
     // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
     // it does not change this. Staff and agents only.
@@ -282,8 +295,10 @@ public class PartyController {
         boolean isAgent = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .anyMatch("ROLE_REALM_AGENTS"::equals);
-        if (isAgent && !jwt.getSubject().equals(party.createdBy())) {
-            throw new AccessDeniedException("Access denied: agent may only read a client they registered");
+        // A client they registered, or one on a policy their team sold (2026-11-10): the second was refused, so the
+        // agent's policy page showed its policyholder as a raw id.
+        if (isAgent && !jwt.getSubject().equals(party.createdBy()) && !soldTo(jwt, partyId)) {
+            throw new AccessDeniedException("Access denied: agent may only read a client they registered or sold to");
         }
         return ResponseEntity.ok(party);
     }
