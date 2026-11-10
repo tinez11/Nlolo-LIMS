@@ -45,6 +45,8 @@ import {
   ChartColumn,
   ShieldCheck,
   UserCog,
+  ArrowUpRight,
+  Palette,
 } from 'lucide-react';
 import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
@@ -536,7 +538,7 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'users/:userId', element: <UserDetailPage />, reach: 'drill-in' },
   { path: 'roles', element: <RolesPage />, reach: { group: 'administration', label: 'Roles', icon: ShieldCheck } },
   // Settings → Organisation (2026-11-09): the company, its branding, signatories and branches.
-  { path: 'organisation', element: <OrganisationPage />, reach: { group: 'administration', label: 'Organisation', icon: Building2 } },
+  { path: 'organisation', element: <OrganisationPage />, reach: { group: 'administration', label: 'Organisation', icon: Palette } },
   { path: 'roles/new', element: <NewRolePage />, reach: 'drill-in' },
   { path: 'roles/:roleId', element: <RoleDetailPage />, reach: 'drill-in' },
   { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },
@@ -664,22 +666,30 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'receipt-numbers/:receiptNumber', element: <ReceiptByNumberPage />, reach: 'drill-in' },
   // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
   { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
-  // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out under Payouts.
+  // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out as All payments out.
   { path: 'payments', element: <PaymentsPage direction="IN" />, reach: { group: 'collections', label: 'Deposits', icon: ArrowLeftRight, badge: () => (can('collections.manage') ? 'payments-attention' : undefined) } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
+  // "Benefits due", not "Payouts" (2026-11-10, the user): it holds only the scheduled benefits, and a person looking
+  // for a claim or a commission payment under "Payouts" found nothing there.
   {
     path: 'payouts',
     element: <PayoutsQueuePage />,
-    reach: { group: 'paying-out', label: 'Payouts', icon: Coins, badge: () => (can('payouts.manage') ? 'payouts-attention' : undefined) },
+    reach: { group: 'paying-out', label: 'Benefits due', icon: Coins },
   },
-  { path: 'payouts/all', element: <PaymentsPage direction="OUT" />, reach: 'drill-in' },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
   {
     path: 'payment-runs',
     element: <PaymentRunsPage />,
     reach: { group: 'paying-out', label: 'Payment runs', icon: ListChecks },
+  },
+  // Every payment out, of every kind (2026-11-10): its own item, where it was a chip on Payouts. It carries the count
+  // of payments stuck with the provider or failed, which are listed here and never were on the instalments page.
+  {
+    path: 'payouts/all',
+    element: <PaymentsPage direction="OUT" />,
+    reach: { group: 'paying-out', label: 'All payments out', icon: ArrowUpRight, badge: () => (can('payouts.manage') ? 'payouts-attention' : undefined) },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
   // Money OUT that someone makes by hand at the bank (2026-10-27): under Paying out, not Collections, and read with
@@ -703,11 +713,12 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'paying-out', label: 'Withholding rules', icon: CircleMinus },
   },
   // A policy read, but finance's question: it is how the money leaving over the next quarter is
-  // planned for, and the endpoint is FINANCE_OFFICER/ADMIN only to match.
+  // planned for, and the endpoint is FINANCE_OFFICER/ADMIN only to match. Under Valuation & close since 2026-11-10:
+  // it plans, it pays nothing, and it sat among the pages that move money.
   {
     path: 'maturities',
     element: <MaturitiesPage />,
-    reach: { group: 'paying-out', label: 'Maturities', icon: Milestone },
+    reach: { group: 'valuation', label: 'Maturities', icon: Milestone },
   },
   {
     path: 'gl-postings',

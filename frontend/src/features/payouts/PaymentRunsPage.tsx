@@ -77,7 +77,7 @@ export function PaymentRunsPage() {
       return (
         <EmptyState
           title="No payment runs yet"
-          description="A run is prepared each day income instalments fall due."
+          description="A run is prepared each day annuity or income instalments fall due, once a stream's first instalment has been paid."
         />
       );
     }
@@ -97,6 +97,7 @@ export function PaymentRunsPage() {
     <>
       <PageHeader
         title="Payment runs"
+        description="Each day's annuity and income instalments, released together by one person. A stream's first instalment is approved on Benefits due; a stream whose proof of life is overdue is held back."
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">

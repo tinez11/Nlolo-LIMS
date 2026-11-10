@@ -53,13 +53,13 @@ describe('PaymentsPage', () => {
     );
   });
 
-  it('is All payouts for money out, under the Payouts views, with no Deposit', async () => {
+  it('is All payments out for money out, beside Benefits due, with no Deposit', async () => {
     vi.mocked(paymentsApi.listPayments).mockResolvedValue(payouts);
     renderPage('OUT');
     expect(await screen.findByText('Claim payout')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'All payouts' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'All payments out' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'To' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'All payouts' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'All payments out' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('link', { name: 'Deposit' })).not.toBeInTheDocument();
     expect(vi.mocked(paymentsApi.listPayments)).toHaveBeenCalledWith(expect.objectContaining({ direction: 'OUT' }));
   });

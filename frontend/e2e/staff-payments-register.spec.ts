@@ -3,7 +3,7 @@ import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
 /**
  * The payments register (2026-10-27) through the real stack, as two registers since money movement 6d: Deposits for
- * money in, All payouts (under Payouts) for money out, each opening on what needs attention. Rows and filters are
+ * money in, All payments out for money out, each opening on what needs attention. Rows and filters are
  * pinned by PaymentsPage.test and PaymentContractTest against seeded ledgers; this proves the pages, their filters on
  * the URL, and who is offered them, with real logins.
  */
@@ -24,21 +24,19 @@ test.describe('payments registers', () => {
     await expect(table.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 });
   });
 
-  test('finance reaches every payout from Payouts, and back to the instalments', async ({ page }) => {
+  // 2026-11-10: All payments out is its own menu item under Paying out, beside Benefits due (the instalments).
+  test('finance reaches every payment out from the menu, and the benefits due beside it', async ({ page }) => {
     await page.goto('/staff/dashboard');
-    await page.getByRole('link', { name: /^Payouts/ }).click();
-    await expect(page.getByRole('heading', { name: 'Payouts', level: 1 })).toBeVisible();
-
-    await page.getByRole('link', { name: 'All payouts' }).click();
+    await page.getByRole('link', { name: /^All payments out/ }).click();
     await expect(page).toHaveURL(/\/staff\/payouts\/all$/);
-    await expect(page.getByRole('heading', { name: 'All payouts', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'All payments out', level: 1 })).toBeVisible();
     await page.getByRole('button', { name: 'All', exact: true }).click();
-    const table = page.getByRole('table', { name: 'All payouts' });
+    const table = page.getByRole('table', { name: 'All payments out' });
     await expect(table.getByRole('columnheader', { name: 'To' }).or(page.getByText('No payouts match'))).toBeVisible({
       timeout: 30_000,
     });
 
-    await page.getByRole('link', { name: 'Instalments' }).click();
+    await page.getByRole('main').getByRole('link', { name: 'Benefits due' }).click();
     await expect(page).toHaveURL(/\/staff\/payouts$/);
   });
 });
