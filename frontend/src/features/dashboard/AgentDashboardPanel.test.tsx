@@ -1,11 +1,15 @@
 import { screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAgentDashboard } from '@/api/dashboard';
+import { listMyFollowUp } from '@/api/followUp';
+import { getNeedsAction } from '@/api/proposalAmendments';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { renderScreen } from '@/test/renderScreen';
 import { AgentDashboardPanel } from './AgentDashboardPanel';
 
 vi.mock('@/api/dashboard');
+vi.mock('@/api/followUp');
+vi.mock('@/api/proposalAmendments');
 
 const TZS = (amount: string) => ({ amount, currencyCode: 'TZS' });
 const RANGE = { from: '2026-07', to: '2026-09' };
@@ -39,9 +43,28 @@ const VIEW = {
 beforeEach(() => {
   useDashboardStore.setState({ agent: { status: 'idle', data: null, error: null, loadedAt: null } } as never);
   vi.mocked(getAgentDashboard).mockResolvedValue(VIEW);
+  vi.mocked(getNeedsAction).mockResolvedValue([]);
+  vi.mocked(listMyFollowUp).mockResolvedValue({
+    rows: [{
+      invoiceId: 'inv-1', policyNumber: 'POL-1', clientName: 'Neema Paid', clientPhone: '+255712345678',
+      productName: 'Term life', agentId: null, agentName: null, branchCode: null, owed: 240000, currency: 'TZS',
+      dueDate: '2026-10-10', daysLate: 32, lateBand: '31–60 days', policyStatus: 'Active', lapseExpectedOn: null,
+      agentCashHeld: null, agentCashWith: null, actions: [],
+    }],
+    total: 1, page: 0, pageSize: 5, dueToday: 0, dueSoon: 0, overdue: 1, overdueOwed: 240000,
+  });
 });
 
 describe('AgentDashboardPanel', () => {
+  it('leads with the customers to follow up, most overdue first, and links the whole list', async () => {
+    renderScreen(<AgentDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByText('Neema Paid')).toBeInTheDocument();
+    expect(screen.getByText('32 days late')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See them all' })).toHaveAttribute('href', '/agents/follow-up');
+    expect(listMyFollowUp).toHaveBeenCalledWith({ view: 'OVERDUE', soonDays: 7, page: 0, pageSize: 5 });
+  });
+
   it("links each count to the agent's own filtered list", async () => {
     renderScreen(<AgentDashboardPanel range={RANGE} />);
 

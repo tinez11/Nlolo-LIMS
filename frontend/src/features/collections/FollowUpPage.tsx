@@ -4,6 +4,7 @@ import { Download, Phone, Search } from 'lucide-react';
 import { can } from '@/auth/access';
 import {
   exportFollowUp,
+  exportMyFollowUp,
   LATE_BANDS,
   SOON_DAYS,
   type FollowUpQuery,
@@ -68,7 +69,10 @@ function thisMonth(): { from: string; to: string } {
  * Staff with collections.view read it; only collections.manage acts on a row (ask to pay, send a reminder, record a
  * call). A promise to pay is a note only: nothing holds back reminders or letters on it (the user, 2026-11-11).
  */
-export function FollowUpPage() {
+export function FollowUpPage({ audience = 'staff' }: { audience?: 'staff' | 'agent' }) {
+  // An agent's own list (2026-11-11): the policies their team sold, with Record cash in place of Ask to pay (decided:
+  // an agent does not send a phone request from here), and no company-wide filters or month figures.
+  const agent = audience === 'agent';
   const [params, setParams] = useSearchParams();
   const view: FollowUpView = VIEWS.some((v) => v.value === params.get('view'))
     ? (params.get('view') as FollowUpView)
@@ -95,7 +99,8 @@ export function FollowUpPage() {
   const clearActing = useFollowUpStore((s) => s.clearActing);
   const products = useProductStore((s) => s.list);
   const loadProducts = useProductStore((s) => s.loadList);
-  const manage = can('collections.manage');
+  // An agent acts on their own book (the server's AgentBook check); staff need collections.manage.
+  const manage = agent || can('collections.manage');
 
   const [search, setSearch] = useState(q);
   const [calling, setCalling] = useState<FollowUpRow | null>(null);
@@ -116,14 +121,15 @@ export function FollowUpPage() {
   const queryKey = JSON.stringify(query);
 
   useEffect(() => {
-    void load(JSON.parse(queryKey) as FollowUpQuery, false);
-  }, [load, queryKey]);
+    void load(JSON.parse(queryKey) as FollowUpQuery, agent);
+  }, [load, queryKey, agent]);
 
   useEffect(() => {
+    if (agent) return;
     const { from, to } = thisMonth();
     void loadFigures(from, to);
     void loadProducts();
-  }, [loadFigures, loadProducts]);
+  }, [loadFigures, loadProducts, agent]);
 
   // The search box sends after a pause, not on every key.
   useEffect(() => {
@@ -147,8 +153,8 @@ export function FollowUpPage() {
     setDownloadError(null);
     setDownloading(format);
     try {
-      const blob = await exportFollowUp(query, format);
-      saveBlob(blob, `premiums-to-follow-up-${todayIso()}.${format}`);
+      const blob = await (agent ? exportMyFollowUp : exportFollowUp)(query, format);
+      saveBlob(blob, `${agent ? 'customers' : 'premiums'}-to-follow-up-${todayIso()}.${format}`);
     } catch {
       setDownloadError('The file could not be made. Try again in a moment.');
     } finally {
@@ -158,7 +164,7 @@ export function FollowUpPage() {
 
   const data = list.data;
   const month = figures.data;
-  const kpis: Kpi[] = [
+  const allKpis: Kpi[] = [
     {
       label: 'Due today',
       value: data ? data.dueToday.toLocaleString() : null,
@@ -185,6 +191,8 @@ export function FollowUpPage() {
       hint: "Of this month's premiums due, how much is paid",
     },
   ];
+  // The month's paid and rate are the company's; an agent's list carries its own three counts only.
+  const kpis = agent ? allKpis.slice(0, 3) : allKpis;
 
   const columns: Column<FollowUpRow>[] = [
     {
@@ -280,9 +288,13 @@ export function FollowUpPage() {
           <div className="flex flex-col items-end gap-1 py-1.5">
             <div className="flex items-center gap-1.5">
               <Button asChild size="sm" variant="ghost">
-                <Link to={`/staff/receipts/new?policy=${encodeURIComponent(r.policyNumber)}&method=MOBILE_MONEY`}>
-                  Ask to pay
-                </Link>
+                {agent ? (
+                  <Link to={`/agents/cash?policy=${encodeURIComponent(r.policyNumber)}`}>Record cash</Link>
+                ) : (
+                  <Link to={`/staff/receipts/new?policy=${encodeURIComponent(r.policyNumber)}&method=MOBILE_MONEY`}>
+                    Ask to pay
+                  </Link>
+                )}
               </Button>
               <Button
                 size="sm"
@@ -318,7 +330,7 @@ export function FollowUpPage() {
   function renderBody() {
     if (isInitialLoad(list)) return <TableSkeleton columns={columns.length} />;
     if (list.status === 'error' && list.error && !data) {
-      return <ErrorPanel error={list.error} onRetry={() => void load(query, false)} />;
+      return <ErrorPanel error={list.error} onRetry={() => void load(query, agent)} />;
     }
     const rows = data?.rows ?? [];
     if (rows.length === 0) {
@@ -374,8 +386,12 @@ export function FollowUpPage() {
   return (
     <>
       <PageHeader
-        title="Premiums to follow up"
-        description="Who must pay, how much, and what has been done. Premiums already covered by money on the policy or by an agent's cash are left off."
+        title={agent ? 'Customers to follow up' : 'Premiums to follow up'}
+        description={
+          agent
+            ? 'Your customers and your team’s who must pay, how much, and what has been done. Download it to print a copy.'
+            : "Who must pay, how much, and what has been done. Premiums already covered by money on the policy or by an agent's cash are left off."
+        }
         actions={
           <>
             <Button size="sm" variant="outline" pending={downloading === 'xlsx'} onClick={() => void download('xlsx')}>
@@ -397,7 +413,7 @@ export function FollowUpPage() {
           </p>
         )}
         {/* Not drawn until the first read lands: a card saying "Not available" while it loads would be untrue. */}
-        {!isInitialLoad(list) && !isInitialLoad(figures) && <KpiRow kpis={kpis} />}
+        {!isInitialLoad(list) && (agent || !isInitialLoad(figures)) && <KpiRow kpis={kpis} />}
 
         <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-2 gap-y-2 border-b border-border px-3 py-2.5">
@@ -466,6 +482,7 @@ export function FollowUpPage() {
             </div>
           )}
 
+          {!agent && (
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
             <div className="w-64">
               <AgentPicker
@@ -494,6 +511,7 @@ export function FollowUpPage() {
               onChange={(next) => update({ category: next.category, productId: next.productId })}
             />
           </div>
+          )}
 
           {renderBody()}
         </div>

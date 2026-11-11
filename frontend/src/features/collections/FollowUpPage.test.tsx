@@ -14,6 +14,7 @@ vi.mock('@/api/followUp', async (original) => ({
   listFollowUp: vi.fn(),
   listMyFollowUp: vi.fn(),
   exportFollowUp: vi.fn(),
+  exportMyFollowUp: vi.fn(),
   recordCall: vi.fn(),
   sendReminder: vi.fn(),
   collectionFigures: vi.fn(),
@@ -120,6 +121,24 @@ describe('FollowUpPage', () => {
     expect(followUpApi.sendReminder).toHaveBeenCalledTimes(1);
     finish();
     await waitFor(() => expect(followUpApi.listFollowUp).toHaveBeenCalledTimes(2));
+  });
+
+  it("gives an agent their own list: Record cash, not Ask to pay, and the agent's download", async () => {
+    clearAccess();
+    vi.mocked(followUpApi.listMyFollowUp).mockResolvedValue(page);
+    vi.mocked(followUpApi.exportMyFollowUp).mockResolvedValue(new Blob(['x']));
+    const user = userEvent.setup();
+    renderScreen(<FollowUpPage audience="agent" />);
+
+    expect(await screen.findByRole('heading', { name: 'Customers to follow up' })).toBeInTheDocument();
+    expect(followUpApi.listFollowUp).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: 'Ask to pay' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Record cash' })).toHaveAttribute('href', '/agents/cash?policy=POL-7348198C');
+    expect(screen.getByRole('button', { name: /Record a call/ })).toBeInTheDocument();
+    expect(followUpApi.collectionFigures).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Download PDF/ }));
+    expect(followUpApi.exportMyFollowUp).toHaveBeenCalledWith(expect.objectContaining({ view: 'OVERDUE' }), 'pdf');
   });
 
   it('shows no actions to someone who can only look', async () => {

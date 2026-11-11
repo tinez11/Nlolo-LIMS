@@ -2,6 +2,7 @@ import { BadgeCheck, Coins, FilePlus2, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getNeedsAction } from '@/api/proposalAmendments';
+import { listMyFollowUp, type FollowUpPage } from '@/api/followUp';
 import { Legend } from '@/components/charts/ChartTip';
 import { ColumnChart } from '@/components/charts/ColumnChart';
 import { Donut } from '@/components/charts/Donut';
@@ -39,6 +40,17 @@ export function AgentDashboardPanel({ range }: PanelProps) {
     getNeedsAction().then(
       (items) => { if (live) setNeedsAction(items.filter((n) => n.actionable).length); },
       () => undefined,
+    );
+    return () => { live = false; };
+  }, []);
+
+  // The five most overdue on the team (2026-11-11): who to call first, with the whole list one link away.
+  const [followUp, setFollowUp] = useState<FollowUpPage | null | 'error'>(null);
+  useEffect(() => {
+    let live = true;
+    listMyFollowUp({ view: 'OVERDUE', soonDays: 7, page: 0, pageSize: 5 }).then(
+      (page) => { if (live) setFollowUp(page); },
+      () => { if (live) setFollowUp('error'); },
     );
     return () => { live = false; };
   }, []);
@@ -95,6 +107,46 @@ export function AgentDashboardPanel({ range }: PanelProps) {
   return (
     <div className="space-y-5">
       <StatRow stats={stats} />
+      <Panel
+        title="Your customers to follow up"
+        subtitle={
+          followUp && followUp !== 'error'
+            ? `${countValue(followUp.overdue)} overdue, ${countValue(followUp.dueToday)} due today — the most overdue first`
+            : 'The most overdue first'
+        }
+        actions={<Link to="/agents/follow-up" className="text-xs text-muted-foreground hover:text-foreground hover:underline">See them all</Link>}
+      >
+        {followUp === null ? (
+          <p className="px-4 pb-4 text-xs text-muted-foreground">Reading your list…</p>
+        ) : followUp === 'error' ? (
+          <p className="px-4 pb-4 text-xs text-muted-foreground">The list could not be read.</p>
+        ) : followUp.rows.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-muted-foreground">Nobody on your team is behind on a premium.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {followUp.rows.map((r) => (
+              <li key={r.invoiceId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium">{r.clientName ?? r.policyNumber}</span>
+                  {r.clientPhone && (
+                    <a href={`tel:${r.clientPhone}`} className="ml-2 text-xs text-muted-foreground hover:text-foreground hover:underline">
+                      {r.clientPhone}
+                    </a>
+                  )}
+                </span>
+                <span className="flex items-center gap-3 whitespace-nowrap">
+                  <span className="font-medium">
+                    {formatMoney({ amount: r.owed.toFixed(2), currencyCode: r.currency })}
+                  </span>
+                  <span className="rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-fg">
+                    {r.daysLate === 1 ? '1 day late' : `${r.daysLate} days late`}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="xl:col-span-8">
           <Panel

@@ -847,6 +847,13 @@ const AGENTS_SCREENS: Screen[] = [
     element: <MyCommissionPage />,
     reach: { group: 'my-business', label: 'My commission', icon: Wallet },
   },
+  // Their customers who must pay (2026-11-11, analytics plan 1): the same list staff work, scoped to the agent's team,
+  // with a download to print.
+  {
+    path: 'follow-up',
+    element: <FollowUpPage audience="agent" />,
+    reach: { group: 'my-business', label: 'Customers to follow up', icon: PhoneCall },
+  },
   // Cash customers hand the agent (2026-11-11): record it, see what is still held, say where it was banked.
   {
     path: 'cash',
