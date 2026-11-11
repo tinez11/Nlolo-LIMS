@@ -78,11 +78,12 @@ public class OpenPremiums {
             .collect(Collectors.groupingBy(FieldReceipt::getPolicyNumber));
         Map<String, BigDecimal> balanceByPolicy = new HashMap<>();
         Integer lapseDays = lapseLevelDays();
+        Map<UUID, BigDecimal> credited = creditedAgainst(tenantId, candidates);
 
         List<PremiumInvoice> owed = new ArrayList<>();
         Map<UUID, BigDecimal> owedById = new HashMap<>();
         for (PremiumInvoice invoice : candidates) {
-            BigDecimal due = invoice.balanceDue(creditedAgainst(invoice));
+            BigDecimal due = invoice.balanceDue(credited.getOrDefault(invoice.getInvoiceId(), BigDecimal.ZERO));
             if (due.signum() <= 0) continue;
             if (invoice.getDueDate().isAfter(today)) {
                 BigDecimal balance = balanceByPolicy.computeIfAbsent(invoice.getPolicyNumber(),
@@ -121,9 +122,12 @@ public class OpenPremiums {
             a.getRecordedBy(), a.getRecordedAt());
     }
 
-    private BigDecimal creditedAgainst(PremiumInvoice invoice) {
-        return credits.findByTenantIdAndOriginalInvoiceId(invoice.getTenantId(), invoice.getInvoiceId()).stream()
-            .map(PremiumCredit::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    /** What was credited back against each of these invoices, in one read: [invoiceId, credited]. */
+    Map<UUID, BigDecimal> creditedAgainst(UUID tenantId, List<PremiumInvoice> invoices) {
+        if (invoices.isEmpty()) return Map.of();
+        return credits.findByTenantIdAndOriginalInvoiceIdIn(tenantId,
+                invoices.stream().map(PremiumInvoice::getInvoiceId).toList()).stream()
+            .collect(Collectors.toMap(PremiumCredit::getOriginalInvoiceId, PremiumCredit::getAmount, BigDecimal::add));
     }
 
     private static BigDecimal held(List<FieldReceipt> cash) {

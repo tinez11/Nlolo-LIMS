@@ -214,7 +214,7 @@ export function FollowUpPage() {
         <div className="flex flex-col py-1.5">
           <Link
             to={`../policies/${encodeURIComponent(r.policyNumber)}`}
-            className="w-fit font-mono font-medium underline-offset-2 hover:underline"
+            className="w-fit whitespace-nowrap font-mono font-medium underline-offset-2 hover:underline"
           >
             {r.policyNumber}
           </Link>
@@ -236,12 +236,12 @@ export function FollowUpPage() {
     },
     {
       key: 'late',
-      header: 'How late',
+      header: <span className="whitespace-nowrap">How late</span>,
       render: (r) => (
         <div className="flex flex-col items-start gap-1 py-1.5">
           <Lateness row={r} />
           {r.lapseExpectedOn && (
-            <span className="text-xs text-status-danger-fg">Will lapse on {formatDate(r.lapseExpectedOn)}</span>
+            <span className="whitespace-nowrap text-xs text-status-danger-fg">Will lapse on {formatDate(r.lapseExpectedOn)}</span>
           )}
           {r.agentCashHeld != null && (
             <span className="text-xs text-muted-foreground">
@@ -253,7 +253,7 @@ export function FollowUpPage() {
     },
     {
       key: 'done',
-      header: 'What was done',
+      header: <span className="whitespace-nowrap">What was done</span>,
       render: (r) =>
         r.actions.length === 0 ? (
           <span className="text-subtle-foreground">Nothing yet</span>
@@ -396,11 +396,12 @@ export function FollowUpPage() {
             {downloadError}
           </p>
         )}
-        <KpiRow kpis={kpis} />
+        {/* Not drawn until the first read lands: a card saying "Not available" while it loads would be untrue. */}
+        {!isInitialLoad(list) && !isInitialLoad(figures) && <KpiRow kpis={kpis} />}
 
         <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-2 gap-y-2 border-b border-border px-3 py-2.5">
-            <div role="group" aria-label="Which premiums" className="inline-flex rounded-xl bg-control p-1">
+            <div role="group" aria-label="Which premiums" className="inline-flex max-w-full overflow-x-auto rounded-xl bg-control p-1">
               {VIEWS.map((v) => (
                 <button
                   key={v.value}
@@ -408,7 +409,7 @@ export function FollowUpPage() {
                   aria-pressed={view === v.value}
                   onClick={() => update({ view: v.value === 'OVERDUE' ? '' : v.value, late: '' })}
                   className={cn(
-                    'h-8 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors pointer-coarse:h-11',
+                    'h-8 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors pointer-coarse:h-11',
                     view === v.value ? 'bg-surface text-foreground shadow-raise' : 'hover:text-foreground',
                   )}
                 >
@@ -519,7 +520,7 @@ function Lateness({ row }: { row: FollowUpRow }) {
     return (
       <span
         className={cn(
-          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+          'inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
           row.daysLate > 30 ? 'bg-status-danger-bg text-status-danger-fg' : 'bg-status-warning-bg text-status-warning-fg',
         )}
       >
@@ -529,12 +530,12 @@ function Lateness({ row }: { row: FollowUpRow }) {
   }
   if (row.dueDate === todayIso()) {
     return (
-      <span className="inline-flex rounded-full bg-status-pending-bg px-2 py-0.5 text-xs font-medium text-status-pending-fg">
+      <span className="inline-flex whitespace-nowrap rounded-full bg-status-pending-bg px-2 py-0.5 text-xs font-medium text-status-pending-fg">
         Due today
       </span>
     );
   }
-  return <span className="text-sm">Due {formatDate(row.dueDate)}</span>;
+  return <span className="whitespace-nowrap text-sm">Due {formatDate(row.dueDate)}</span>;
 }
 
 /** The call form, under the list: what happened, a promised day if they will pay, and a note. */

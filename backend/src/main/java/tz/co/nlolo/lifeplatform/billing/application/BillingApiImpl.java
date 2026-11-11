@@ -496,11 +496,15 @@ public class BillingApiImpl implements BillingApi {
         UUID tenantId = TenantContext.get();
         // isSavingsType reads policy and product once per policy, so it is asked once per policy, not per invoice.
         Map<String, Boolean> savings = new HashMap<>();
-        return premiumInvoiceRepository.findByTenantIdAndDueDateBetweenAndStatusNotIn(tenantId, from, to, List.of("WAIVED"))
-            .stream()
+        List<PremiumInvoice> due = premiumInvoiceRepository
+            .findByTenantIdAndDueDateBetweenAndStatusNotIn(tenantId, from, to, List.of("WAIVED")).stream()
             .filter(i -> !savings.computeIfAbsent(i.getPolicyNumber(), this::isSavingsType))
+            .toList();
+        Map<UUID, BigDecimal> credited = openPremiums.creditedAgainst(tenantId, due);
+        return due.stream()
             .map(i -> new InvoiceDueView(i.getInvoiceId(), i.getPolicyNumber(), i.getDueDate(), i.getAmount(),
-                i.balanceDue(creditedAgainst(i)), i.getCurrency().trim(), i.getStatus()))
+                i.balanceDue(credited.getOrDefault(i.getInvoiceId(), BigDecimal.ZERO)), i.getCurrency().trim(),
+                i.getStatus()))
             .toList();
     }
 
