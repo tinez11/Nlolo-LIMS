@@ -12,6 +12,13 @@ public final class CashAccounts {
     public static final String PAYOUT_BANK = "1130";
     /** 1140 Mobile money wallets: mobile money and a Lipa number, in and out. */
     public static final String MOBILE_MONEY = "1140";
+    /**
+     * 1320 Due from agents and brokers: cash an agent collected and recorded (2026-11-11, the user: standard practice).
+     * The customer has paid; the debt is the agent's until the money reaches a company account.
+     */
+    public static final String DUE_FROM_AGENTS = "1320";
+    /** The receipt method of cash an agent recorded and still holds -- not a way money reaches the company. */
+    public static final String AGENT_CASH = "AGENT_CASH";
 
     private CashAccounts() {}
 
@@ -19,6 +26,7 @@ public final class CashAccounts {
     public static String forReceipt(String method) {
         if (method == null) return MOBILE_MONEY;
         return switch (method) {
+            case AGENT_CASH -> DUE_FROM_AGENTS;
             case "CASH", "BANK_DEPOSIT", "CHEQUE", "TANQR" -> COLLECTION_BANK;
             default -> MOBILE_MONEY;
         };

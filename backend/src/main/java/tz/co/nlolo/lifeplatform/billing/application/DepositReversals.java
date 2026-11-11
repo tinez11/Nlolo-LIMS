@@ -84,6 +84,39 @@ public class DepositReversals {
             ownWork.record("Deposit reversal confirmed by the person who asked for it", r.getReversalId().toString(),
                 r.getPolicyNumber(), by);
         }
+        apply(r, by);
+        return r;
+    }
+
+    /** Who undoes agent cash the company never received: the platform, on the user's rule, not a person. */
+    static final String AGENT_CASH_EXPIRY = "system:agent-cash-expiry";
+
+    /**
+     * Agent cash not received within the agreed days (2026-11-11, the user's decision): the deposit it made when the
+     * agent recorded it comes off, and the premium it paid is owed again -- dunning resumes, commission is clawed back.
+     * The platform acts alone here: the rule is the user's, and nobody is asked to confirm money that never came.
+     *
+     * @return false when there was nothing to undo (no deposit, or already reversed or waiting)
+     */
+    @Transactional
+    public boolean reverseUnreceivedAgentCash(UUID fieldReceiptId, int days) {
+        UUID tenantId = TenantContext.get();
+        BalanceEntry deposit = entries.findByTenantIdAndEntryTypeAndPaymentId(tenantId, BalanceEntry.DEPOSIT, fieldReceiptId)
+            .orElse(null);
+        if (deposit == null || reversals.existsByTenantIdAndPaymentIdAndStatusIn(tenantId, fieldReceiptId, LIVE)) {
+            return false;
+        }
+        DepositReversal r = new DepositReversal(deposit, "Agent cash not received by the company within " + days
+            + " days of the agent recording it", AGENT_CASH_EXPIRY);
+        r.allowActingAlone();
+        r.confirm(AGENT_CASH_EXPIRY);
+        reversals.save(r);
+        apply(r, AGENT_CASH_EXPIRY);
+        return true;
+    }
+
+    /** The money comes off the balance, and what it paid reopens newest first. */
+    private void apply(DepositReversal r, String by) {
         UUID tenantId = r.getTenantId();
         String policyNumber = r.getPolicyNumber();
         balances.findForUpdate(tenantId, policyNumber).orElseThrow();
@@ -95,7 +128,6 @@ public class DepositReversals {
                    "amount", money(deposit.getAmount(), deposit.getCurrency()),
                    "receiptMethod", deposit.getMethod() == null ? "MOBILE_MONEY" : deposit.getMethod())));
         reopenWhatItPaid(tenantId, policyNumber, by);
-        return r;
     }
 
     @Transactional

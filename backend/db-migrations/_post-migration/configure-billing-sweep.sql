@@ -60,6 +60,14 @@ BEGIN
             WHERE p.policy_number = pi.policy_number
               AND p.tenant_id = pi.tenant_id
               AND p.status IN ('ACTIVE', 'REINSTATED', 'SUSPENDED')
+       )
+       -- Not while an agent holds the customer's cash for this policy (2026-11-11, the user): the customer has
+       -- paid. Savings and annuity cash pays only when it reaches the company, so their invoice stays unpaid
+       -- meanwhile; insurance cash has already paid it. Expired cash (not received in 14 days) no longer holds.
+       AND NOT EXISTS (
+           SELECT 1 FROM billing.field_receipt fr
+            WHERE fr.tenant_id = pi.tenant_id AND fr.policy_number = pi.policy_number
+              AND fr.status IN ('PENDING_RECONCILIATION', 'RECONCILIATION_OVERDUE')
        );
 
     -- 4. Escalate dunning level on every open ArrearsCase per the refdata-configured thresholds.
@@ -82,6 +90,12 @@ BEGIN
                  END AS new_level
             FROM billing.arrears_case ac2
            WHERE ac2.resolved_at IS NULL
+             -- Held while an agent holds the customer's cash for the policy (2026-11-11): no new letter, no lapse.
+             AND NOT EXISTS (
+                 SELECT 1 FROM billing.field_receipt fr
+                  WHERE fr.tenant_id = ac2.tenant_id AND fr.policy_number = ac2.policy_number
+                    AND fr.status IN ('PENDING_RECONCILIATION', 'RECONCILIATION_OVERDUE')
+             )
       ) sub
      WHERE ac.arrears_case_id = sub.arrears_case_id
        AND sub.new_level > ac.dunning_level;

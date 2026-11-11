@@ -40,6 +40,13 @@ public class LedgerService {
     public record Source(String type, String ref, String receiptMethod) {
         public Source(String type, String ref) { this(type, ref, null); }
         public static Source invoice(UUID invoiceId) { return new Source("invoice", "invoice:" + invoiceId); }
+        /**
+         * A premium, with how it was paid (2026-11-11): cash, a bank deposit or a cheque reach 1120, not the
+         * mobile-money wallets every savings premium was booked to before. Null keeps the old default.
+         */
+        public static Source invoice(UUID invoiceId, String receiptMethod) {
+            return new Source("invoice", "invoice:" + invoiceId, receiptMethod);
+        }
     }
 
     /** One entry to write. The service assigns seq and balance_after; the caller never does. */

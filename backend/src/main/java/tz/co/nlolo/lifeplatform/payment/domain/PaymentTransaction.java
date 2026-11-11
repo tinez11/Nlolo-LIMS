@@ -162,6 +162,9 @@ public class PaymentTransaction {
     public String getRecordedBy() { return recordedBy; }
     public String getNote() { return note; }
     public UUID getFieldReceiptId() { return fieldReceiptId; }
+
+    /** A savings deposit that is an agent's cash (2026-11-11): confirming it closes that cash. Null leaves it ordinary. */
+    public void bringsInAgentCash(UUID fieldReceiptId) { this.fieldReceiptId = fieldReceiptId; }
     public String getDecidedBy() { return decidedBy; }
     public Instant getDecidedAt() { return decidedAt; }
     public String getDecisionReason() { return decisionReason; }

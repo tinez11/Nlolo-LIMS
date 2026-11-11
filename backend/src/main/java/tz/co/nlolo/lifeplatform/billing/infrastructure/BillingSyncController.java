@@ -42,7 +42,10 @@ public class BillingSyncController {
             throw new AccessDeniedException("Access denied: an agent files field receipts only as themselves");
         }
         AgentBook.require(policyApi, request.policyNumber(), jwt, authentication);
-        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(agentId, request.policyNumber(),
+        // The agent's own party rides along so the customer's SMS can name who took the cash (2026-11-11).
+        String agentParty = jwt == null ? null : jwt.getClaimAsString("party_id");
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(agentId,
+            agentParty == null ? null : UUID.fromString(agentParty), request.policyNumber(),
             new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
             request.clientIdempotencyKey(), request.capturedAt());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new FieldReceiptResponseDto(result.receiptId(), result.status()));

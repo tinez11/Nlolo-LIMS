@@ -186,7 +186,7 @@ class BillingApiIntegrationTest {
             "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
-            "db-migrations/billing/V10__field_receipt_banked.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
@@ -1356,6 +1356,109 @@ class BillingApiIntegrationTest {
         assertThatThrownBy(() -> depositReversals.request(payment, "Again", "finance-1"))
             .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
             .hasMessageContaining("already");
+    }
+
+    // =========================================================================================
+    // Agent cash (2026-11-11, the user: standard practice) -- the customer has paid when the agent records it.
+    // =========================================================================================
+
+    @Test
+    void agentCashPaysThePremiumTheMomentTheAgentRecordsItPostedToDueFromAgents() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "AGENT-CASH-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID agentParty = UUID.randomUUID();
+        eventRecorder.clear();
+
+        TenantContext.set(tenantId);
+        BillingApi.FieldReceiptResult cash = billingApi.captureFieldReceipt(UUID.randomUUID(), agentParty, policyNumber,
+            new BigDecimal("15000.00"), "TZS", "key-" + UUID.randomUUID(), Instant.now());
+
+        // Paid at once: no arrears, no lapse, while the agent still holds the money.
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("PAID");
+        List<DomainEventEnvelope<?>> deposits = eventRecorder.ofType("billing.DepositReceived");
+        assertThat(deposits).hasSize(1);
+        // AGENT_CASH is what the ledger reads as 1320 Due from agents.
+        assertThat(payloadOf(deposits.get(0)).get("receiptMethod")).isEqualTo("AGENT_CASH");
+        assertThat(payloadOf(deposits.get(0)).get("paymentId")).isEqualTo(cash.receiptId());
+        // The customer's SMS names the agent: communication reads the agent's party from the event.
+        assertThat(payloadOf(eventRecorder.ofType("billing.FieldReceiptCaptured").get(0)).get("agentPartyId"))
+            .isEqualTo(agentParty);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.agentCashOnBalance(cash.receiptId())).isTrue();
+    }
+
+    @Test
+    void agentCashReachingTheCompanyMovesItToTheBankAndPaysNothingTwice() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "AGENT-CASH-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        BillingApi.FieldReceiptResult cash = billingApi.captureFieldReceipt(UUID.randomUUID(), null, policyNumber,
+            new BigDecimal("15000.00"), "TZS", "key-" + UUID.randomUUID(), Instant.now());
+        TenantContext.set(tenantId);
+        BigDecimal balanceBefore = billingApi.balanceOf(policyNumber);
+        eventRecorder.clear();
+
+        UUID payment = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        billingApiImpl.agentCashBanked(cash.receiptId(), payment, "CASH", "finance-2");
+        // A redelivered confirmation moves it once.
+        TenantContext.set(tenantId);
+        billingApiImpl.agentCashBanked(cash.receiptId(), payment, "CASH", "finance-2");
+
+        assertThat(eventRecorder.ofType("billing.DepositReceived")).isEmpty();
+        List<DomainEventEnvelope<?>> banked = eventRecorder.ofType("billing.AgentCashBanked");
+        assertThat(banked).hasSize(1);
+        assertThat(payloadOf(banked.get(0)).get("receiptMethod")).isEqualTo("CASH");
+        assertThat(payloadOf(banked.get(0)).get("paymentId")).isEqualTo(payment);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo(balanceBefore);
+        assertThat(fieldReceiptRepository.findByReceiptIdAndTenantId(cash.receiptId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("RECONCILED");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.agentCashOnBalance(cash.receiptId())).isFalse();
+    }
+
+    @Test
+    void agentCashNeverReceivedIsUndoneThePremiumOwedAgainAndTheCashExpired() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "AGENT-CASH-03");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        TenantContext.set(tenantId);
+        BillingApi.FieldReceiptResult cash = billingApi.captureFieldReceipt(UUID.randomUUID(), null, policyNumber,
+            new BigDecimal("15000.00"), "TZS", "key-" + UUID.randomUUID(), Instant.now());
+
+        // The sweep finds it once its days are up (0 here: recorded a moment ago).
+        assertThat(fieldReceiptRepository.findPastExpiryAcrossTenants(0))
+            .anySatisfy(row -> assertThat(row[1]).isEqualTo(cash.receiptId()));
+        eventRecorder.clear();
+
+        TenantContext.set(tenantId);
+        assertThat(depositReversals.reverseUnreceivedAgentCash(cash.receiptId(), 14)).isTrue();
+        TenantContext.set(tenantId);
+        billingApiImpl.expireFieldReceipt(cash.receiptId());
+
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("DUE");
+        List<DomainEventEnvelope<?>> reversed = eventRecorder.ofType("billing.DepositReversed");
+        assertThat(reversed).hasSize(1);
+        // Taken back out of 1320, where it went in.
+        assertThat(payloadOf(reversed.get(0)).get("receiptMethod")).isEqualTo("AGENT_CASH");
+        assertThat(eventRecorder.ofType("billing.PremiumCollectionReversed")).hasSize(1);
+        assertThat(fieldReceiptRepository.findByReceiptIdAndTenantId(cash.receiptId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("EXPIRED");
+        // Undone once: a second sweep finds nothing to do.
+        TenantContext.set(tenantId);
+        assertThat(depositReversals.reverseUnreceivedAgentCash(cash.receiptId(), 14)).isFalse();
+        assertThat(fieldReceiptRepository.findPastExpiryAcrossTenants(0))
+            .noneSatisfy(row -> assertThat(row[1]).isEqualTo(cash.receiptId()));
+        // Late money still closes it -- as an ordinary deposit, since nothing is on the balance any more.
+        TenantContext.set(tenantId);
+        assertThat(billingApi.agentCashOnBalance(cash.receiptId())).isFalse();
     }
 
     /**

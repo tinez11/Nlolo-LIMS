@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -30,8 +31,31 @@ class BillingEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
+        // Agent cash (2026-11-11, the user): the premium is paid -- cover on, no dunning -- the moment the agent records
+        // it, but units are bought only when the money reaches the company. Undone after 14 days, nothing was invested.
+        if ("billing.AgentCashBanked".equals(envelope.eventType())) {
+            runner.run(envelope, p -> {
+                String policyNumber = (String) p.get("policyNumber");
+                if (!exits.isUnitLinked(policyNumber)) {
+                    return;
+                }
+                Instant bankedAt = Instant.parse((String) p.get("bankedAt"));
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> paid = (List<Map<String, Object>>) p.getOrDefault("premiumsPaid", List.of());
+                for (Map<String, Object> premium : paid) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> amount = (Map<String, Object>) premium.get("amount");
+                    allocations.onPremiumCollected(policyNumber, UUID.fromString(String.valueOf(premium.get("invoiceId"))),
+                        new BigDecimal(String.valueOf(amount.get("amount"))), bankedAt);
+                }
+            });
+            return;
+        }
         if (!"billing.PremiumCollected".equals(envelope.eventType())) {
             return;
+        }
+        if (envelope.payload() instanceof Map<?, ?> m && "AGENT_CASH".equals(m.get("receiptMethod"))) {
+            return; // bought on billing.AgentCashBanked, above
         }
         runner.run(envelope, p -> {
             String policyNumber = (String) p.get("policyNumber");

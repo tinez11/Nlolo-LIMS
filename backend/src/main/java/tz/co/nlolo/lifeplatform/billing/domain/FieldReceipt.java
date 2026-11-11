@@ -82,6 +82,20 @@ public class FieldReceipt {
         this.reconciledAt = Instant.now();
     }
 
+    /** The method its deposit carries: cash an agent holds, posted to 1320 Due from agents (2026-11-11). */
+    public static final String AGENT_CASH = "AGENT_CASH";
+
+    /** Not received in time (2026-11-11): its deposit was undone and the premium is owed again. Late money still closes it. */
+    public void expire() {
+        if ("PENDING_RECONCILIATION".equals(status) || "RECONCILIATION_OVERDUE".equals(status)) {
+            this.status = "EXPIRED";
+        }
+    }
+
+    public boolean isOpen() {
+        return "PENDING_RECONCILIATION".equals(status) || "RECONCILIATION_OVERDUE".equals(status);
+    }
+
     /**
      * The agent records where the cash went. Refused once matched -- the company has the money, there is nothing left
      * to say -- and correctable until then, since a mistyped slip number is exactly what this is for.

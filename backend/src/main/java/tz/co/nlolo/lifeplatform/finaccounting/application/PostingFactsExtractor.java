@@ -49,6 +49,8 @@ final class PostingFactsExtractor {
         Map.entry("billing.BalanceWithdrawalReturned", amount()),
         // Money movement step 3b: a deposit reversed, and a premium paid from it undone (levy derived by the engine).
         Map.entry("billing.DepositReversed", amount()),
+        // Agent cash reaching the company (2026-11-11): from 1320 Due from agents to the account it reached.
+        Map.entry("billing.AgentCashBanked", amount()),
         Map.entry("billing.PremiumPaidReversed", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
         // A waiver taken back (2026-11-08): the mirror of the waiver it undoes.
@@ -165,6 +167,12 @@ final class PostingFactsExtractor {
                 Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
                 putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
                 yield List.of(money(type, string(p.get("entryId")), policy, p.get("amount"), today, attrs));
+            }
+            // Keyed on the confirmed payment that brought the agent's cash in; its method picks the account it reached.
+            case "billing.AgentCashBanked" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("paymentId")), policy, p.get("amount"), today, attrs));
             }
             case "billing.PremiumPaidReversed" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
                 today, Map.of("refType", "INVOICE")));

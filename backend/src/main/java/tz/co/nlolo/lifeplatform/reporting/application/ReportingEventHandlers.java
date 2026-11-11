@@ -122,11 +122,15 @@ public class ReportingEventHandlers {
             case "policy.CoveredLifeAdded" -> lives(tenantId, eventId, occurredAt, p, "JOINED", "coverStart");
             case "policy.GroupMemberExited" -> lives(tenantId, eventId, occurredAt, p, "EXITED", "leftOn");
             case "policy.CoveredLifeEnded" -> lives(tenantId, eventId, occurredAt, p, "EXITED", "endedOn");
+            // The method billing recorded (2026-11-11), not a guess from the payer's name: a cheque or a bank deposit with
+            // a payer used to read "Mobile money". An event from before receiptMethod rode on it keeps the old guess.
             case "billing.PremiumCollected" -> {
+                String method = text(p, "receiptMethod");
                 String payer = text(p, "payerRef");
+                String channel = method != null && PremiumCollectionsReport.METHODS.containsKey(method) ? method
+                    : payer == null || payer.isBlank() ? "FIELD_CASH" : "MOBILE_MONEY";
                 store.addCollection(tenantId, eventId, uuid(p, "invoiceId"), policyNumber, amount(p, "amount"),
-                    currency(p, "amount"), onInstant(p, "collectedAt", occurredAt),
-                    payer == null || payer.isBlank() ? "FIELD_CASH" : "MOBILE_MONEY");
+                    currency(p, "amount"), onInstant(p, "collectedAt", occurredAt), channel);
             }
             case "claims.ClaimRegistered" -> store.claimRegistered(tenantId, uuid(p, "claimId"), policyNumber,
                 text(p, "claimType"), date(p, "dateOfEvent"), onInstant(p, "registeredAt", occurredAt));

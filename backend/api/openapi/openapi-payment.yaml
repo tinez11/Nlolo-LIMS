@@ -98,6 +98,29 @@ paths:
               schema: { $ref: '#/components/schemas/Receipt' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /receipts/agent-cash-waiting:
+    get:
+      summary: Agent cash already recorded as received, waiting for its second person (2026-11-11)
+      description: >
+        Each agent's cash (field receipt) with a receipt for it waiting to be confirmed, and that receipt -- so the Agent
+        cash page offers "waiting for a second person" instead of recording the same money again.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: One row per agent's cash with a receipt waiting
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [fieldReceiptId, receiptId]
+                  properties:
+                    fieldReceiptId: { type: string, format: uuid }
+                    receiptId: { type: string, format: uuid }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /receipts/{receiptId}:
     get:
       summary: One amount received, recorded by hand or pulled by the gateway (collections.view or collections.manage)

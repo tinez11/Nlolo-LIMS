@@ -33,6 +33,16 @@ public interface FieldReceiptRepository extends JpaRepository<FieldReceipt, UUID
      * receipts with near-identical server timestamps, and paging an order with ties can show one
      * receipt twice and never show another. On unreconciled cash that is money nobody chases.
      */
+    /** Open agent cash per agent and currency: (agentId, count, sum, currency, oldest captured), longest-held first. */
+    @Query("select r.agentId, count(r), sum(r.amount), r.currency, min(r.capturedAtServer) from FieldReceipt r"
+        + " where r.tenantId = :tenantId and r.status in ('PENDING_RECONCILIATION', 'RECONCILIATION_OVERDUE')"
+        + " group by r.agentId, r.currency order by min(r.capturedAtServer)")
+    List<Object[]> openTotalsByAgent(@Param("tenantId") UUID tenantId);
+
+    /** Agent cash past its expiry that paid onto a balance, across every tenant: (tenant_id, receipt_id) (2026-11-11). */
+    @Query(value = "SELECT tenant_id, receipt_id FROM billing.agent_cash_past_expiry(:days)", nativeQuery = true)
+    List<Object[]> findPastExpiryAcrossTenants(@Param("days") int days);
+
     @Query("select r from FieldReceipt r where r.tenantId = :tenantId "
         + "and (:status is null or r.status = :status)")
     Page<FieldReceipt> search(@Param("tenantId") UUID tenantId,

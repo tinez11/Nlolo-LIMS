@@ -511,9 +511,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             <Panel
               title="Invoices"
               actions={!isStaff ? (
-                <Button asChild size="sm" variant="outline">
-                  <Link to={`/agents/deposit?policy=${encodeURIComponent(policyNumber)}`}>Deposit</Link>
-                </Button>
+                <div className="flex gap-2">
+                  {/* Cash the customer hands the agent (2026-11-11): recorded here, it pays the premium at once. */}
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={`/agents/cash?policy=${encodeURIComponent(policyNumber)}`}>Record cash</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={`/agents/deposit?policy=${encodeURIComponent(policyNumber)}`}>Deposit</Link>
+                  </Button>
+                </div>
               ) : undefined}
             >
               <InvoicesPanel policyNumber={policyNumber} />

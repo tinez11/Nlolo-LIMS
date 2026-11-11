@@ -216,7 +216,7 @@ class ProjectionEndToEndTest {
             "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V45__acted_alone.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
-            "db-migrations/billing/V10__field_receipt_banked.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",

@@ -54,10 +54,27 @@ BEGIN
     -- predicate IS the guard, enforcing the same rule at the same moment. Two statements of one
     -- invariant -- if markNotTakenUp() ever gains a condition, it must be added here too. Its
     -- javadoc carries the matching note.
-    UPDATE policy.policy
+    -- Not while an agent holds the first premium (2026-11-11, decision D3): the customer has paid. Cash that pays at
+    -- once has already started cover; savings and annuity cash pays when it reaches the company. Expired agent cash
+    -- (not received in 14 days) no longer holds the offer open.
+    -- A schema without billing (policy's own test schema) has no agent cash to wait for; plpgsql plans each statement
+    -- only when it runs, so the branch not taken never touches the missing table.
+    IF to_regclass('billing.field_receipt') IS NULL THEN
+        UPDATE policy.policy
+           SET status = 'NOT_TAKEN_UP'
+         WHERE status = 'PROPOSED'
+           AND created_at < now() - (validity_days || ' days')::INTERVAL;
+        RETURN;
+    END IF;
+    UPDATE policy.policy p
        SET status = 'NOT_TAKEN_UP'
-     WHERE status = 'PROPOSED'
-       AND created_at < now() - (validity_days || ' days')::INTERVAL;
+     WHERE p.status = 'PROPOSED'
+       AND p.created_at < now() - (validity_days || ' days')::INTERVAL
+       AND NOT EXISTS (
+           SELECT 1 FROM billing.field_receipt fr
+            WHERE fr.tenant_id = p.tenant_id AND fr.policy_number = p.policy_number
+              AND fr.status IN ('PENDING_RECONCILIATION', 'RECONCILIATION_OVERDUE')
+       );
 END;
 $$;
 

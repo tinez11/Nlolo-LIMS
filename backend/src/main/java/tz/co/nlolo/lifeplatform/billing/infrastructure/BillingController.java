@@ -119,6 +119,13 @@ public class BillingController {
                     Sort.by(Sort.Order.asc("capturedAtServer"), Sort.Order.asc("receiptId"))))));
     }
 
+    /** Every agent still holding cash, longest-held first: count, total and the oldest collection (2026-11-11). */
+    @GetMapping("/field-receipts/by-agent")
+    @PreAuthorize("@access.can('collections.view')")
+    public List<BillingApi.AgentCashTotal> agentCashTotals() {
+        return billingApi.agentCashTotals();
+    }
+
     @GetMapping("/policies/{policyNumber}/invoices")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<List<InvoiceResponseDto>> listInvoices(@PathVariable String policyNumber,
@@ -175,31 +182,9 @@ public class BillingController {
      * payment is deliberately NOT tightened alongside it — asking a customer to pay takes nothing
      * away from anyone, and agents and customers can both do it already.
      */
-    /**
-     * Close a field receipt against money actually received.
-     *
-     * <p>Finance-gated exactly like the queue that lists them, and for the same reason: this is
-     * unreconciled cash across the tenant, and saying it has been matched is a bookkeeping
-     * assertion about money.
-     *
-     * <p>The transition it drives had no caller anywhere on this platform until now -- see
-     * {@code BillingApi.reconcileFieldReceipt}. Without it the queue could fill and never drain.
-     *
-     * <p>Returns the reconciled receipt rather than 204, so the caller can render the new status
-     * and {@code reconciledAt} without a second read -- the same shape the agent lifecycle
-     * endpoints use.
-     *
-     * <p>Deliberately the QUEUE dto, not {@code FieldReceiptResponseDto}: that one is the CAPTURE
-     * response and carries only an id and a status, which would tell this caller nothing it did
-     * not already know. See the queue dto's own javadoc on why the two exist separately.
-     */
-    @PostMapping("/field-receipts/{receiptId}/reconcile")
-    @PreAuthorize("@access.can('collections.manage')")
-    public ResponseEntity<FieldReceiptQueueResponseDto> reconcileFieldReceipt(
-            @PathVariable UUID receiptId, @AuthenticationPrincipal Jwt jwt) {
-        return ResponseEntity.ok(FieldReceiptQueueResponseDto.from(
-            billingApi.reconcileFieldReceipt(receiptId, jwt.getSubject())));
-    }
+    // POST /field-receipts/{receiptId}/reconcile is gone (2026-11-11): it closed an agent's cash with no money recorded.
+    // Agent cash closes only when a receipt for it is confirmed (PaymentEventListener), which is also what moves it
+    // from 1320 Due from agents to the bank.
 
     @PostMapping("/invoices/{invoiceId}/waiver")
     @PreAuthorize("@access.can('collections.manage')")

@@ -44,8 +44,10 @@ public class PremiumCollectionsReport implements Report {
             + " what is still owed at the period's end, by how overdue it is.",
         ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
 
-    static final Map<String, String> METHODS = Map.of("MOBILE_MONEY", "Mobile money", "FIELD_CASH",
-        "Cash (field receipt)");
+    /** Every way a premium is paid, in words (2026-11-11). FIELD_CASH is the old guess, kept for rows projected before. */
+    static final Map<String, String> METHODS = Map.of("MOBILE_MONEY", "Mobile money", "LIPA_NUMBER", "Lipa number",
+        "TANQR", "TANQR", "CASH", "Cash", "BANK_DEPOSIT", "Bank deposit", "CHEQUE", "Cheque", "AGENT_CASH",
+        "Cash paid to an agent", "FIELD_CASH", "Cash (older records)");
 
     static final Map<String, String> BANDS = Map.of("NOT_DUE", "Not yet due", "D1_30", "1 to 30 days overdue",
         "D31_60", "31 to 60 days overdue", "D61_90", "61 to 90 days overdue", "OVER_90", "More than 90 days overdue");

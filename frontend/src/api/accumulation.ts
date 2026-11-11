@@ -127,6 +127,8 @@ export interface TopUpBody {
   method?: 'MOBILE_MONEY' | 'CASH' | 'BANK_DEPOSIT' | 'CHEQUE' | 'LIPA_NUMBER' | 'TANQR';
   reference?: string;
   receivedOn?: string;
+  /** The agent's cash this deposit brings in (2026-11-11): confirming the deposit closes that cash. */
+  fieldReceiptId?: string;
 }
 
 /** 202: the collection is requested; it is credited only when payment confirms it. */

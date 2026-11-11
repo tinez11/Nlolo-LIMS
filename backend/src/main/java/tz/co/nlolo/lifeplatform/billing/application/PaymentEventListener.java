@@ -135,6 +135,17 @@ public class PaymentEventListener {
     }
 
     private void handleConfirmed(Map<String, Object> payload) {
+        // Agent cash that already paid the premium when the agent recorded it (2026-11-11): the money arriving only
+        // moves it from 1320 Due from agents to the bank. Cash recorded before then, or undone for arriving late, pays
+        // as any money in does, below.
+        Object fieldReceiptId = payload.get("fieldReceiptId");
+        if (fieldReceiptId != null && billingApiImpl.agentCashOnBalance(UUID.fromString(fieldReceiptId.toString()))) {
+            Object paymentId = payload.get("paymentRequestId");
+            billingApiImpl.agentCashBanked(UUID.fromString(fieldReceiptId.toString()),
+                paymentId instanceof UUID u ? u : UUID.fromString(String.valueOf(paymentId)), (String) payload.get("method"),
+                String.valueOf(payload.getOrDefault("approvedBy", "receipt")));
+            return;
+        }
         // A deposit naming no invoice (money movement step 5): onto the policy's balance by its number.
         if ("DEPOSIT".equals(payload.get("purpose"))) {
             @SuppressWarnings("unchecked")
@@ -148,6 +159,9 @@ public class PaymentEventListener {
             return;
         }
         if (!isPremium(payload)) {
+            // Not billing's money -- a savings deposit is accumulation's -- but an agent's cash it brought in is billing's
+            // to close (2026-11-11: Kindelema's savings deposit left the agent's cash open, and listed to record again).
+            reconcileFieldReceipt(payload);
             return;
         }
         UUID invoiceId = UUID.fromString((String) payload.get("sourceRef"));

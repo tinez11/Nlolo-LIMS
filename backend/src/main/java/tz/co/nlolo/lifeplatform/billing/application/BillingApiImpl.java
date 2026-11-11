@@ -830,6 +830,13 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     public FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                                    String clientIdempotencyKey, Instant capturedAtClient) {
+        return captureFieldReceipt(agentId, null, policyNumber, amount, currency, clientIdempotencyKey, capturedAtClient);
+    }
+
+    @Override
+    @Transactional
+    public FieldReceiptResult captureFieldReceipt(UUID agentId, UUID agentPartyId, String policyNumber, BigDecimal amount,
+                                                   String currency, String clientIdempotencyKey, Instant capturedAtClient) {
         UUID tenantId = TenantContext.get();
         // Idempotency: the composite (tenant_id, client_idempotency_key) unique index (Task 1's
         // billing/V2 migration) is the real dedup mechanism -- check-then-insert here is a
@@ -845,9 +852,24 @@ public class BillingApiImpl implements BillingApi {
         }
         FieldReceipt receipt = new FieldReceipt(tenantId, policyNumber, agentId, amount, currency, clientIdempotencyKey, capturedAtClient);
         fieldReceiptRepository.save(receipt);
+        // The customer has paid (2026-11-11, the user: standard practice): the cash goes onto the policy's balance now,
+        // posted Dr 1320 Due from agents, and pays the premium it was collected for -- no dunning, no lapse, cover from
+        // today. Keyed on the field receipt, so its banking later finds it and pays nothing twice. Paid up to the next
+        // premium owed even if it is not yet due: the agent collected that premium. Not at once (the user, 2026-11-11):
+        // a savings-type policy -- savings, a fixed deposit, a pension before vesting -- whose money must not earn
+        // interest the company does not hold, and an annuity, whose income locks and starts paying on its premium and
+        // cannot be taken back. Their cash pays when it reaches the company; savings dunning waits meanwhile.
+        if (paysOnRecording(policyNumber)) {
+            LocalDate payUpTo = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)
+                .stream().filter(i -> PAYABLE.contains(i.getStatus())).map(PremiumInvoice::getDueDate).findFirst()
+                .orElse(null);
+            deposit(tenantId, policyNumber, amount, currency, receipt.getReceiptId(), FieldReceipt.AGENT_CASH,
+                "agent-cash:" + receipt.getReceiptId(), null, BalanceEntry.FROM_PAYMENT, "agent:" + agentId, payUpTo);
+        }
         Map<String, Object> captured = new HashMap<>(Map.of("receiptId", receipt.getReceiptId(), "policyNumber", policyNumber,
             "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
             "capturedAt", receipt.getCapturedAtServer().toString(), "agentId", agentId));
+        if (agentPartyId != null) captured.put("agentPartyId", agentPartyId);
         // Who handed the cash over is told at once (receipts step 1; TIRA Code B.5(b): an intermediary acknowledges
         // "all monies received"), so communication needs the policyholder -- it can write to a party, not read a policy.
         // Never at the cash's expense: a policy that cannot be read here only means nobody is texted.
@@ -859,6 +881,89 @@ public class BillingApiImpl implements BillingApi {
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptCaptured", tenantId, captured));
         return new FieldReceiptResult(receipt.getReceiptId(), receipt.getStatus());
+    }
+
+    /** Whether agent cash on this policy pays its premium the moment the agent records it (2026-11-11). */
+    boolean paysOnRecording(String policyNumber) {
+        if (isSavingsType(policyNumber)) return false;
+        try {
+            return !"ANNUITY".equals(policyApi.getPolicy(policyNumber).productCategory());
+        } catch (RuntimeException e) {
+            return false; // a policy that cannot be read is paid only when the money arrives
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<AgentCashTotal> agentCashTotals() {
+        return fieldReceiptRepository.openTotalsByAgent(TenantContext.get()).stream()
+            .map(row -> new AgentCashTotal((UUID) row[0], ((Number) row[1]).longValue(), (BigDecimal) row[2],
+                ((String) row[3]).trim(), (Instant) row[4]))
+            .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<FieldReceiptView> fieldReceipt(UUID fieldReceiptId) {
+        return fieldReceiptRepository.findByReceiptIdAndTenantId(fieldReceiptId, TenantContext.get()).map(this::toView);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean agentCashOnBalance(UUID fieldReceiptId) {
+        UUID tenantId = TenantContext.get();
+        return fieldReceiptRepository.findByReceiptIdAndTenantId(fieldReceiptId, tenantId)
+            .filter(FieldReceipt::isOpen)
+            .flatMap(r -> balanceEntryRepository.findByTenantIdAndEntryTypeAndPaymentId(tenantId, BalanceEntry.DEPOSIT,
+                fieldReceiptId))
+            .map(d -> balanceEntryRepository.findByTenantIdAndReversesEntryId(tenantId, d.getEntryId()).isEmpty())
+            .orElse(false);
+    }
+
+    /**
+     * The agent's cash reached the company (2026-11-11): it already paid the customer's premium when the agent recorded
+     * it, so nothing is paid again -- the money moves from 1320 Due from agents to the account it reached
+     * (billing.AgentCashBanked, Dr that account / Cr 1320), and the agent's cash is closed. Keyed on the confirmed
+     * payment, so a redelivery moves it once.
+     */
+    @Transactional
+    public void agentCashBanked(UUID fieldReceiptId, UUID paymentId, String method, String by) {
+        UUID tenantId = TenantContext.get();
+        FieldReceipt receipt = fieldReceiptRepository.findByReceiptIdAndTenantId(fieldReceiptId, tenantId)
+            .orElseThrow(() -> new FieldReceiptNotFoundException(fieldReceiptId));
+        if (!receipt.isOpen()) {
+            return; // a redelivered confirmation: moved once
+        }
+        // The premiums this cash paid when it was recorded, each with its invoice's own amount: unit-linked buys their
+        // units now, on money the company holds, not when the agent recorded it (2026-11-11, the user).
+        java.util.List<Map<String, Object>> paid = premiumReceiptRepository
+            .findByTenantIdAndPaymentReference(tenantId, "agent-cash:" + fieldReceiptId).stream()
+            .map(PremiumReceipt::getInvoiceId).distinct()
+            .flatMap(id -> premiumInvoiceRepository.findByInvoiceIdAndTenantId(id, tenantId).stream())
+            .filter(i -> "PAID".equals(i.getStatus()))
+            .map(i -> Map.<String, Object>of("invoiceId", i.getInvoiceId(),
+                "amount", Map.of("amount", i.getAmount().toPlainString(), "currencyCode", i.getCurrency())))
+            .toList();
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.AgentCashBanked", tenantId, Map.of(
+            "paymentId", paymentId, "receiptId", fieldReceiptId, "policyNumber", receipt.getPolicyNumber(),
+            "agentId", receipt.getAgentId(),
+            "amount", Map.of("amount", receipt.getAmount().setScale(2).toPlainString(), "currencyCode", receipt.getCurrency()),
+            "receiptMethod", method == null ? "CASH" : method,
+            "bankedAt", Instant.now().toString(),
+            "premiumsPaid", paid)));
+        reconcileFieldReceipt(fieldReceiptId, by);
+    }
+
+    /** Agent cash undone for not arriving in time (2026-11-11): it reads EXPIRED; late money still closes it. */
+    @Transactional
+    public void expireFieldReceipt(UUID fieldReceiptId) {
+        fieldReceiptRepository.findByReceiptIdAndTenantId(fieldReceiptId, TenantContext.get()).ifPresent(r -> {
+            r.expire();
+            fieldReceiptRepository.save(r);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptExpired", r.getTenantId(), Map.of(
+                "receiptId", r.getReceiptId(), "policyNumber", r.getPolicyNumber(), "agentId", r.getAgentId(),
+                "amount", Map.of("amount", r.getAmount().toPlainString(), "currencyCode", r.getCurrency()))));
+        });
     }
 
     // ---- PolicyEventListener entry points (package-private -- called only from this module's

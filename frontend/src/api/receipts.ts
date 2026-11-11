@@ -64,3 +64,14 @@ export function decideDepositReversal(reversalId: string, rejectReason: string |
 export function rejectReceipt(receiptId: string, reason: string): Promise<Receipt> {
   return post<Receipt>(`/receipts/${encodeURIComponent(receiptId)}/rejection`, { reason });
 }
+
+/** Agent cash already recorded as received and waiting for its second person, with the receipt that brings it in. */
+export interface AgentCashWaiting {
+  fieldReceiptId: string;
+  receiptId: string;
+}
+
+/** `GET /receipts/agent-cash-waiting` (2026-11-11): so Agent cash never offers to record the same money twice. */
+export function listAgentCashWaiting(): Promise<AgentCashWaiting[]> {
+  return get<AgentCashWaiting[]>('/receipts/agent-cash-waiting');
+}

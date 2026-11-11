@@ -44,7 +44,9 @@ public class BillingEventListener {
                 new BigDecimal((String) amount.get("amount")),
                 LocalDate.ofInstant(Instant.parse((String) p.get("collectedAt")), CIVIL_ZONE),
                 // Absent for a field (cash) receipt: no number to pay a deposit back to.
-                (String) p.get("payerRef"));
+                (String) p.get("payerRef"),
+                // How it was paid (2026-11-11): every savings premium was booked to the mobile-money wallets before.
+                (String) p.get("receiptMethod"));
         });
     }
 }

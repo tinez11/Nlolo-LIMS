@@ -173,7 +173,7 @@ class TopUpAndTransferIntegrationTest {
             "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
-            "db-migrations/billing/V10__field_receipt_banked.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
@@ -272,6 +272,44 @@ class TopUpAndTransferIntegrationTest {
             + "FROM payment.payment_transaction WHERE source_ref = ?", topUp.topUpId().toString()))
             .isEqualTo("CONFIRMED CASH staff-one finance-two");
         assertThat(asTenant(() -> receipts.awaitingApproval())).noneMatch(r -> reference.equals(r.reference()));
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.api.BillingApi billingApi;
+
+    /**
+     * Agent cash on a savings policy (2026-11-11, the user): it pays nothing when the agent records it -- no interest on
+     * money the company does not hold -- and the savings deposit that brings it in names it, so it waits under its
+     * receipt (not "to record" again) and confirming closes it. Kindelema's 20,000 lost that link on dev.
+     */
+    @Test
+    void agentCashBroughtInAsASavingsDepositIsLinkedAndClosedOnConfirmation() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        var cash = asTenant(() -> billingApi.captureFieldReceipt(UUID.randomUUID(), null, issued.policyNumber(),
+            new BigDecimal("20000.00"), "TZS", "key-" + UUID.randomUUID(), java.time.Instant.now()));
+        // Savings: nothing paid while the agent holds it.
+        assertThat(asTenant(() -> billingApi.agentCashOnBalance(cash.receiptId()))).isFalse();
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).isEmpty();
+
+        String reference = "AG-" + UUID.randomUUID();
+        asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "CASH", reference,
+            LocalDate.now(), "Amina Owner", "staff-one", cash.receiptId()));
+        var receiptId = asTenant(() -> receipts.agentCashWaiting()).get(cash.receiptId());
+        assertThat(receiptId).as("the deposit waits under the agent's cash it brings in").isNotNull();
+
+        // The same agent cash cannot be recorded as received a second time.
+        String again = "AG-" + UUID.randomUUID();
+        var second = asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "CASH", again,
+            LocalDate.now(), "Amina Owner", "staff-one", cash.receiptId()));
+        assertThat(asTenant(() -> receipts.awaitingApproval())).noneMatch(r -> again.equals(r.reference()));
+        assertThat(asTenant(() -> api.listTopUps(issued.policyNumber())))
+            .filteredOn(t -> t.topUpId().equals(second.topUpId())).singleElement()
+            .satisfies(t -> assertThat(t.status()).isEqualTo("FAILED"));
+
+        asTenant(() -> receipts.approve(receiptId, "finance-two"));
+        assertThat(asTenant(() -> billingApi.fieldReceipt(cash.receiptId())).orElseThrow().status()).isEqualTo("RECONCILED");
+        assertThat(asTenant(() -> receipts.agentCashWaiting())).doesNotContainKey(cash.receiptId());
+        assertThat(asTenant(() -> api.entries(issued.policyNumber())))
+            .extracting(LedgerEntryView::type).contains(EntryType.TOP_UP);
     }
 
     /** Refused, the top-up fails and nothing is credited; the slip's reference may then be recorded again, correctly. */

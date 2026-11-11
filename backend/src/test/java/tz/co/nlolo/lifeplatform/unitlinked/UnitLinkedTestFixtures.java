@@ -100,6 +100,37 @@ public class UnitLinkedTestFixtures {
             tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("billing.PremiumCollected", tenant, payload)));
     }
 
+    /** billing.PremiumCollected paid by cash an agent still holds (2026-11-11): units wait for the money. */
+    public void collectByAgentAt(UUID tenant, String policyNumber, String amount, java.time.Instant collectedAt,
+                                 UUID invoiceId) {
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("invoiceId", invoiceId);
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", UUID.randomUUID());
+        payload.put("amount", java.util.Map.of("amount", amount, "currencyCode", "TZS"));
+        payload.put("collectedAt", collectedAt.toString());
+        payload.put("paidToDate", java.time.LocalDate.now().toString());
+        payload.put("receiptMethod", "AGENT_CASH");
+        tx.executeWithoutResult(status -> publisher.publishEvent(
+            tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("billing.PremiumCollected", tenant, payload)));
+    }
+
+    /** billing.AgentCashBanked: the agent's cash reached the company, naming the premium it paid. */
+    public void agentCashBankedAt(UUID tenant, String policyNumber, String amount, java.time.Instant bankedAt,
+                                  UUID invoiceId) {
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("paymentId", UUID.randomUUID());
+        payload.put("receiptId", UUID.randomUUID());
+        payload.put("policyNumber", policyNumber);
+        payload.put("amount", java.util.Map.of("amount", amount, "currencyCode", "TZS"));
+        payload.put("receiptMethod", "CASH");
+        payload.put("bankedAt", bankedAt.toString());
+        payload.put("premiumsPaid", java.util.List.of(java.util.Map.of("invoiceId", invoiceId,
+            "amount", java.util.Map.of("amount", amount, "currencyCode", "TZS"))));
+        tx.executeWithoutResult(status -> publisher.publishEvent(
+            tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("billing.AgentCashBanked", tenant, payload)));
+    }
+
     public FundView fund(UUID tenant, String code, LocalTime cutOff) {
         return asTenant(tenant, () -> api.createFund(new CreateFund(code, code + " fund", "TZS", "EQUITY",
             new BigDecimal("1.5000"), cutOff), ADMIN));

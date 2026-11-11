@@ -101,8 +101,20 @@ public class Receipts {
         if (in.receivedOn() == null || in.receivedOn().isAfter(today)) {
             throw new ReceiptRefusedException("Say the day the money was received; it cannot be later than today");
         }
+        // Agent cash that already paid the customer's premium when the agent recorded it (2026-11-11): this receipt only
+        // moves it from 1320 Due from agents to the bank, so it is for exactly what the agent recorded -- more would be a
+        // second deposit, less would leave the agent owing a part nobody tracks.
+        if (in.fieldReceiptId() != null && billing.agentCashOnBalance(in.fieldReceiptId())) {
+            billing.fieldReceipt(in.fieldReceiptId()).ifPresent(cash -> {
+                if (cash.amount().compareTo(in.amount()) != 0) {
+                    throw new ReceiptRefusedException("The agent recorded " + cash.amount().toPlainString() + " "
+                        + cash.currency() + " for this cash, and it already paid the customer's premium: record exactly"
+                        + " that amount. A different amount is a separate deposit");
+                }
+            });
+        }
         boolean forPolicy = in.policyNumber() != null && !in.policyNumber().isBlank();
-        int named = (in.invoiceId() != null ? 1 : 0) + (in.loanId() != null ? 1 : 0) + (forPolicy ? 1 : 0);
+        int named =(in.invoiceId() != null ? 1 : 0) + (in.loanId() != null ? 1 : 0) + (forPolicy ? 1 : 0);
         if (named != 1) {
             throw new ReceiptRefusedException("Say what this pays: a policy's balance, an invoice or a loan, one of them");
         }
@@ -318,6 +330,19 @@ public class Receipts {
     public List<ReceiptView> waitingOnPolicy(String policyNumber) {
         return transactions.findByTenantIdAndPolicyNumberAndPurposeAndStatusOrderByCreatedAtAsc(TenantContext.get(),
             policyNumber, "DEPOSIT", "AWAITING_APPROVAL").stream().map(Receipts::view).toList();
+    }
+
+    /**
+     * Agent cash already recorded as received and waiting for its second person (2026-11-11): field receipt id to the
+     * receipt that brings it in. Such cash is no longer "to record" -- it is in Deposits to confirm.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, UUID> agentCashWaiting() {
+        Map<UUID, UUID> waiting = new java.util.LinkedHashMap<>();
+        transactions.findByTenantIdAndStatusOrderByCreatedAtAsc(TenantContext.get(), "AWAITING_APPROVAL").stream()
+            .filter(t -> t.getFieldReceiptId() != null)
+            .forEach(t -> waiting.put(t.getFieldReceiptId(), t.getPaymentTransactionId()));
+        return waiting;
     }
 
     /** Receipts waiting for their second signature, oldest first: the approvals inbox's rows. */

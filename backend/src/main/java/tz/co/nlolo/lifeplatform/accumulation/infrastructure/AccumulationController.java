@@ -199,7 +199,7 @@ public class AccumulationController {
                                              @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                              @AuthenticationPrincipal Jwt jwt) {
         return TopUpResponse.from(api.recordTopUp(policyNumber, new BigDecimal(body.amount()), body.method(),
-            body.reference(), body.receivedOn(), body.payerRef(), jwt.getSubject(), idempotencyKey));
+            body.reference(), body.receivedOn(), body.payerRef(), jwt.getSubject(), idempotencyKey, body.fieldReceiptId()));
     }
 
     @GetMapping("/policies/{policyNumber}/account/top-ups")

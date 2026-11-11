@@ -95,6 +95,7 @@ import {
   AgentDetailPage,
   AgentProfilePage,
   MyCommissionPage,
+  MyCashPage,
   AgentsPage,
   OnboardAgentPage,
   ChartOfAccountsPage,
@@ -836,6 +837,12 @@ const AGENTS_SCREENS: Screen[] = [
     path: 'commission',
     element: <MyCommissionPage />,
     reach: { group: 'my-business', label: 'My commission', icon: Wallet },
+  },
+  // Cash customers hand the agent (2026-11-11): record it, see what is still held, say where it was banked.
+  {
+    path: 'cash',
+    element: <MyCashPage />,
+    reach: { group: 'my-business', label: 'My cash', icon: Banknote },
   },
   {
     path: 'policies',
