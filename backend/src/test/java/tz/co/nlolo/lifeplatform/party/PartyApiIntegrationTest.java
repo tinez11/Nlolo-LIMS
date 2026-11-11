@@ -110,6 +110,21 @@ class PartyApiIntegrationTest {
         assertThat(auditRows).hasSize(1);
     }
 
+    /** Premiums to follow up (2026-11-11): a list of clients to call asks for every phone once. */
+    @Test
+    void phoneNumbersForManyPartiesInOneRead() {
+        var a = partyApi.registerIndividual("Phone One", LocalDate.of(1990, 5, 12), "+255712000111", null, "test-agent");
+        var b = partyApi.registerCorporate("Phone Two Ltd", "REG-PHONE-2", "+255712000222", null, "test-agent");
+        UUID unknown = UUID.randomUUID();
+
+        var phones = partyApi.phoneNumbers(List.of(a.partyId(), b.partyId(), unknown));
+
+        assertThat(phones).containsEntry(a.partyId(), "+255712000111")
+            .containsEntry(b.partyId(), "+255712000222")
+            .doesNotContainKey(unknown);
+        assertThat(partyApi.phoneNumbers(List.of())).isEmpty();
+    }
+
     @Test
     void duplicateCorporateRegistrationNumberIsRejected() {
         partyApi.registerCorporate("Acme SACCO", "REG-001", "+255712345000", "acme@example.tz", "test-agent");
