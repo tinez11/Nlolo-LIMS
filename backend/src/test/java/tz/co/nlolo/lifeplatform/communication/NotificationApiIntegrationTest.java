@@ -384,7 +384,8 @@ class NotificationApiIntegrationTest {
 
         assertThat(notificationApi.listTemplates())
             .as("the console must show what this tenant's customers would actually receive")
-            .hasSize(16 + 2 + 36);   // V8 four messages, V17 agent cash (SMS only), V19 nine notices
+            // V8 four messages, V17 agent cash SMS, V21 its email, V19 nine notices, V22 the premium reminder
+            .hasSize(16 + 2 + 2 + 36 + 4);
     }
 
     /**
@@ -435,7 +436,7 @@ class NotificationApiIntegrationTest {
         // real tenant fails here rather than in production.
         for (String key : List.of("OFFER_MADE", "OFFER_CLOSING", "COVER_STARTED", "OFFER_EXPIRED",
                 "POLICY_LAPSED", "POLICY_REINSTATED", "CLAIM_RECEIVED", "CLAIM_APPROVED", "CLAIM_DECLINED", "CLAIM_PAID",
-                "SURRENDER_PAID", "LOAN_PAID_OUT", "BENEFIT_PAID")) {
+                "SURRENDER_PAID", "LOAN_PAID_OUT", "BENEFIT_PAID", "PREMIUM_REMINDER")) {
             for (String channel : List.of("SMS", "EMAIL")) {
                 for (String language : List.of("sw", "en")) {
                     assertThat(templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
@@ -448,7 +449,8 @@ class NotificationApiIntegrationTest {
         assertThat(templateRepository.findByTenantIdInOrderByTemplateKeyAscChannelAscLanguageAsc(
                 List.of(PLATFORM_DEFAULT_TENANT)))
             .extracting(NotificationTemplate::getTemplateKey)
-            .hasSize(16 + 2 + 36);   // V8 four messages, V17 agent cash (SMS only), V19 nine notices
+            // V8 four messages, V17 agent cash SMS, V21 its email, V19 nine notices, V22 the premium reminder
+            .hasSize(16 + 2 + 2 + 36 + 4);
     }
 
     /** The nil uuid, mirroring NotificationApiImpl's own constant. */
