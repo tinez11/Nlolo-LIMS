@@ -1362,6 +1362,78 @@ class BillingApiIntegrationTest {
     // Agent cash (2026-11-11, the user: standard practice) -- the customer has paid when the agent records it.
     // =========================================================================================
 
+    // =========================================================================================
+    // Premiums to follow up (2026-11-11, analytics plan 1)
+    // =========================================================================================
+
+    @Test
+    void openPremiumsListWhatIsOwedWithWhatWasDoneAndLeaveOutWhatAnAgentAlreadyPaid() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "FOLLOW-UP-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView first = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        List<tz.co.nlolo.lifeplatform.billing.api.OpenPremiumView> open = billingApi.openPremiums(first.dueDate().plusDays(1));
+        assertThat(open).filteredOn(p -> p.invoiceId().equals(first.invoiceId())).singleElement()
+            .satisfies(p -> {
+                assertThat(p.owed()).isEqualByComparingTo("15000.00");
+                assertThat(p.policyNumber()).isEqualTo(policyNumber);
+                assertThat(p.actions()).isEmpty();
+            });
+
+        TenantContext.set(tenantId);
+        billingApi.recordCall(first.invoiceId(), "WILL_PAY", LocalDate.now().plusDays(5), "Pays Friday", "staff-1");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.openPremiums(first.dueDate().plusDays(1)))
+            .filteredOn(p -> p.invoiceId().equals(first.invoiceId())).singleElement()
+            .satisfies(p -> assertThat(p.actions()).first().satisfies(a -> {
+                assertThat(a.kind()).isEqualTo("CALL");
+                assertThat(a.outcome()).isEqualTo("WILL_PAY");
+                assertThat(a.note()).isEqualTo("Pays Friday");
+                assertThat(a.recordedBy()).isEqualTo("staff-1");
+            }));
+
+        // Paid by an agent's cash: no longer owed, so no longer listed.
+        TenantContext.set(tenantId);
+        billingApi.captureFieldReceipt(UUID.randomUUID(), null, policyNumber, new BigDecimal("15000.00"), "TZS",
+            "key-" + UUID.randomUUID(), Instant.now());
+        TenantContext.set(tenantId);
+        assertThat(billingApi.openPremiums(first.dueDate().plusDays(1)))
+            .extracting(tz.co.nlolo.lifeplatform.billing.api.OpenPremiumView::invoiceId)
+            .doesNotContain(first.invoiceId());
+    }
+
+    @Test
+    void aCallNeedsAnOutcomeAndAReminderGoesOnceADay() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "FOLLOW-UP-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView first = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> billingApi.recordCall(first.invoiceId(), null, null, null, "staff-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.CollectionActionRefusedException.class)
+            .hasMessageContaining("Say what happened on the call");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> billingApi.recordCall(first.invoiceId(), "WILL_PAY", LocalDate.now().minusDays(1),
+                null, "staff-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.CollectionActionRefusedException.class)
+            .hasMessageContaining("cannot be in the past");
+
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        billingApi.sendPremiumReminder(first.invoiceId(), "staff-1");
+        List<DomainEventEnvelope<?>> sent = eventRecorder.ofType("billing.PremiumReminderSent");
+        assertThat(sent).hasSize(1);
+        assertThat(payloadOf(sent.get(0)).get("policyNumber")).isEqualTo(policyNumber);
+        assertThat(payloadOf(sent.get(0)).get("policyholderPartyId")).isNotNull();
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> billingApi.sendPremiumReminder(first.invoiceId(), "staff-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.CollectionActionRefusedException.class)
+            .hasMessageContaining("already sent today");
+    }
+
     @Test
     void agentCashPaysThePremiumTheMomentTheAgentRecordsItPostedToDueFromAgents() {
         UUID tenantId = UUID.randomUUID();

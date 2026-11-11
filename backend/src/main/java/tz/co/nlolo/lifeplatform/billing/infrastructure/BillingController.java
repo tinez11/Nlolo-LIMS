@@ -238,7 +238,8 @@ public class BillingController {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(invoice.policyNumber()), jwt, authentication);
         // An agent asks only their own customers to pay (2026-10-27).
         AgentBook.require(policyApi, invoice.policyNumber(), jwt, authentication);
-        billingApi.requestPaymentForInvoice(invoiceId, request.payerRef(), idempotencyKey);
+        billingApi.requestPaymentForInvoice(invoiceId, request.payerRef(), idempotencyKey,
+            jwt == null ? null : jwt.getSubject());
         return ResponseEntity.accepted().build();
     }
 
