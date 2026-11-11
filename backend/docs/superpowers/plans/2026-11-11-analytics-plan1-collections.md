@@ -285,11 +285,22 @@ void aCallNeedsAnOutcomeAndAPromiseIsOnlyForACall() {
   - SMS sw: `Kumbusho: ada ya {{amount}} kwa bima {{policyNumber}} ilitakiwa kulipwa {{dueDate}}. Tafadhali lipa ili bima yako iendelee.`
   - EMAIL en/sw: the same sentence plus `If you have already paid, thank you — please ignore this message.` /
     `Kama umeshalipa, asante — tafadhali puuza ujumbe huu.`
+  **Wording approved by the user 2026-11-11**, and it must stay **editable in the Message templates page** (the user):
+  the seeded rows are the platform defaults (zero tenant); a company's edit is its own copy (copy-on-write, as every
+  template already works — `CommunicationContractTest` "Copy-on-write"). Nothing extra is needed server-side.
 - [ ] **Step 2: Listener** — in `ReceiptEventListener.onDomainEvent` add
-  `case "billing.PremiumReminderSent" -> tell(envelope, payload, "PREMIUM_REMINDER", Map.of("policyNumber", ..., "amount", money(...), "dueDate", <dd MMM yyyy>));`
-  (format the date with `java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ROOT)`).
-- [ ] **Step 3: Apply V22 to dev**; run `CommunicationContractTest` — PASS.
-- [ ] **Step 4: Commit** `feat(communication): premium reminder SMS and email (EN, SW)`.
+  `case "billing.PremiumReminderSent" -> tell(envelope, payload, "PREMIUM_REMINDER", Map.of("policyNumber", ..., "amount", money(...), "dueDate", <dd/MM/yyyy>));`
+  (format the date as the other messages do: `DateTimeFormatter.ofPattern("dd/MM/yyyy")`, as in
+  `communication/application/FuneralEventListener.java:28`).
+- [ ] **Step 3: Message templates page** — `frontend/src/features/communications/messageCatalog.ts`:
+  add `PREMIUM_REMINDER: { name: 'Premium reminder', topic: 'Policies & premiums', when: 'When staff or the customer’s agent sends a reminder from Premiums to follow up.' }`
+  after `PAYMENT_RECEIVED`; add preview samples `dueDate: '05/12/2026'` and **`agentName: 'Juma Senior'`** (the latter
+  is missing since the agent-cash work, so that message's preview shows ‹agentName›). Update
+  `messageCatalog.test.ts` if it pins the catalogue's keys. Check in the browser: Communications → Message templates
+  shows "Premium reminder" under Policies & premiums, its preview reads naturally, an edit saves and the next
+  reminder uses it.
+- [ ] **Step 4: Apply V22 to dev**; run `CommunicationContractTest` and the communications vitest — PASS.
+- [ ] **Step 5: Commit** `feat(communication): premium reminder SMS and email (EN, SW), editable in Message templates`.
 
 ---
 
@@ -520,6 +531,6 @@ section first with This month / This quarter / This year, then Waiting for you t
   first with month/quarter/year (6/9), C1 (5), simple English (8/9/10 content lists), branch as filter (5/8),
   downloads logged (5 Step 6). Not covered here by design: drill-down, catalogue, agent sales, funnel, underwriting,
   management — Plans 2–5.
-- Open item before merge: reminder wording (Task 3) is a proposal — ask the user.
+- Reminder wording (Task 3): approved by the user 2026-11-11; editable per company in Message templates.
 - Type names used consistently: `OpenPremiumView`, `FollowUpRow`, `FollowUpPage`, `CollectionFigures`,
   `FollowUpQuery`, `CollectionAction`.
