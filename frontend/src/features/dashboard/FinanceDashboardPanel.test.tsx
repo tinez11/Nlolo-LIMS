@@ -64,6 +64,7 @@ const VIEW = {
   newPoliciesChangePercent: '-18.0',
   newPoliciesSeries: [{ month: '2026-07', count: 20 }, { month: '2026-08', count: 11 }, { month: '2026-09', count: 10 }],
   outstanding: TZS('500000.00'),
+  collections: null,
 };
 
 beforeEach(() => {
