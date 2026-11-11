@@ -1812,6 +1812,23 @@ class BillingApiIntegrationTest {
                     "D31_60 0 0.00", "D61_90 0 0.00", "OVER_90 0 0.00"));
     }
 
+    /** An offer's first premium is the offer's, not owed: on dev 14 offers made TZS 3.29M of "owed" (2026-11-11). */
+    @Test
+    void anOffersFirstPremiumIsNotOwed() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "AGING-OFFER-01");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", new BigDecimal("15000.00"), "TZS", "MONTHLY",
+            null, List.of(), "An offer, not on cover");
+        String offer = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        assertThat(policyApi.getPolicy(offer).status()).isEqualTo(PolicyStatus.PROPOSED);
+        LocalDate due = billingApi.listInvoices(offer, null).get(0).dueDate();
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.receivablesAging(due.plusDays(3))).isEmpty();
+    }
+
     private void seedInvoice(UUID tenantId, String policyNumber, String amount, LocalDate dueDate, String status,
                              String amountPaid) {
         try (Connection connection = dataSource.getConnection();

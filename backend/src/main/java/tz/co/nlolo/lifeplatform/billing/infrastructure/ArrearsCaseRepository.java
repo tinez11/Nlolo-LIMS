@@ -68,7 +68,11 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
      * <p>Outstanding is charged, less paid, less credited back -- PremiumInvoice.balanceDue -- and a premium that owes
      * nothing is left out. Native: the bucketing is a CASE over date arithmetic.
      *
-     * <p>Only buckets with rows come back. The caller fills in the empty ones, because the five
+     * <p>One row per currency, band and POLICY: [currency, bucket, cases, outstanding, policy_number]. Per policy so the
+     * caller can leave out an offer -- a policy still PROPOSED, whose first premium is the offer's, not owed -- which
+     * billing cannot tell from its own tables (2026-11-11: 14 offers' premiums were TZS 3.29M of the figure on dev).
+     *
+     * <p>Only buckets with rows come back. The caller fills in the empty ones, because the
      * bands are a promise of the view and "nothing is this old" is an answer worth printing.
      */
     @Query(value = """
@@ -81,7 +85,8 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
                     WHEN :asOf - i.due_date <= 90 THEN 'D61_90'
                     ELSE 'OVER_90' END AS bucket,
                COUNT(*) AS cases,
-               SUM(i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0)) AS outstanding
+               SUM(i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0)) AS outstanding,
+               i.policy_number AS policy_number
           FROM billing.premium_invoice i
           LEFT JOIN (SELECT original_invoice_id, SUM(amount) AS credited
                        FROM billing.premium_credit WHERE tenant_id = :tenantId GROUP BY original_invoice_id) c
@@ -92,7 +97,7 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
            AND (i.due_date <= :asOf
                 OR EXISTS (SELECT 1 FROM billing.arrears_case a
                             WHERE a.tenant_id = i.tenant_id AND a.invoice_id = i.invoice_id AND a.resolved_at IS NULL))
-         GROUP BY i.currency, bucket
+         GROUP BY i.currency, bucket, i.policy_number
          ORDER BY i.currency, bucket
         """, nativeQuery = true)
     List<Object[]> receivablesAging(@Param("tenantId") UUID tenantId, @Param("asOf") java.time.LocalDate asOf);
