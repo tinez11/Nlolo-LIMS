@@ -172,7 +172,9 @@ class DashboardContractTest {
             "2026-10",
             List.of(new FinanceDashboardView.ReceivablesAging("TZS", List.of(
                 new FinanceDashboardView.ReceivablesAging.Bucket("NOT_DUE", 1, new Money("100000.00", "TZS")),
-                new FinanceDashboardView.ReceivablesAging.Bucket("D1_30", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D1_7", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D8_14", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D15_30", 0, new Money("0.00", "TZS")),
                 new FinanceDashboardView.ReceivablesAging.Bucket("D31_60", 0, new Money("0.00", "TZS")),
                 new FinanceDashboardView.ReceivablesAging.Bucket("D61_90", 0, new Money("0.00", "TZS")),
                 new FinanceDashboardView.ReceivablesAging.Bucket("OVER_90", 2, new Money("400000.00", "TZS"))))),

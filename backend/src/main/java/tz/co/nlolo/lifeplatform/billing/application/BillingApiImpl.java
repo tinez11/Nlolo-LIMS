@@ -152,24 +152,43 @@ public class BillingApiImpl implements BillingApi {
 
     @Override
     public List<ReceivablesAging> receivablesAging(java.time.LocalDate asOf) {
-        // The query returns only the bands that have rows; the view promises all five, in order,
+        // The query returns only the bands that have rows; the view promises every band, in order,
         // because an empty band means "nothing is this overdue" rather than "no data".
-        Map<String, Map<String, Object[]>> byCurrency = new java.util.LinkedHashMap<>();
+        // Rows come per policy, so an offer (PROPOSED: its first premium is not owed) is left out -- the follow-up
+        // list's own rule, so the dashboard and the list agree (2026-11-11). One policy read per policy, not per row.
+        Map<String, Boolean> offer = new HashMap<>();
+        Map<String, Map<String, long[]>> counts = new java.util.LinkedHashMap<>();
+        Map<String, Map<String, BigDecimal>> sums = new java.util.LinkedHashMap<>();
         for (Object[] row : arrearsCaseRepository.receivablesAging(TenantContext.get(), asOf)) {
-            byCurrency.computeIfAbsent((String) row[0], c -> new java.util.HashMap<>())
-                .put((String) row[1], row);
+            String policy = (String) row[4];
+            if (offer.computeIfAbsent(policy, this::isOffer)) continue;
+            String currency = ((String) row[0]).trim();
+            counts.computeIfAbsent(currency, c -> new HashMap<>())
+                .computeIfAbsent((String) row[1], b -> new long[1])[0] += ((Number) row[2]).longValue();
+            sums.computeIfAbsent(currency, c -> new HashMap<>()).merge((String) row[1], (BigDecimal) row[3], BigDecimal::add);
         }
-        return byCurrency.entrySet().stream()
+        return counts.entrySet().stream()
             .map(entry -> new ReceivablesAging(entry.getKey(), ReceivablesAging.BUCKETS.stream()
                 .map(name -> {
-                    Object[] row = entry.getValue().get(name);
-                    return row == null
+                    long[] n = entry.getValue().get(name);
+                    return n == null
                         ? new ReceivablesAging.Bucket(name, 0L, BigDecimal.ZERO.setScale(2))
-                        : new ReceivablesAging.Bucket(name, ((Number) row[2]).longValue(),
-                            ((BigDecimal) row[3]).setScale(2));
+                        : new ReceivablesAging.Bucket(name, n[0], sums.get(entry.getKey()).get(name).setScale(2));
                 })
                 .toList()))
             .toList();
+    }
+
+    /**
+     * Whether a policy is still an offer (PROPOSED). A policy that cannot be read is NOT treated as an offer: its money
+     * stays in the figure rather than silently leaving it.
+     */
+    private boolean isOffer(String policyNumber) {
+        try {
+            return policyApi.getPolicy(policyNumber).status() == tz.co.nlolo.lifeplatform.policy.api.PolicyStatus.PROPOSED;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**

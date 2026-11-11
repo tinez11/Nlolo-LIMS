@@ -24,14 +24,16 @@ import { lastDayOf, reportLink } from './reportLinks';
 import { donutParts, monthCategories, moneyPoints, trendOf, versus } from './series';
 import { StatRow, type Stat } from './StatTile';
 
+// The PRD's six lateness bands (2026-11-11), the follow-up list's own, after "not yet overdue" (due today).
 const BANDS = [
-  { name: 'NOT_DUE', label: 'Not yet due' },
-  { name: 'D1_30', label: '1 to 30 days' },
+  { name: 'NOT_DUE', label: 'Not yet overdue' },
+  { name: 'D1_7', label: '1 to 7 days' },
+  { name: 'D8_14', label: '8 to 14 days' },
+  { name: 'D15_30', label: '15 to 30 days' },
   { name: 'D31_60', label: '31 to 60 days' },
   { name: 'D61_90', label: '61 to 90 days' },
   { name: 'OVER_90', label: 'Over 90 days' },
 ] as const;
-const COLORS = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'] as const;
 
 const SPANS = [
   { key: 'month', label: 'This month' },
@@ -177,8 +179,9 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
       color: 'chart-3',
       value: v.outstanding ? formatMoneyCompact(v.outstanding) : null,
       full: formatMoney(v.outstanding),
-      hint: 'every unpaid invoice, as at today',
-      to: '/staff/arrears',
+      hint: 'every unpaid premium due by today',
+      // The list that holds exactly these (2026-11-11): Arrears holds only those with a case, so it listed fewer.
+      to: '/staff/follow-up',
     },
     {
       label: 'New policies',
@@ -275,8 +278,8 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
         <div className="xl:col-span-6">
           <Panel
             title="Who owes, and for how long"
-            subtitle="Unpaid invoices as at today, by how overdue"
-            actions={<Link to="/staff/arrears" className="text-xs text-muted-foreground hover:text-foreground hover:underline">Open arrears</Link>}
+            subtitle="Unpaid premiums due by today, by how overdue"
+            actions={<Link to="/staff/follow-up" className="text-xs text-muted-foreground hover:text-foreground hover:underline">Open the list</Link>}
           >
             <div className="px-4 pb-4">
               {working ? (
@@ -290,7 +293,8 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
                       note: `${countValue(b?.cases ?? 0)} invoices`,
                       value: b?.outstanding ? Number(b.outstanding.amount) : 0,
                       display: b?.outstanding ? formatMoneyCompact(b.outstanding) : 'TZS 0',
-                      color: COLORS[i]!,
+                      // One measure in order, so not a series per band: owed-not-late one colour, every late band another.
+                      color: i === 0 ? 'chart-1' : 'chart-3',
                     };
                   })}
                 />

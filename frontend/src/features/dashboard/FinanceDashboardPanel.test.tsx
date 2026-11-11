@@ -115,6 +115,9 @@ describe('FinanceDashboardPanel', () => {
     expect(within(bands).getByText('Over 90 days')).toBeInTheDocument();
     expect(within(bands).getByText('TZS 400K')).toBeInTheDocument();
     expect(within(bands).getByText('31 to 60 days')).toBeInTheDocument();
+    // The follow-up list's six bands (2026-11-11), and the card opens that list rather than Arrears.
+    expect(within(bands).getByText('8 to 14 days')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Owed today/ })).toHaveAttribute('href', '/staff/follow-up');
   });
 
   /** Only what the viewer can act on (2026-10-27): their own signatures, not every journal waiting for anyone. */

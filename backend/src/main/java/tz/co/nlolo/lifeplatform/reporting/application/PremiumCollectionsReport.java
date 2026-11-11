@@ -49,8 +49,9 @@ public class PremiumCollectionsReport implements Report {
         "TANQR", "TANQR", "CASH", "Cash", "BANK_DEPOSIT", "Bank deposit", "CHEQUE", "Cheque", "AGENT_CASH",
         "Cash paid to an agent", "FIELD_CASH", "Cash (older records)");
 
-    static final Map<String, String> BANDS = Map.of("NOT_DUE", "Not yet due", "D1_30", "1 to 30 days overdue",
-        "D31_60", "31 to 60 days overdue", "D61_90", "61 to 90 days overdue", "OVER_90", "More than 90 days overdue");
+    static final Map<String, String> BANDS = Map.of("NOT_DUE", "Not yet overdue", "D1_7", "1 to 7 days overdue",
+        "D8_14", "8 to 14 days overdue", "D15_30", "15 to 30 days overdue", "D31_60", "31 to 60 days overdue",
+        "D61_90", "61 to 90 days overdue", "OVER_90", "More than 90 days overdue");
 
     private final ReportQueries queries;
     private final BillingApi billing;

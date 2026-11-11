@@ -57,30 +57,47 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
                               Pageable pageable);
 
     /**
-     * Unresolved receivables bucketed by age, per currency (2026-10-15). Native: the join to
-     * {@code premium_invoice} is on {@code invoice_id} alone, across a table partitioned by
-     * {@code due_date}, and the bucketing is a CASE over date arithmetic.
+     * What is owed, bucketed by age, per currency (2026-10-15; every unpaid premium since 2026-11-11).
      *
-     * <p>Outstanding is {@code amount - amount_paid}: a part-paid invoice owes the remainder.
-     * A resolved case is excluded -- it has been paid or waived and owes nothing.
+     * <p>Every premium still open -- due, in grace, overdue or part paid -- that fell due on or before {@code asOf}, and
+     * any other with an open arrears case. Until 2026-11-11 it counted ONLY invoices with an open arrears case, so a
+     * premium past due that the dunning sweep had not yet opened a case on was owed and nowhere in the figure: on dev the
+     * finance dashboard read TZS 1.9K owed beside TZS 664K overdue on the follow-up list. A premium not yet due is not
+     * owed today, and the twelve months billing creates ahead stay out.
      *
-     * <p>Only buckets with rows come back. The caller fills in the empty ones, because the five
+     * <p>Outstanding is charged, less paid, less credited back -- PremiumInvoice.balanceDue -- and a premium that owes
+     * nothing is left out. Native: the bucketing is a CASE over date arithmetic.
+     *
+     * <p>One row per currency, band and POLICY: [currency, bucket, cases, outstanding, policy_number]. Per policy so the
+     * caller can leave out an offer -- a policy still PROPOSED, whose first premium is the offer's, not owed -- which
+     * billing cannot tell from its own tables (2026-11-11: 14 offers' premiums were TZS 3.29M of the figure on dev).
+     *
+     * <p>Only buckets with rows come back. The caller fills in the empty ones, because the
      * bands are a promise of the view and "nothing is this old" is an answer worth printing.
      */
     @Query(value = """
         SELECT i.currency AS currency,
                CASE WHEN i.due_date >= :asOf THEN 'NOT_DUE'
-                    WHEN :asOf - i.due_date <= 30 THEN 'D1_30'
+                    WHEN :asOf - i.due_date <= 7 THEN 'D1_7'
+                    WHEN :asOf - i.due_date <= 14 THEN 'D8_14'
+                    WHEN :asOf - i.due_date <= 30 THEN 'D15_30'
                     WHEN :asOf - i.due_date <= 60 THEN 'D31_60'
                     WHEN :asOf - i.due_date <= 90 THEN 'D61_90'
                     ELSE 'OVER_90' END AS bucket,
                COUNT(*) AS cases,
-               SUM(i.amount - COALESCE(i.amount_paid, 0)) AS outstanding
-          FROM billing.arrears_case a
-          JOIN billing.premium_invoice i ON i.invoice_id = a.invoice_id AND i.tenant_id = a.tenant_id
-         WHERE a.tenant_id = :tenantId
-           AND a.resolved_at IS NULL
-         GROUP BY i.currency, bucket
+               SUM(i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0)) AS outstanding,
+               i.policy_number AS policy_number
+          FROM billing.premium_invoice i
+          LEFT JOIN (SELECT original_invoice_id, SUM(amount) AS credited
+                       FROM billing.premium_credit WHERE tenant_id = :tenantId GROUP BY original_invoice_id) c
+            ON c.original_invoice_id = i.invoice_id
+         WHERE i.tenant_id = :tenantId
+           AND i.status IN ('DUE', 'IN_GRACE', 'OVERDUE', 'PARTIALLY_PAID')
+           AND i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0) > 0
+           AND (i.due_date <= :asOf
+                OR EXISTS (SELECT 1 FROM billing.arrears_case a
+                            WHERE a.tenant_id = i.tenant_id AND a.invoice_id = i.invoice_id AND a.resolved_at IS NULL))
+         GROUP BY i.currency, bucket, i.policy_number
          ORDER BY i.currency, bucket
         """, nativeQuery = true)
     List<Object[]> receivablesAging(@Param("tenantId") UUID tenantId, @Param("asOf") java.time.LocalDate asOf);

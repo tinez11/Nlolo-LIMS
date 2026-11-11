@@ -1745,12 +1745,18 @@ class BillingApiIntegrationTest {
         return arrearsCaseId;
     }
 
+    /** A case resolves because its invoice was paid (or waived) -- so the invoice is marked paid too, as it would be. */
     private void resolveArrears(UUID arrearsCaseId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement update = connection.prepareStatement(
-                 "UPDATE billing.arrears_case SET resolved_at = now() WHERE arrears_case_id = ?")) {
+                 "UPDATE billing.arrears_case SET resolved_at = now() WHERE arrears_case_id = ?");
+             PreparedStatement paid = connection.prepareStatement(
+                 "UPDATE billing.premium_invoice SET status = 'PAID', amount_paid = amount WHERE invoice_id = "
+                     + "(SELECT invoice_id FROM billing.arrears_case WHERE arrears_case_id = ?)")) {
             update.setObject(1, arrearsCaseId);
             assertThat(update.executeUpdate()).isEqualTo(1);
+            paid.setObject(1, arrearsCaseId);
+            assertThat(paid.executeUpdate()).isEqualTo(1);
         } catch (Exception e) {
             throw new AssertionError("could not resolve an arrears case", e);
         }
@@ -1779,9 +1785,68 @@ class BillingApiIntegrationTest {
             assertThat(tzs.currency()).isEqualTo("TZS");
             assertThat(tzs.buckets())
                 .extracting(b -> b.name() + " " + b.cases() + " " + b.outstanding().toPlainString())
-                .containsExactly("NOT_DUE 1 100000.00", "D1_30 1 200000.00", "D31_60 1 250000.00",
-                    "D61_90 0 0.00", "OVER_90 1 400000.00");
+                .containsExactly("NOT_DUE 1 100000.00", "D1_7 0 0.00", "D8_14 1 200000.00", "D15_30 0 0.00",
+                    "D31_60 1 250000.00", "D61_90 0 0.00", "OVER_90 1 400000.00");
         });
+    }
+
+    /**
+     * Owed is every unpaid premium due by the day, not only those with an arrears case (2026-11-11): on dev the finance
+     * dashboard read TZS 1.9K owed beside TZS 664K overdue on the follow-up list. A premium not yet due, with no case,
+     * is not owed today; one already paid owes nothing.
+     */
+    @Test
+    void owedCountsEveryUnpaidPremiumDueByTheDayWithOrWithoutAnArrearsCase() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate asOf = LocalDate.of(2026, 10, 15);
+        seedInvoice(tenantId, "POL-OWED-A", "70000.00", asOf.minusDays(3), "OVERDUE", "0.00");    // no case, 1-7
+        seedInvoice(tenantId, "POL-OWED-B", "50000.00", asOf, "DUE", "0.00");                     // due today
+        seedInvoice(tenantId, "POL-OWED-C", "90000.00", asOf.plusDays(20), "DUE", "0.00");        // not yet due: out
+        seedInvoice(tenantId, "POL-OWED-D", "80000.00", asOf.minusDays(40), "PAID", "80000.00");  // paid: out
+
+        assertThat(billingApi.receivablesAging(asOf)).singleElement().satisfies(tzs ->
+            assertThat(tzs.buckets())
+                .extracting(b -> b.name() + " " + b.cases() + " " + b.outstanding().toPlainString())
+                .containsExactly("NOT_DUE 1 50000.00", "D1_7 1 70000.00", "D8_14 0 0.00", "D15_30 0 0.00",
+                    "D31_60 0 0.00", "D61_90 0 0.00", "OVER_90 0 0.00"));
+    }
+
+    /** An offer's first premium is the offer's, not owed: on dev 14 offers made TZS 3.29M of "owed" (2026-11-11). */
+    @Test
+    void anOffersFirstPremiumIsNotOwed() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "AGING-OFFER-01");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", new BigDecimal("15000.00"), "TZS", "MONTHLY",
+            null, List.of(), "An offer, not on cover");
+        String offer = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        assertThat(policyApi.getPolicy(offer).status()).isEqualTo(PolicyStatus.PROPOSED);
+        LocalDate due = billingApi.listInvoices(offer, null).get(0).dueDate();
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.receivablesAging(due.plusDays(3))).isEmpty();
+    }
+
+    private void seedInvoice(UUID tenantId, String policyNumber, String amount, LocalDate dueDate, String status,
+                             String amountPaid) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.premium_invoice (invoice_id, tenant_id, billing_schedule_id, policy_number, "
+                     + "due_date, amount, currency, status, amount_paid) VALUES (?, ?, ?, ?, ?, ?, 'TZS', ?, ?)")) {
+            insert.setObject(1, UUID.randomUUID());
+            insert.setObject(2, tenantId);
+            insert.setObject(3, UUID.randomUUID());
+            insert.setString(4, policyNumber);
+            insert.setObject(5, dueDate);
+            insert.setBigDecimal(6, new BigDecimal(amount));
+            insert.setString(7, status);
+            insert.setBigDecimal(8, new BigDecimal(amountPaid));
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (Exception e) {
+            throw new AssertionError("could not seed an invoice", e);
+        }
     }
 
     /** A resolved case is not a receivable: it has been paid or waived and owes nothing. */
