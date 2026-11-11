@@ -154,7 +154,7 @@ class BillingContractTest {
             "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
-            "db-migrations/billing/V19__agent_cash.sql",
+            "db-migrations/billing/V19__agent_cash.sql", "db-migrations/billing/V20__collection_action.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert
             // issuePolicy's billing.PolicyEventListener -> generateInvoicesAhead chain triggers
             // for this class's own fixtures would otherwise fail against a table missing this
