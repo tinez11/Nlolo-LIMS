@@ -138,7 +138,10 @@ export function AgentDashboardPanel({ range }: PanelProps) {
                   <span className="font-medium">
                     {formatMoney({ amount: r.owed.toFixed(2), currencyCode: r.currency })}
                   </span>
-                  <span className="rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-fg">
+                  {/* The list's own rule: past 30 days is danger, otherwise warning. */}
+                  <span className={r.daysLate > 30
+                    ? 'rounded-full bg-status-danger-bg px-2 py-0.5 text-xs font-medium text-status-danger-fg'
+                    : 'rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-fg'}>
                     {r.daysLate === 1 ? '1 day late' : `${r.daysLate} days late`}
                   </span>
                 </span>
