@@ -180,11 +180,16 @@ class DashboardContractTest {
             new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("482000000.00", "TZS"), new Money("431000000.00", "TZS"), "11.8",
             List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("50204310.00", "TZS"))), List.of(),
             List.of(new Share("TERM_LIFE", new Money("300000000.00", "TZS"), null, "62.2")),
-            410L, 376L, "9.0", List.of(new CountPoint("2026-09", 41)), new Money("500000.00", "TZS")));
+            410L, 376L, "9.0", List.of(new CountPoint("2026-09", 41)), new Money("500000.00", "TZS"),
+            new tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures(java.time.LocalDate.parse("2026-01-01"),
+                java.time.LocalDate.parse("2026-10-15"), new java.math.BigDecimal("520000000.00"),
+                new java.math.BigDecimal("482000000.00"), "92.7", 3, new java.math.BigDecimal("60000.00"), 12,
+                new java.math.BigDecimal("400000.00"), "TZS")));
 
         mockMvc.perform(get("/dashboards/finance").with(staff("FINANCE_OFFICER")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.premiumsCollected.amount").value("50204310.00"))
+            .andExpect(jsonPath("$.collections.ratePercent").value("92.7"))
             .andExpect(jsonPath("$.arrearsAtLapse").isEmpty())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }

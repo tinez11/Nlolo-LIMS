@@ -402,7 +402,7 @@ components:
                  transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth,
                  receivables, recentActivity, period, collected, collectedBefore, collectedChangePercent,
                  collectedSeries, collectedCompareSeries, collectedByProductLine, newPolicies, newPoliciesBefore,
-                 newPoliciesChangePercent, newPoliciesSeries, outstanding]
+                 newPoliciesChangePercent, newPoliciesSeries, outstanding, collections]
       properties:
         premiumsMonth: { $ref: '#/components/schemas/Month' }
         premiumsCollected: { $ref: '#/components/schemas/Money' }
@@ -439,6 +439,29 @@ components:
         newPoliciesChangePercent: { $ref: '#/components/schemas/Percent' }
         newPoliciesSeries: { type: array, items: { $ref: '#/components/schemas/CountPoint' } }
         outstanding: { $ref: '#/components/schemas/Money' }
+        collections:
+          description: >-
+            The period's collection figures, shown first (2026-11-11): of the premiums due from the period's first
+            day to its last (never past today), how much is paid and the rate; due today and overdue as of today.
+            Null when they could not be read.
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/CollectionFigures'
+    CollectionFigures:
+      type: object
+      additionalProperties: false
+      required: [from, to, due, paid, ratePercent, dueTodayCount, dueTodayOwed, overdueCount, overdueOwed, currency]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        due: { type: number }
+        paid: { type: number }
+        ratePercent: { type: [string, 'null'], description: "paid ÷ due, one decimal; null when nothing fell due" }
+        dueTodayCount: { type: integer }
+        dueTodayOwed: { type: number }
+        overdueCount: { type: integer }
+        overdueOwed: { type: number }
+        currency: { type: string }
     AgentDashboardView:
       type: object
       additionalProperties: false

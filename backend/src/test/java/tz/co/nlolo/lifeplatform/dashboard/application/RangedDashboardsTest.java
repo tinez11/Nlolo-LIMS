@@ -126,10 +126,17 @@ class RangedDashboardsTest {
         when(billing.receivablesAging(TODAY)).thenReturn(List.of(new ReceivablesAging("TZS", List.of(
             new ReceivablesAging.Bucket("NOT_DUE", 1, new BigDecimal("10.00")),
             new ReceivablesAging.Bucket("OVER_90", 1, new BigDecimal("5.50"))))));
+        // Collections first (2026-11-11): the period's figures, its first day to its last, never past today.
+        tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures figures = new tz.co.nlolo.lifeplatform.reporting.api
+            .CollectionFigures(ym(2026, 7).atDay(1), ym(2026, 9).atEndOfMonth(), new BigDecimal("200.00"),
+            new BigDecimal("150.00"), "75.0", 1, new BigDecimal("10.00"), 2, new BigDecimal("20.00"), "TZS");
+        when(reporting.collectionFigures(ym(2026, 7).atDay(1),
+            ym(2026, 9).atEndOfMonth().isAfter(TODAY) ? TODAY : ym(2026, 9).atEndOfMonth(), TODAY)).thenReturn(figures);
         FinanceDashboard finance = new FinanceDashboard(reporting, mock(ManualJournalApi.class), billing,
             mock(PaymentApi.class), mock(RecentActivity.class));
 
         FinanceDashboardView view = finance.build(Q3, TODAY);
+        assertThat(view.collections()).isEqualTo(figures);
 
         assertThat(view.period().from()).isEqualTo("2026-07");
         assertThat(view.collected().amount()).isEqualTo("150.00");

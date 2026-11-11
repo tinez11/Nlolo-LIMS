@@ -23,6 +23,9 @@ import java.util.List;
  * @param collectedByProductLine the period's collections per product category, largest first, with each one's share
  * @param newPolicies policies issued in the period
  * @param outstanding everything owed as at today in TZS, every aging band together
+ * @param collections the period's collection figures, shown first (2026-11-11, the user: "collections for finance
+ *     should be somewhere topwise"): premiums due in the period, paid, the rate; due today and overdue as of today.
+ *     Null when unreadable
  */
 public record FinanceDashboardView(
     String premiumsMonth, Money premiumsCollected, String premiumsChangePercent,
@@ -35,7 +38,8 @@ public record FinanceDashboardView(
     Period period, Money collected, Money collectedBefore, String collectedChangePercent,
     List<MonthPoint> collectedSeries, List<MonthPoint> collectedCompareSeries, List<Share> collectedByProductLine,
     Long newPolicies, Long newPoliciesBefore, String newPoliciesChangePercent, List<CountPoint> newPoliciesSeries,
-    Money outstanding) {
+    Money outstanding,
+    tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures collections) {
 
     public record MonthPoint(String month, Money amount) {}
 
