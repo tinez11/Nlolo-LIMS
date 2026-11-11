@@ -40,10 +40,13 @@ public class ReceiptEventListener {
     private static final Logger log = LoggerFactory.getLogger(ReceiptEventListener.class);
 
     private final NotificationApi notificationApi;
+    private final tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
-    public ReceiptEventListener(NotificationApi notificationApi, PlatformTransactionManager transactionManager) {
+    public ReceiptEventListener(NotificationApi notificationApi, tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi,
+                                PlatformTransactionManager transactionManager) {
         this.notificationApi = notificationApi;
+        this.partyApi = partyApi;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -58,8 +61,11 @@ public class ReceiptEventListener {
                 "policyNumber", policyNumber, "amount", money(payload.get("amount")),
                 "receiptNumber", (String) payload.get("receiptNumber")));
             // Cash handed to an agent, acknowledged as the agent records it; its receipt follows once it reaches us.
+            // Named (2026-11-11, the user): "Your agent Juma Senior has collected ..." -- cash handed to someone else is
+            // caught by the customer at once.
             case "billing.FieldReceiptCaptured" -> tell(envelope, payload, "AGENT_CASH_RECEIVED", Map.of(
-                "policyNumber", policyNumber, "amount", money(payload.get("amount"))));
+                "policyNumber", policyNumber, "amount", money(payload.get("amount")),
+                "agentName", agentName(envelope, payload.get("agentPartyId"))));
             default -> { /* not a receipt */ }
         }
     }
@@ -80,6 +86,28 @@ public class ReceiptEventListener {
             // The money is recorded either way -- its module has committed, and rolling that back to save a message
             // would be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
             log.error("Failed to send {} on policy {}", templateKey, payload.get("policyNumber"), e);
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /** The agent's name, read under the event's tenant; blank when it cannot be read -- the message still goes. */
+    private String agentName(DomainEventEnvelope<?> envelope, Object agentPartyId) {
+        if (agentPartyId == null) return "";
+        UUID partyId = agentPartyId instanceof UUID u ? u : UUID.fromString(agentPartyId.toString());
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(envelope.tenantId());
+        try {
+            return requiresNewTransactionTemplate.execute(status ->
+                partyApi.displayNames(java.util.List.of(partyId)).getOrDefault(partyId, ""));
+        } catch (RuntimeException e) {
+            log.warn("Agent cash on {}: the agent's name could not be read; the message leaves it out",
+                envelope.payload(), e);
+            return "";
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

@@ -2,35 +2,17 @@ package tz.co.nlolo.lifeplatform.billing.infrastructure;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import tz.co.nlolo.lifeplatform.approvals.api.ApprovalSource;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
-import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView;
 import tz.co.nlolo.lifeplatform.billing.application.BalanceWithdrawals;
 import tz.co.nlolo.lifeplatform.billing.domain.BalanceWithdrawal;
 
-import java.util.ArrayList;
-import java.util.List;
-
-/** Cash an agent collected and nobody has matched yet, overdue first (2026-10-27). */
+/** Billing's approval sources: withdrawals, lender refunds, deposit reversals. */
 @Configuration
 class BillingApprovalSources {
 
-    @Bean
-    ApprovalSource fieldReceiptsToMatch(BillingApi billing) {
-        return ApprovalSource.of("field-receipt", "Agent cash to match", "Match", "collections.manage", false,
-            limit -> {
-                PageRequest page = PageRequest.of(0, Math.max(1, limit));
-                Page<FieldReceiptView> overdue = billing.searchFieldReceipts("RECONCILIATION_OVERDUE", page);
-                Page<FieldReceiptView> pending = billing.searchFieldReceipts("PENDING_RECONCILIATION", page);
-                List<ApprovalSource.Item> rows = new ArrayList<>();
-                overdue.forEach(r -> rows.add(item(r, "Past its matching deadline: no deposit matches it yet")));
-                pending.forEach(r -> rows.add(item(r, null)));
-                return new ApprovalSource.Pending(overdue.getTotalElements() + pending.getTotalElements(),
-                    rows.stream().limit(limit).toList());
-            });
-    }
+    // Agent cash to record as received lives in payment's approval sources since 2026-11-11: it must leave out cash whose
+    // receipt is already waiting for its second person, which only payment knows.
 
     /** Money asked back off a policy's balance, waiting for its second person (money movement step 3a). */
     @Bean
@@ -84,9 +66,4 @@ class BillingApprovalSources {
         return reason == null || reason.isBlank() ? null : "Reason given: “" + reason.trim() + "”";
     }
 
-    /** Short on the row (2026-11-09, the user: "many info there"); the deadline, when passed, is the drawer's second line. */
-    private static ApprovalSource.Item item(FieldReceiptView r, String detail) {
-        return new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(), "Agent cash", r.amount(), r.currency(), null,
-            r.capturedAtServer(), detail);
-    }
 }

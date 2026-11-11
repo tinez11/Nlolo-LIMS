@@ -32,6 +32,37 @@ class PaymentApprovalSources {
                 .toList(), limit));
     }
 
+    /**
+     * Cash an agent collected that nobody has recorded as received yet, overdue first (2026-10-27; here, not in billing,
+     * since 2026-11-11). Cash with a receipt already waiting for its second person is left out: it is in Deposits to
+     * confirm, and listing it here too asked finance to record the same money twice.
+     */
+    @Bean
+    ApprovalSource agentCashToRecord(tz.co.nlolo.lifeplatform.billing.api.BillingApi billing, Receipts receipts) {
+        return ApprovalSource.of("field-receipt", "Agent cash to record as received", "Record as received",
+            "collections.manage", false, limit -> {
+                java.util.Set<java.util.UUID> waiting = receipts.agentCashWaiting().keySet();
+                // Every open one, not a page: the ones already recorded must come out of the count, not just the rows.
+                org.springframework.data.domain.PageRequest all = org.springframework.data.domain.PageRequest.of(0, 1000);
+                java.util.List<ApprovalSource.Item> rows = new java.util.ArrayList<>();
+                billing.searchFieldReceipts("RECONCILIATION_OVERDUE", all).forEach(r -> {
+                    if (!waiting.contains(r.receiptId())) rows.add(agentCashItem(r, "Still with the agent past its deadline"));
+                });
+                billing.searchFieldReceipts("PENDING_RECONCILIATION", all).forEach(r -> {
+                    if (!waiting.contains(r.receiptId())) rows.add(agentCashItem(r, null));
+                });
+                return ApprovalSource.Pending.of(rows, limit);
+            });
+    }
+
+    /** Short on the row; the agent's slip reference, when given, is what finance matches against the bank statement. */
+    private static ApprovalSource.Item agentCashItem(tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView r, String detail) {
+        String banked = r.bankedReference() == null ? null : "Agent says banked under " + r.bankedReference();
+        String line = detail == null ? banked : banked == null ? detail : detail + " · " + banked;
+        return new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(), "Agent cash", r.amount(), r.currency(),
+            null, r.capturedAtServer(), line);
+    }
+
     /** "Mobile money", not "mobile money", at the head of a row (2026-11-09). */
     static String capital(String words) {
         return words == null || words.isEmpty() ? "" : Character.toUpperCase(words.charAt(0)) + words.substring(1);

@@ -75,6 +75,19 @@ public interface BillingApi {
      */
     FieldReceiptView reconcileFieldReceipt(UUID receiptId, String reconciledBy);
 
+    /**
+     * The cash this agent has collected and the company has not yet received, oldest first (2026-11-10): what the
+     * agent is answerable for. Matched collections drop off.
+     */
+    java.util.List<FieldReceiptView> agentCash(UUID agentId);
+
+    /**
+     * The agent says they paid these collections in, under one bank slip or mobile-money reference (2026-11-10). Their
+     * word, for finance to match against -- each stays open until finance records the money and a second person
+     * confirms it. Only the agent's own collections; one already matched is refused.
+     */
+    java.util.List<FieldReceiptView> markAgentCashBanked(UUID agentId, java.util.List<UUID> receiptIds, String reference);
+
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
 
@@ -204,4 +217,29 @@ public interface BillingApi {
     record FieldReceiptResult(UUID receiptId, String status) {}
     FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                             String clientIdempotencyKey, Instant capturedAtClient);
+
+    /**
+     * Cash an agent collected (2026-11-11): on an insurance policy it pays the customer's premium at once -- a deposit
+     * onto the balance posted to 1320 Due from agents -- and the customer is told by name who took it.
+     *
+     * @param agentPartyId the agent's own party, for the customer's SMS ("Your agent Juma Senior has collected ...");
+     *                     null only leaves the name out
+     */
+    FieldReceiptResult captureFieldReceipt(UUID agentId, UUID agentPartyId, String policyNumber, BigDecimal amount,
+                                            String currency, String clientIdempotencyKey, Instant capturedAtClient);
+
+    /**
+     * Whether this agent's cash already paid onto the policy's balance when it was recorded, and has not been undone:
+     * then the money arriving moves it from 1320 to the bank, and pays nothing a second time (2026-11-11).
+     */
+    boolean agentCashOnBalance(UUID fieldReceiptId);
+
+    /** One agent's cash by its id, in the caller's tenant. */
+    java.util.Optional<FieldReceiptView> fieldReceipt(UUID fieldReceiptId);
+
+    /** What one agent still holds, in one currency: how many collections, how much, and since when (2026-11-11). */
+    record AgentCashTotal(UUID agentId, long collections, BigDecimal total, String currency, Instant oldestCapturedAt) {}
+
+    /** Every agent still holding cash, longest-held first (findings 14: "Juma Senior holds TZS 545,000, oldest 10 days"). */
+    java.util.List<AgentCashTotal> agentCashTotals();
 }

@@ -77,6 +77,31 @@ class ForwardPricingIntegrationTest {
         return asTenant(s.tenant(), () -> api.units(s.policyNumber()));
     }
 
+    /**
+     * Agent cash (2026-11-11, the user): the premium is paid when the agent records it, but units are bought only on the
+     * money reaching the company -- bound to the banking day's price, never the recording day's.
+     */
+    @Test
+    void agentCashBuysNoUnitsUntilItIsBankedAndThenBindsToTheBankingDay() {
+        Sold s = sold();
+        UUID invoice = UUID.randomUUID();
+        fixtures.collectByAgentAt(s.tenant(), s.policyNumber(), "100000.00", eat(D.minusDays(3), 9, 0), invoice);
+
+        PolicyUnitsView held = units(s);
+        assertThat(held.pending()).isEmpty();
+        assertThat(held.entries()).isEmpty();
+
+        // Banked on D-1 after the cut-off: bound to D, as any money arriving then would be.
+        fixtures.agentCashBankedAt(s.tenant(), s.policyNumber(), "100000.00", eat(D.minusDays(1), 15, 0), invoice);
+        PolicyUnitsView bought = units(s);
+        assertThat(bought.pending()).hasSize(2).allSatisfy(o -> assertThat(o.boundDate()).isEqualTo(D));
+        assertThat(bought.entries()).extracting(PolicyUnitsView.Entry::type).containsExactly("ALLOCATION_CHARGE");
+
+        // A redelivered banking buys nothing twice.
+        fixtures.agentCashBankedAt(s.tenant(), s.policyNumber(), "100000.00", eat(D.minusDays(1), 15, 0), invoice);
+        assertThat(units(s).pending()).hasSize(2);
+    }
+
     @Test
     void aPremiumAfterTheCutOffWaitsForTheNextDaysPriceAndNeverUsesTheOneAlreadyKnown() {
         Sold s = sold();

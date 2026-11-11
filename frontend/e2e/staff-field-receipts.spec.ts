@@ -29,12 +29,12 @@ test.describe('staff field receipts queue', () => {
     // Every other queue on this console opens on everything. This one opens on the SLA breach,
     // because that is what the alert pages somebody about -- and the count says so rather than
     // leaving the default filter to be discovered.
-    await expect(page.getByText(/agent cash past its deadline · past the reconciliation SLA/)).toBeVisible({
+    await expect(page.getByText(/collections still with the agent past their deadline · oldest first/)).toBeVisible({
       timeout: 20_000,
     });
 
     const table = page.getByRole('table', { name: 'Agent cash' });
-    const empty = page.getByText('Nothing is overdue for reconciliation');
+    const empty = page.getByText('No agent is holding cash past the deadline');
     await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
   });
 
@@ -44,7 +44,7 @@ test.describe('staff field receipts queue', () => {
     await expect(page.getByRole('heading', { name: 'Agent cash' })).toBeVisible({ timeout: 30_000 });
 
     // Addressed by ROLE, not by text: each filter chip carries the same StatusBadge the table
-    // cells do, so `getByText('Pending reconciliation')` matches the chip AND every matching
+    // cells do, so `getByText('With the agent')` matches the chip AND every matching
     // row. The chip is a button and a cell is not, which is the only stable way to tell the
     // control from the data it filtered.
     //
@@ -52,9 +52,9 @@ test.describe('staff field receipts queue', () => {
     // visit -- which matters here precisely because the default is NOT everything.
     await page.getByRole('button', { name: 'All', exact: true }).click();
     await expect(page).toHaveURL(/status=ALL/);
-    await expect(page.getByText(/^[\d,]+ agent cash · /)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^[\d,]+ agent collections · /)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: 'Pending reconciliation' }).click();
+    await page.getByRole('button', { name: 'With the agent', exact: true }).click();
     await expect(page).toHaveURL(/status=PENDING_RECONCILIATION/);
   });
 });

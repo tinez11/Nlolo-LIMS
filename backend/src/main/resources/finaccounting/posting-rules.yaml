@@ -32,8 +32,11 @@
 #
 # v6 (payment methods, 2026-10-28): an IFRS 9 account's money in (G-05) is debited to RECEIPT the same way -- a top-up
 # received by cash, bank deposit, cheque or TANQR reaches 1120, not the mobile-money wallets.
+#
+# v7 (agent cash, 2026-11-11): cash an agent records is a deposit debited to 1320 Due from agents (method AGENT_CASH);
+# PLAT-AGENT-CASH-BANKED moves it to the account it reached when the money comes in.
 
-version: 6
+version: 7
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
@@ -138,6 +141,18 @@ rules:
     lines:
       - {dr: "2128", amount: amount}
       - {cr: "RECEIPT", amount: amount}
+
+  # Agent cash (v7, 2026-11-11, the user: standard practice). Cash an agent records is a deposit like any other (M-01),
+  # its method AGENT_CASH, so RECEIPT is 1320 Due from agents: the customer has paid, the debt is the agent's. When the
+  # money reaches the company it moves from the agent to the account it reached; undone for not arriving in time, M-06
+  # takes it back out of 1320.
+  - id: PLAT-AGENT-CASH-BANKED
+    event: billing.AgentCashBanked
+    models: [GMM, VFA, PAA]
+    description: Agent cash received from the agent -- out of 1320 Due from agents into the account the money reached
+    lines:
+      - {dr: "RECEIPT", amount: amount}
+      - {cr: "1320", amount: amount}
 
   - id: M-07
     event: billing.PremiumPaidReversed

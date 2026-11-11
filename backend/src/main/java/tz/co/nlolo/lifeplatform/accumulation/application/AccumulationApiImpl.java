@@ -301,6 +301,13 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Transactional
     public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
                                  LocalDate receivedOn, String payerRef, String recordedBy) {
+        return recordTopUp(policyNumber, amount, method, reference, receivedOn, payerRef, recordedBy, (UUID) null);
+    }
+
+    /** {@code fieldReceiptId}: the agent's cash this deposit brings in (2026-11-11), carried to payment's receipt. */
+    @Transactional
+    public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
+                                 LocalDate receivedOn, String payerRef, String recordedBy, UUID fieldReceiptId) {
         if (method == null || !RECEIVED_METHODS.contains(method)) {
             throw new AccumulationStateException("Say how the money came in: cash, bank deposit, cheque, Lipa number or TANQR");
         }
@@ -326,7 +333,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), method, ref, receivedOn, payer, recordedBy));
         // Payment receipts it as a deposit a second person confirms (2026-11-07), and its confirmation credits the
         // account by the same road a mobile-money top-up takes; a refusal fails it.
-        events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
+        Map<String, Object> requested = new java.util.HashMap<>(Map.of(
             "topUpId", request.getTopUpId().toString(),
             "idempotencyKey", "topup:" + request.getTopUpId(),
             "policyNumber", policyNumber,
@@ -335,7 +342,10 @@ public class AccumulationApiImpl implements AccumulationApi {
             "reference", ref,
             "receivedOn", receivedOn.toString(),
             "recordedBy", recordedBy,
-            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
+            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency())));
+        // Agent cash brought in (2026-11-11): payment links its receipt to it, so confirming closes the agent's cash.
+        if (fieldReceiptId != null) requested.put("fieldReceiptId", fieldReceiptId.toString());
+        events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), requested));
         return toView(request);
     }
 
@@ -565,9 +575,16 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Override
     public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
                                  LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey) {
+        return recordTopUp(policyNumber, amount, method, reference, receivedOn, payerRef, recordedBy, idempotencyKey, null);
+    }
+
+    @Override
+    public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
+                                 LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey,
+                                 UUID fieldReceiptId) {
         return keyed.once(idempotencyKey, "TOP_UP", policyNumber, recordedBy,
-            () -> recordTopUp(policyNumber, amount, method, reference, receivedOn, payerRef, recordedBy), TopUpView::topUpId,
-            id -> toView(topUps.findById(id).orElseThrow()));
+            () -> recordTopUp(policyNumber, amount, method, reference, receivedOn, payerRef, recordedBy, fieldReceiptId),
+            TopUpView::topUpId, id -> toView(topUps.findById(id).orElseThrow()));
     }
 
     @Override
@@ -1611,6 +1628,13 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Transactional
     public void creditContribution(String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate collectedOn,
                                    String payerRef) {
+        creditContribution(policyNumber, invoiceId, amount, collectedOn, payerRef, null);
+    }
+
+    /** {@code receiptMethod}: how it was paid (2026-11-11), so the GL books it to the account it reached. */
+    @Transactional
+    public void creditContribution(String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate collectedOn,
+                                   String payerRef, String receiptMethod) {
         Optional<Account> found = accounts.findById(policyNumber);
         if (found.isEmpty()) {
             return; // a scale policy -- not ours
@@ -1629,7 +1653,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         // nothing but a log line.
         LocalDate effective = collectedOn.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : collectedOn;
         if (deposits.isDepositVersion(account.getProductVersionId())) {
-            deposits.credit(account, invoiceId, amount, effective, payerRef);
+            deposits.credit(account, invoiceId, amount, effective, payerRef, receiptMethod);
             return;
         }
         if (payerRef != null) {
@@ -1647,14 +1671,14 @@ public class AccumulationApiImpl implements AccumulationApi {
             lines.add(LedgerService.Line.of(EntryType.CONTRIBUTION, amount, effective, "Premium collected"));
             lines.addAll(chosenCharges.lines(catalogue.in(policyYear), premiumCharges(account), amount,
                 room(account, account.getBalance().add(amount)), effective));
-            ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId), lines, "system", null);
+            ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId, receiptMethod), lines, "system", null);
             return;
         }
         AccumulationChargeRow charges = productApi.resolveAccumulationPlan(account.getProductVersionId())
             .chargesFor(policyYear);
         BigDecimal charge = amount.multiply(charges.contributionAllocationPercent())
             .divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
-        ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId), List.of(
+        ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId, receiptMethod), List.of(
             LedgerService.Line.of(EntryType.CONTRIBUTION, amount, effective, "Premium collected"),
             LedgerService.Line.of(EntryType.ALLOCATION_CHARGE, charge.negate(), effective,
                 "Allocation charge " + charges.contributionAllocationPercent().stripTrailingZeros().toPlainString()

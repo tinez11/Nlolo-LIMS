@@ -26,7 +26,10 @@ public record FieldReceiptQueueResponseDto(
     Instant capturedAtClient,
     Instant capturedAtServer,
     String status,
-    Instant reconciledAt) {
+    Instant reconciledAt,
+    UUID policyholderPartyId,
+    Instant bankedAt,
+    String bankedReference) {
 
     public record MoneyDto(String amount, String currencyCode) {}
 
@@ -46,6 +49,7 @@ public record FieldReceiptQueueResponseDto(
         return new FieldReceiptQueueResponseDto(
             view.receiptId(), view.policyNumber(), view.agentId(),
             view.amount() != null ? new MoneyDto(view.amount().toPlainString(), view.currency()) : null,
-            view.capturedAtClient(), view.capturedAtServer(), view.status(), view.reconciledAt());
+            view.capturedAtClient(), view.capturedAtServer(), view.status(), view.reconciledAt(),
+            view.policyholderPartyId(), view.bankedAt(), view.bankedReference());
     }
 }

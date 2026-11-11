@@ -52,6 +52,7 @@ class BillingSweepPsqlTest {
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
@@ -198,6 +199,80 @@ class BillingSweepPsqlTest {
                     assertThat(rs.getInt(1))
                         .as("an offer nobody accepted must not reach the collections queue")
                         .isZero();
+                }
+            }
+        }
+    }
+
+    /**
+     * 2026-11-11, the user: a customer who paid an agent is not dunned while the agent holds the cash. Savings and
+     * annuity cash pays only when it reaches the company, so their invoice goes OVERDUE -- but no arrears case opens.
+     */
+    @Test
+    void noArrearsCaseIsOpenedWhileAnAgentHoldsTheCustomersCash() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID scheduleId = UUID.randomUUID();
+        UUID invoiceId = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            insertPolicy(connection, tenantId, "BILLING-SWEEP-AGENT", "ACTIVE");
+            try (PreparedStatement insertSchedule = connection.prepareStatement(
+                    "INSERT INTO billing.billing_schedule (billing_schedule_id, tenant_id, policy_number, premium_frequency, premium_amount) " +
+                    "VALUES (?, ?, 'BILLING-SWEEP-AGENT', 'MONTHLY', 15000.00)")) {
+                insertSchedule.setObject(1, scheduleId);
+                insertSchedule.setObject(2, tenantId);
+                assertThat(insertSchedule.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertInvoice = connection.prepareStatement(
+                    "INSERT INTO billing.premium_invoice (invoice_id, tenant_id, billing_schedule_id, policy_number, due_date, amount, " +
+                    "grace_period_ends_at, status) VALUES (?, ?, ?, 'BILLING-SWEEP-AGENT', ?, 15000.00, ?, 'DUE')")) {
+                insertInvoice.setObject(1, invoiceId);
+                insertInvoice.setObject(2, tenantId);
+                insertInvoice.setObject(3, scheduleId);
+                insertInvoice.setObject(4, LocalDate.now().minusDays(20));
+                insertInvoice.setObject(5, LocalDate.now().minusDays(1));
+                assertThat(insertInvoice.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertCash = connection.prepareStatement(
+                    "INSERT INTO billing.field_receipt (receipt_id, tenant_id, policy_number, agent_id, amount, " +
+                    "client_idempotency_key, captured_at_client, captured_at_server) " +
+                    "VALUES (?, ?, 'BILLING-SWEEP-AGENT', ?, 15000.00, ?, now(), now())")) {
+                UUID cash = UUID.randomUUID();
+                insertCash.setObject(1, cash);
+                insertCash.setObject(2, tenantId);
+                insertCash.setObject(3, UUID.randomUUID());
+                insertCash.setString(4, "sweep-agent-held-" + cash);
+                assertThat(insertCash.executeUpdate()).isEqualTo(1);
+            }
+
+            try (Statement sweep = connection.createStatement()) {
+                sweep.execute("SELECT billing.sweep_billing_state()");
+            }
+
+            try (PreparedStatement arrearsCheck = connection.prepareStatement(
+                    "SELECT count(*) FROM billing.arrears_case WHERE invoice_id = ?")) {
+                arrearsCheck.setObject(1, invoiceId);
+                try (ResultSet rs = arrearsCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getInt(1)).as("the customer paid the agent; no collections case").isZero();
+                }
+            }
+
+            // Once the cash expires (never received), dunning resumes on the next sweep.
+            try (PreparedStatement expire = connection.prepareStatement(
+                    "UPDATE billing.field_receipt SET status = 'EXPIRED' WHERE tenant_id = ?")) {
+                expire.setObject(1, tenantId);
+                expire.executeUpdate();
+            }
+            try (Statement sweep = connection.createStatement()) {
+                sweep.execute("SELECT billing.sweep_billing_state()");
+            }
+            try (PreparedStatement arrearsCheck = connection.prepareStatement(
+                    "SELECT count(*) FROM billing.arrears_case WHERE invoice_id = ?")) {
+                arrearsCheck.setObject(1, invoiceId);
+                try (ResultSet rs = arrearsCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getInt(1)).isEqualTo(1);
                 }
             }
         }

@@ -93,6 +93,16 @@ public class ReceiptController {
         return ResponseEntity.ok(waiting.stream().map(ReceiptResponse::from).toList());
     }
 
+    /** Agent cash already recorded as received, waiting for its second person, and the receipt that brings it in (2026-11-11). */
+    public record AgentCashWaiting(UUID fieldReceiptId, UUID receiptId) {}
+
+    @GetMapping("/receipts/agent-cash-waiting")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
+    public java.util.List<AgentCashWaiting> agentCashWaiting() {
+        return receipts.agentCashWaiting().entrySet().stream()
+            .map(e -> new AgentCashWaiting(e.getKey(), e.getValue())).toList();
+    }
+
     @GetMapping("/receipts/{receiptId}")
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
     public ResponseEntity<ReceiptResponse> get(@PathVariable UUID receiptId) {

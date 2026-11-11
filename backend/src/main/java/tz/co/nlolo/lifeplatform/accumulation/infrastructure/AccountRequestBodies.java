@@ -32,7 +32,9 @@ final class AccountRequestBodies {
                  @Size(max = 200) String payerRef,
                  @Size(max = 20) String method,
                  @Size(max = 100) String reference,
-                 java.time.LocalDate receivedOn) {}
+                 java.time.LocalDate receivedOn,
+                 /** The agent's cash this deposit brings in (2026-11-11); absent for an ordinary deposit. */
+                 java.util.UUID fieldReceiptId) {}
 
     /** Why a request is refused. */
     record Rejection(@NotBlank @Size(max = 500) String reason) {}

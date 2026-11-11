@@ -124,6 +124,14 @@ public interface AccumulationApi {
     TopUpView recordTopUp(String policyNumber, java.math.BigDecimal amount, String method, String reference,
                           java.time.LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey);
 
+    /**
+     * As above, for cash an agent collected (2026-11-11): {@code fieldReceiptId} names the agent's cash this deposit
+     * brings in, so confirming it closes that cash. Null is an ordinary deposit.
+     */
+    TopUpView recordTopUp(String policyNumber, java.math.BigDecimal amount, String method, String reference,
+                          java.time.LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey,
+                          java.util.UUID fieldReceiptId);
+
     TransferInView recordTransferIn(String policyNumber, java.math.BigDecimal amount, String sourceScheme,
                                     String documentRef, String recordedBy, String idempotencyKey);
 

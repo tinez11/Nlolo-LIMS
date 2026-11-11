@@ -154,6 +154,7 @@ class BillingContractTest {
             "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert
             // issuePolicy's billing.PolicyEventListener -> generateInvoicesAhead chain triggers
             // for this class's own fixtures would otherwise fail against a table missing this
@@ -525,6 +526,48 @@ class BillingContractTest {
             // The field app's dedup token is not a fact about the money and is not exposed.
             .andExpect(jsonPath("$.items[0].clientIdempotencyKey").doesNotExist())
             .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * The agent's side (2026-11-10, the user: agents collect cash and must see what they still hold). The agent lists
+     * their open collections, says they paid them in under a slip reference, and finance sees that reference on the
+     * queue -- with the policyholder named, which the queue never did. Still open: it is the agent's word.
+     */
+    @Test
+    void anAgentSeesTheCashTheyHoldAndSaysWhereTheyPaidItIn() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-RECEIPTS-BANKED");
+        UUID receiptId = captureReceipt(fixture, fixture.policyNumber(), "15000.00");
+
+        mockMvc.perform(get("/agents/{a}/field-receipts", fixture.agentId()).with(agentOf(fixture)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].receiptId").value(receiptId.toString()))
+            .andExpect(jsonPath("$[0].policyholderPartyId").value(fixture.policyholderPartyId().toString()))
+            .andExpect(jsonPath("$[0].bankedReference").doesNotExist());
+
+        mockMvc.perform(post("/agents/{a}/field-receipts/banked", fixture.agentId()).with(agentOf(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"receiptIds\":[\"" + receiptId + "\"],\"reference\":\" CRDB-SLIP-4471 \"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].bankedReference").value("CRDB-SLIP-4471"))
+            .andExpect(jsonPath("$[0].bankedAt").exists())
+            .andExpect(jsonPath("$[0].status").value("PENDING_RECONCILIATION"));
+
+        mockMvc.perform(get("/field-receipts").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].bankedReference").value("CRDB-SLIP-4471"))
+            .andExpect(jsonPath("$.items[0].policyholderPartyId").value(fixture.policyholderPartyId().toString()));
+
+        // Another agent's id in the path is refused: an agent vouches only for their own cash.
+        mockMvc.perform(get("/agents/{a}/field-receipts", UUID.randomUUID()).with(agentOf(fixture)))
+            .andExpect(status().isForbidden());
+        // A reference is required.
+        mockMvc.perform(post("/agents/{a}/field-receipts/banked", fixture.agentId()).with(agentOf(fixture))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"receiptIds\":[\"" + receiptId + "\"],\"reference\":\"\"}"))
+            .andExpect(status().isBadRequest());
     }
 
     /**

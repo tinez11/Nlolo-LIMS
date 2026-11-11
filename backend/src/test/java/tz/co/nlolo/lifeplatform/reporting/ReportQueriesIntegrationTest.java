@@ -279,7 +279,8 @@ class ReportQueriesIntegrationTest {
 
         assertThat(rows(result, 0)).extracting(r -> r.get("month") + " " + r.get("channel") + " " + r.get("receipts")
                 + " " + r.get("amount"))
-            .containsExactly("2026-01 Cash (field receipt) 1 4000.00", "2026-01 Mobile money 2 20000.00",
+            // No method on the event (an older one), no payer: the old guess, labelled as such (2026-11-11).
+            .containsExactly("2026-01 Cash (older records) 1 4000.00", "2026-01 Mobile money 2 20000.00",
                 "2026-02 Mobile money 1 10000.00");
         assertThat(result.sections().get(0).totals().get("amount")).isEqualTo("34000.00");
         // 2026-11-09, batch 4: the payment-method split now sits between the months and the top policies.

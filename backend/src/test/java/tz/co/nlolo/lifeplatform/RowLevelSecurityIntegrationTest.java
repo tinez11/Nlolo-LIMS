@@ -197,6 +197,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V19__agent_cash.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert this
             // class's own auto-issued policies trigger (via billing's PolicyEventListener ->
             // generateInvoicesAhead) would otherwise fail against a table missing this column.

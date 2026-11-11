@@ -1097,6 +1097,10 @@ components:
         method: { type: string, enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
         reference: { type: string, maxLength: 100 }
         receivedOn: { type: string, format: date }
+        fieldReceiptId:
+          type: string
+          format: uuid
+          description: The agent's cash this deposit brings in (2026-11-11); confirming the deposit closes that cash.
     TopUp:
       type: object
       required: [topUpId, policyNumber, amount, payerRef, status, requestedBy, requestedAt, method]

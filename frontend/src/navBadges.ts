@@ -102,7 +102,8 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
     load: async () =>
       (await searchFieldReceipts({ status: 'RECONCILIATION_OVERDUE', pageSize: 1 })).page
         .totalElements ?? 0,
-    title: (n) => `${plural(n, 'receipt', 'receipts')} past the reconciliation SLA`,
+    // Plain words (2026-11-11, findings 12).
+    title: (n) => `${plural(n, 'collection', 'collections')} still with agents past the deadline`,
   },
   /* Money the insurer owes and has not paid. No count endpoint and none wanted: the queue is
      what is waiting on a human being, so it is short by construction, and a length is honest

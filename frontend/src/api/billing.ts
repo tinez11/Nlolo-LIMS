@@ -114,16 +114,45 @@ export async function searchFieldReceipts(
 }
 
 /**
- * `POST /field-receipts/{id}/reconcile` — matches field-captured cash to money received.
- *
- * The action this queue never had. `FieldReceipt.reconcile()` existed server-side with no
- * caller at all, so a receipt could only ratchet PENDING_RECONCILIATION →
- * RECONCILIATION_OVERDUE and stay there: the queue filled and never drained.
- *
- * Finance-gated server-side. Idempotent — reconciling an already-reconciled receipt returns it
- * unchanged rather than erroring, because two officers clearing the same row is a race rather
- * than a mistake. Returns the updated receipt so the row can be replaced without a refetch.
+ * `POST /agents/{agentId}/field-receipts` — the agent records cash a customer handed them (2026-11-11). It pays the
+ * customer's premium at once and the customer is texted, naming the agent. Online only: the key is made here, once
+ * per attempt, so a retried tap records the cash once.
  */
-export function reconcileFieldReceipt(receiptId: string): Promise<FieldReceiptView> {
-  return post<FieldReceiptView>(`/field-receipts/${encodeURIComponent(receiptId)}/reconcile`);
+export function recordAgentCash(
+  agentId: string,
+  body: { policyNumber: string; amount: string; currencyCode: string; clientIdempotencyKey: string },
+): Promise<{ receiptId?: string; status?: string }> {
+  return post(`/agents/${encodeURIComponent(agentId)}/field-receipts`, {
+    policyNumber: body.policyNumber,
+    amount: { amount: body.amount, currencyCode: body.currencyCode },
+    clientIdempotencyKey: body.clientIdempotencyKey,
+    capturedAt: new Date().toISOString(),
+  });
+}
+
+/** One agent still holding cash, in one currency (2026-11-11). */
+export interface AgentCashTotal {
+  agentId: string;
+  collections: number;
+  total: number;
+  currency: string;
+  oldestCapturedAt: string;
+}
+
+/** `GET /field-receipts/by-agent` — every agent still holding cash, longest-held first. */
+export function listAgentCashTotals(): Promise<AgentCashTotal[]> {
+  return get<AgentCashTotal[]>('/field-receipts/by-agent');
+}
+
+/** `GET /agents/{agentId}/field-receipts` — the cash this agent still holds, oldest first (2026-11-10). */
+export function listAgentCash(agentId: string): Promise<FieldReceiptView[]> {
+  return get<FieldReceiptView[]>(`/agents/${encodeURIComponent(agentId)}/field-receipts`);
+}
+
+/** `POST /agents/{agentId}/field-receipts/banked` — "I've banked this", under one slip reference. */
+export function markAgentCashBanked(agentId: string, receiptIds: string[], reference: string): Promise<FieldReceiptView[]> {
+  return post<FieldReceiptView[]>(`/agents/${encodeURIComponent(agentId)}/field-receipts/banked`, {
+    receiptIds,
+    reference,
+  });
 }

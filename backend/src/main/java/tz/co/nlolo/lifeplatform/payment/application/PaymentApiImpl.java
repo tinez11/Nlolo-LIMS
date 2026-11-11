@@ -518,18 +518,33 @@ public class PaymentApiImpl implements PaymentApi {
                                        String payerRef, BigDecimal amount, String currency, String topUpId,
                                        String policyNumber, java.time.LocalDate receivedOn, String recordedBy,
                                        String purpose) {
+        return recordReceivedTopUp(tenantId, idempotencyKey, method, reference, payerRef, amount, currency, topUpId,
+            policyNumber, receivedOn, recordedBy, purpose, null);
+    }
+
+    /** {@code fieldReceiptId}: the agent's cash this deposit brings in (2026-11-11); confirming it closes that cash. */
+    @Transactional
+    Optional<UUID> recordReceivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
+                                       String payerRef, BigDecimal amount, String currency, String topUpId,
+                                       String policyNumber, java.time.LocalDate receivedOn, String recordedBy,
+                                       String purpose, UUID fieldReceiptId) {
         PaymentTransaction transaction = PaymentTransaction.receivedTopUp(tenantId, idempotencyKey, method, reference,
             payerRef, amount, currency, topUpId, policyNumber, receivedOn, recordedBy, purpose);
+        transaction.bringsInAgentCash(fieldReceiptId);
         if (paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId()) == 0) {
             return Optional.empty();
         }
-        if (paymentTransactionRepository.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId, method,
-                reference, "REJECTED")) {
+        String refused = paymentTransactionRepository.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId,
+                method, reference, "REJECTED") ? "A receipt with this reference (" + reference + ") is already recorded"
+            : fieldReceiptId != null && paymentTransactionRepository.existsByTenantIdAndFieldReceiptIdAndStatusNot(tenantId,
+                fieldReceiptId, "REJECTED") ? "This agent's cash is already recorded as received"
+            : null;
+        if (refused != null) {
             eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentFailed", tenantId,
                 Map.of("paymentRequestId", transaction.getPaymentTransactionId(),
                        "idempotencyKey", idempotencyKey,
                        "sourceRef", topUpId,
-                       "reason", "A receipt with this reference (" + reference + ") is already recorded",
+                       "reason", refused,
                        "purpose", transaction.getPurpose())));
             return Optional.empty();
         }

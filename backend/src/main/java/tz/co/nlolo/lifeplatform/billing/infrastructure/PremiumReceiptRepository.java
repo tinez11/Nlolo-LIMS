@@ -11,4 +11,7 @@ public interface PremiumReceiptRepository extends JpaRepository<PremiumReceipt, 
     List<PremiumReceipt> findByTenantIdAndPolicyNumberOrderByReceivedAtAsc(UUID tenantId, String policyNumber);
 
     boolean existsByTenantIdAndInvoiceIdAndPaymentReference(UUID tenantId, UUID invoiceId, String paymentReference);
+
+    /** What one payment paid, invoice by invoice -- agent cash's "agent-cash:{id}" reference (2026-11-11). */
+    List<PremiumReceipt> findByTenantIdAndPaymentReference(UUID tenantId, String paymentReference);
 }

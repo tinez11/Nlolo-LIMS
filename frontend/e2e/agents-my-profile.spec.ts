@@ -20,11 +20,13 @@ test.describe('agents my profile', () => {
     await expect(page.getByRole('heading', { name: 'My profile' })).toBeVisible();
     // A real license number from the seed script, not a placeholder.
     await expect(page.getByText(/LIC-SENIOR/)).toBeVisible();
-    await expect(page.getByText('Top of hierarchy')).toBeVisible();
+    // "Reports to" since 2026-11-08 (d720af5a): the senior agent reports to no one.
+    await expect(page.getByText('No one — you are at the top')).toBeVisible();
 
     // Commission plan panel: selecting a product drives a real
     // GET /agents/{agentId}/commission-plan?productId=... round trip.
-    await expect(page.getByText('Commission plan')).toBeVisible();
+    // A heading now, and a "Commission plan" fact beside it since 2026-11-08: name the panel by its heading.
+    await expect(page.getByRole('heading', { name: 'Commission plan' })).toBeVisible();
     await chooseProduct(page, 'Demo Term Life (DEMO-TERM-01)');
     await expect(page.getByText('Resolving plan')).not.toBeVisible({ timeout: 15_000 });
 

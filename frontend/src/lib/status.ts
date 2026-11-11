@@ -462,6 +462,8 @@ export const STATUS_MAPS = {
     PENDING_RECONCILIATION: 'pending',
     RECONCILED: 'success',
     RECONCILIATION_OVERDUE: 'danger',
+    // Not received in time (2026-11-11): its payment was undone and the premium is owed again.
+    EXPIRED: 'neutral',
   },
 
   // regreporting/domain/RegulatoryReturn.java -- a plain String field, always
@@ -546,6 +548,10 @@ const WORDS: Record<string, string> = {
   RESERVED_PENDING_ORIGINATION: 'Being taken',
   AWAITING_PAYOUT_APPROVAL: 'Waiting for a second person',
   FORCED_LAPSE_TRIGGERED: 'Lapsed: loan above the value',
+  // Agent cash in plain words (2026-11-11, findings 12): only billing's field receipts use these three.
+  PENDING_RECONCILIATION: 'With the agent',
+  RECONCILIATION_OVERDUE: 'With the agent, overdue',
+  RECONCILED: 'Received',
 };
 
 /** Turn `IN_GRACE` into `In grace` for display. */

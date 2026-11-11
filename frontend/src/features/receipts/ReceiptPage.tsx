@@ -231,7 +231,12 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             consequence={
               <>
                 <strong>{formatMoney(receipt.amount)}</strong>{' '}
-                {onBalance
+                {/* Agent cash (2026-11-11): on an insurance policy it already paid when the agent recorded it. */}
+                {receipt.fieldReceiptId
+                  ? <>is cash an agent collected. Where it already paid the premium when the agent recorded it, confirming
+                    only moves it from the agent to the bank and pays nothing twice; on savings, deposits and annuities it
+                    pays now. The ledger</>
+                  : onBalance
                   ? <>goes onto the balance of {receipt.policyNumber} and pays what it owes, oldest first; anything left
                     pays its next premiums. The ledger</>
                   : <>is applied to {target} on {receipt.policyNumber}, and the ledger</>}{' '}

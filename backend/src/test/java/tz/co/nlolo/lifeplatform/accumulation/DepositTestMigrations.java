@@ -141,6 +141,7 @@ public final class DepositTestMigrations {
         "db-migrations/policyloan/V9__payout_approval.sql",
         "db-migrations/billing/V1__create_billing_schema.sql",
         "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+        "db-migrations/billing/V19__agent_cash.sql",
         "db-migrations/billing/V3__amount_paid.sql",
         "db-migrations/billing/V5__single_premium_invoice.sql",
         "db-migrations/billing/V6__premium_credit.sql",
@@ -179,6 +180,6 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql", "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql", "db-migrations/communication/V21__agent_cash_names_the_agent.sql",
     };
 }

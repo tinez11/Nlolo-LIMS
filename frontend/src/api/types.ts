@@ -138,6 +138,7 @@ export const FIELD_RECEIPT_STATUSES: readonly FieldReceiptStatus[] = [
   'PENDING_RECONCILIATION',
   'RECONCILIATION_OVERDUE',
   'RECONCILED',
+  'EXPIRED',
 ];
 export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
 /** How much a policy can borrow now, and how that is reached (2026-11-07): the server's figures. */

@@ -301,7 +301,9 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       const funds = values.paysFor === 'FUNDS';
       const ok = await send(() => funds
         ? recordReceivedFundsTopUp(policy, { ...received, split: ownSplit(shares) }, attempt)
-        : recordReceivedTopUp(policy, received, attempt));
+        // Agent cash brought in as a savings deposit (2026-11-11): the link travels, so confirming closes the agent's cash.
+        : recordReceivedTopUp(policy, values.fieldReceiptId ? { ...received, fieldReceiptId: values.fieldReceiptId } : received,
+          attempt));
       if (ok) {
         setSent({
           heading: funds ? 'Fund top-up recorded' : 'Savings deposit recorded',

@@ -237,7 +237,8 @@ class ProjectionIntegrationTest {
 
     @Test
     void anUnhandledEventTypeIsNotApplied() {
-        assertThat(handlers.handles("claims.ClaimRegistered")).isFalse();
-        assertThat(apply(UUID.randomUUID(), "claims.ClaimRegistered", Instant.now(), Map.of())).isFalse();
+        // Claims became handled with the claims reports (batch 2); agent cash being banked never is.
+        assertThat(handlers.handles("billing.FieldReceiptBanked")).isFalse();
+        assertThat(apply(UUID.randomUUID(), "billing.FieldReceiptBanked", Instant.now(), Map.of())).isFalse();
     }
 }

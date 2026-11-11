@@ -1,19 +1,20 @@
 import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { can } from '@/auth/access';
-import { DEFAULT_PAGE_SIZE } from '@/api/billing';
+import { DEFAULT_PAGE_SIZE, type AgentCashTotal } from '@/api/billing';
 import { FIELD_RECEIPT_STATUSES, type FieldReceiptStatus, type FieldReceiptView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { AgentName } from '@/components/AgentName';
+import { PartyName } from '@/components/PartyName';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FilterChip } from '@/components/FilterChip';
-import { formatInstant } from '@/lib/dates';
+import { formatInstantDay } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
-import { isInitialLoad } from '@/store/createResourceSlice';
+import { isInitialLoad, type Resource } from '@/store/createResourceSlice';
 import { selectFieldReceipts, useBillingStore } from '@/store/billingStore';
 
 /**
@@ -48,7 +49,17 @@ export function FieldReceiptsPage() {
 
   const list = useBillingStore(selectFieldReceipts);
   const loadFieldReceipts = useBillingStore((s) => s.loadFieldReceipts);
+  const totals = useBillingStore((s) => s.agentTotals);
+  const loadAgentTotals = useBillingStore((s) => s.loadAgentTotals);
+  const waitingList = useBillingStore((s) => s.agentCashWaiting);
+  const loadAgentCashWaiting = useBillingStore((s) => s.loadAgentCashWaiting);
+  // Agent cash whose receipt already waits for a second person (2026-11-11): offered nothing to record again.
+  const waiting = new Map((waitingList.data ?? []).map((w) => [w.fieldReceiptId, w.receiptId]));
 
+  useEffect(() => {
+    void loadAgentTotals();
+    void loadAgentCashWaiting();
+  }, [loadAgentTotals, loadAgentCashWaiting]);
 
   useEffect(() => {
     void loadFieldReceipts({
@@ -76,29 +87,38 @@ export function FieldReceiptsPage() {
   const busy = list.status === 'loading';
 
   const count: Stat = {
+    // Plain words (2026-11-11, findings 12): no "reconciliation SLA", no "in this tenant".
     label:
       status === 'RECONCILIATION_OVERDUE'
-        ? 'agent cash past its deadline'
+        ? 'collections still with the agent past their deadline'
         : status === 'PENDING_RECONCILIATION'
-          ? 'agent cash awaiting a match'
+          ? 'collections still with the agent'
           : status === 'RECONCILED'
-            ? 'matched agent cash'
-            : 'agent cash',
+            ? 'collections received'
+            : status === 'EXPIRED'
+              ? 'collections never received'
+              : 'agent collections',
     value: total,
     pending: isInitialLoad(list),
-    hint:
-      list.status === 'error' && total === null
-        ? 'could not load'
-        : status === 'RECONCILIATION_OVERDUE'
-          ? 'past the reconciliation SLA'
-          : 'in this tenant',
+    hint: list.status === 'error' && total === null ? 'could not load' : 'oldest first',
   };
 
   const columns: Column<FieldReceiptView>[] = [
     {
-      key: 'policyNumber',
-      header: 'Policy',
-      render: (r) => <span className="font-mono font-medium">{r.policyNumber ?? '—'}</span>,
+      key: 'policyholderPartyId',
+      header: 'Client',
+      // Who paid the agent, beside the agent who took it (findings 10): both, on both pages.
+      render: (r) => (
+        <span className="flex flex-col">
+          {r.policyholderPartyId ? <PartyName partyId={r.policyholderPartyId} className="font-medium" /> : '—'}
+          <span className="font-mono text-xs whitespace-nowrap text-muted-foreground">{r.policyNumber ?? '—'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'agentId',
+      header: 'Agent',
+      render: (r) => (r.agentId ? <AgentName agentId={r.agentId} withLicense={false} /> : '—'),
     },
     {
       key: 'amount',
@@ -113,52 +133,37 @@ export function FieldReceiptsPage() {
     },
     {
       key: 'capturedAtServer',
-      header: 'Reached us',
-      // The SLA runs from this timestamp, not from the agent's own clock, so this is the
-      // column the overdue state is measured against.
-      render: (r) => (r.capturedAtServer ? formatInstant(r.capturedAtServer) : '—'),
-    },
-    {
-      key: 'capturedAtClient',
       header: 'Collected',
-      secondary: true,
-      /*
-       * The agent's own timestamp, which can be hours earlier than the one above if the
-       * phone was offline. Kept beside it rather than instead of it: a large gap says "the
-       * field was offline", a small one says "we were slow", and those lead somewhere
-       * different.
-       */
-      render: (r) => (r.capturedAtClient ? formatInstant(r.capturedAtClient) : '—'),
+      // When it reached us; the agent's deadline and the 14-day expiry both run from here.
+      render: (r) => (
+        <span className="whitespace-nowrap">{r.capturedAtServer ? formatInstantDay(r.capturedAtServer) : '—'}</span>
+      ),
     },
     {
-      key: 'reconciledAt',
-      header: 'Matched',
+      key: 'bankedReference',
+      header: 'Agent says banked',
       secondary: true,
-      // An em dash, not a blank: unmatched is the fact this screen exists to show.
+      // The agent's slip reference: what finance looks for on the bank statement before recording the money.
       render: (r) =>
-        r.reconciledAt ? (
-          formatInstant(r.reconciledAt)
+        r.bankedReference ? (
+          <span className="flex flex-col">
+            <span className="font-mono text-xs">{r.bankedReference}</span>
+            <span className="text-xs whitespace-nowrap text-muted-foreground">{formatInstantDay(r.bankedAt)}</span>
+          </span>
         ) : (
           <span className="text-subtle-foreground">—</span>
         ),
     },
     {
-      key: 'agentId',
-      header: 'Agent',
+      key: 'reconciledAt',
+      header: 'Received',
       secondary: true,
-      /*
-       * The name, now that there is a way to it. This column showed the first eight
-       * characters of the uuid with the rest on the title, on the reasoning that `PartyName`
-       * takes a PARTY id while this is a distribution AgentProfile id and nothing resolved
-       * one -- true when it was written. `AgentName` makes the two hops (agent -> partyId ->
-       * party) and caches each, so a register of twenty receipts from four agents costs
-       * eight requests, not eighty.
-       *
-       * No licence number beside it: this column is scanned, not read, and the amount and
-       * policy number next to it are what the row is for.
-       */
       render: (r) =>
-        r.agentId ? <AgentName agentId={r.agentId} withLicense={false} /> : '—',
+        r.reconciledAt ? (
+          <span className="whitespace-nowrap">{formatInstantDay(r.reconciledAt)}</span>
+        ) : (
+          <span className="text-subtle-foreground">—</span>
+        ),
     },
     {
       key: 'reconcile',
@@ -192,7 +197,14 @@ export function FieldReceiptsPage() {
        * invoice, posts the money and closes this field receipt -- all by the receipt road.
        */
       render: (r) =>
-        r.receiptId && r.status !== 'RECONCILED' && can('collections.manage') ? (
+        r.receiptId && waiting.has(r.receiptId) ? (
+          <Link
+            className="text-sm whitespace-nowrap text-muted-foreground underline-offset-2 hover:underline"
+            to={`/staff/receipts/${waiting.get(r.receiptId)}?from=field-receipts`}
+          >
+            Waiting for a second person
+          </Link>
+        ) : r.receiptId && r.status !== 'RECONCILED' && can('collections.manage') ? (
           <Button asChild size="sm" variant="ghost">
             <Link to={receiptLink(r)}>Record as received</Link>
           </Button>
@@ -218,18 +230,16 @@ export function FieldReceiptsPage() {
         <EmptyState
           title={
             status === 'RECONCILIATION_OVERDUE'
-              ? 'Nothing is overdue for reconciliation'
+              ? 'No agent is holding cash past the deadline'
               : status === 'PENDING_RECONCILIATION'
-                ? 'Nothing is waiting to be matched'
+                ? 'No agent is holding cash'
                 : status === 'RECONCILED'
-                  ? 'No matched agent cash'
-                  : 'No agent cash'
+                  ? 'No agent cash received yet'
+                  : status === 'EXPIRED'
+                    ? 'No agent cash has expired'
+                    : 'No agent cash'
           }
-          description={
-            status === 'RECONCILIATION_OVERDUE'
-              ? 'All the cash agents have collected either matched a payment or is still inside its SLA.'
-              : 'Cash appears here when an agent collects a premium in the field.'
-          }
+          description="Cash appears here when an agent records a premium a customer paid them."
           {...(status !== undefined
             ? {
                 action: (
@@ -273,11 +283,12 @@ export function FieldReceiptsPage() {
     <>
       <PageHeader
         title="Agent cash"
-        description="Oldest unmatched first."
+        description="Cash customers paid to agents. On insurance policies it already paid the premium; savings, deposits and annuities are paid when you record it as received. Not received within 14 days, the payment is undone and dunning resumes."
         count={<CountLine {...count} />}
       />
 
-      <div className="px-6 pb-6">
+      <div className="space-y-4 px-6 pb-6">
+        <AgentTotals totals={totals} />
         <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             {FIELD_RECEIPT_STATUSES.map((value) => (
@@ -296,6 +307,39 @@ export function FieldReceiptsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Who is holding how much, longest-held first (2026-11-11, findings 14: "Juma Senior holds TZS 545,000, oldest 10
+ * days"). Hidden when no agent holds anything.
+ */
+function AgentTotals({ totals }: { totals: Resource<AgentCashTotal[]> }) {
+  const rows = totals.data ?? [];
+  if (rows.length === 0) return null;
+  // Measured against when the totals were loaded, not the render: the same answer on every render.
+  const now = totals.loadedAt ?? 0;
+  return (
+    <section aria-label="Cash still with agents" className="rounded-xl border border-border bg-surface p-4 shadow-card">
+      <h2 className="mb-2 text-sm font-medium">Still with agents</h2>
+      <ul className="divide-y divide-border">
+        {rows.map((t) => {
+          const days = Math.floor((now - new Date(t.oldestCapturedAt).getTime()) / 86_400_000);
+          return (
+            <li key={`${t.agentId}:${t.currency}`} className="flex flex-wrap items-baseline justify-between gap-x-4 py-1.5 text-sm">
+              <AgentName agentId={t.agentId} withLicense={false} className="font-medium" />
+              <span className="tabular-nums">
+                {formatMoney({ amount: String(t.total), currencyCode: t.currency })}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {t.collections} {t.collections === 1 ? 'collection' : 'collections'} · oldest{' '}
+                  {days <= 0 ? 'today' : `${days} ${days === 1 ? 'day' : 'days'} ago`}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

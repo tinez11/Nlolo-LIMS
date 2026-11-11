@@ -102,6 +102,13 @@ public class Deposits {
      */
     @Transactional
     public void credit(Account account, UUID invoiceId, BigDecimal amount, LocalDate on, String payerRef) {
+        credit(account, invoiceId, amount, on, payerRef, null);
+    }
+
+    /** {@code receiptMethod}: how the deposit was paid (2026-11-11), so the GL books it to the account it reached. */
+    @Transactional
+    public void credit(Account account, UUID invoiceId, BigDecimal amount, LocalDate on, String payerRef,
+                       String receiptMethod) {
         String policyNumber = account.getPolicyNumber();
         if (postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "invoice", "invoice:" + invoiceId).isPresent()) {
             return; // a redelivery
@@ -116,7 +123,7 @@ public class Deposits {
                 : productApi.resolveDepositPlan(account.getProductVersionId()).rateFor(amount, term))
             .orElseThrow(() -> new AccumulationStateException("Fixed-term deposit " + policyNumber + ": no rate for "
                 + amount.toPlainString() + " over " + term + " months on its version; the deposit is NOT credited"));
-        ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId), List.of(LedgerService.Line.of(EntryType.CONTRIBUTION,
+        ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId, receiptMethod), List.of(LedgerService.Line.of(EntryType.CONTRIBUTION,
                 amount, on, "Deposit for " + term + " months at " + rate.stripTrailingZeros().toPlainString() + "% for the term")),
             "system", null);
         LocalDate maturity = policyApi.restateDepositTerm(policyNumber, on, term);

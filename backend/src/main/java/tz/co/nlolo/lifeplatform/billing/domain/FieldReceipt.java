@@ -47,6 +47,14 @@ public class FieldReceipt {
     @Column(name = "notified_overdue_at")
     private Instant notifiedOverdueAt;
 
+    /** When the agent said they paid the cash in (2026-11-10); their word, not money received. */
+    @Column(name = "banked_at")
+    private Instant bankedAt;
+
+    /** The bank slip or mobile-money reference the agent gave, for finance to match against. */
+    @Column(name = "banked_reference")
+    private String bankedReference;
+
     protected FieldReceipt() {}
 
     public FieldReceipt(UUID tenantId, String policyNumber, UUID agentId, BigDecimal amount, String currency,
@@ -74,6 +82,35 @@ public class FieldReceipt {
         this.reconciledAt = Instant.now();
     }
 
+    /** The method its deposit carries: cash an agent holds, posted to 1320 Due from agents (2026-11-11). */
+    public static final String AGENT_CASH = "AGENT_CASH";
+
+    /** Not received in time (2026-11-11): its deposit was undone and the premium is owed again. Late money still closes it. */
+    public void expire() {
+        if ("PENDING_RECONCILIATION".equals(status) || "RECONCILIATION_OVERDUE".equals(status)) {
+            this.status = "EXPIRED";
+        }
+    }
+
+    public boolean isOpen() {
+        return "PENDING_RECONCILIATION".equals(status) || "RECONCILIATION_OVERDUE".equals(status);
+    }
+
+    /**
+     * The agent records where the cash went. Refused once matched -- the company has the money, there is nothing left
+     * to say -- and correctable until then, since a mistyped slip number is exactly what this is for.
+     */
+    public void markBanked(String reference) {
+        if ("RECONCILED".equals(status)) {
+            throw new IllegalArgumentException("This cash has already been received by the company");
+        }
+        if (reference == null || reference.isBlank()) {
+            throw new IllegalArgumentException("Give the bank slip or mobile-money reference");
+        }
+        this.bankedReference = reference.trim();
+        this.bankedAt = Instant.now();
+    }
+
     public UUID getReceiptId() { return receiptId; }
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
@@ -86,4 +123,6 @@ public class FieldReceipt {
     public String getStatus() { return status; }
     public Instant getReconciledAt() { return reconciledAt; }
     public Instant getNotifiedOverdueAt() { return notifiedOverdueAt; }
+    public Instant getBankedAt() { return bankedAt; }
+    public String getBankedReference() { return bankedReference; }
 }

@@ -42,9 +42,41 @@ public class BillingSyncController {
             throw new AccessDeniedException("Access denied: an agent files field receipts only as themselves");
         }
         AgentBook.require(policyApi, request.policyNumber(), jwt, authentication);
-        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(agentId, request.policyNumber(),
+        // The agent's own party rides along so the customer's SMS can name who took the cash (2026-11-11).
+        String agentParty = jwt == null ? null : jwt.getClaimAsString("party_id");
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(agentId,
+            agentParty == null ? null : UUID.fromString(agentParty), request.policyNumber(),
             new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
             request.clientIdempotencyKey(), request.capturedAt());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new FieldReceiptResponseDto(result.receiptId(), result.status()));
+    }
+
+    /** The cash this agent holds: collected and not yet received by the company, oldest first (2026-11-10). */
+    @GetMapping("/agents/{agentId}/field-receipts")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public java.util.List<FieldReceiptQueueResponseDto> agentCash(@PathVariable UUID agentId, @AuthenticationPrincipal Jwt jwt) {
+        ownOnly(agentId, jwt);
+        return billingApi.agentCash(agentId).stream().map(FieldReceiptQueueResponseDto::from).toList();
+    }
+
+    /** The bank slip or mobile-money reference the agent paid these collections in under (2026-11-10). */
+    public record BankedRequest(@jakarta.validation.constraints.NotEmpty java.util.List<UUID> receiptIds,
+                                @jakarta.validation.constraints.NotBlank
+                                @jakarta.validation.constraints.Size(max = 100) String reference) {}
+
+    @PostMapping("/agents/{agentId}/field-receipts/banked")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public java.util.List<FieldReceiptQueueResponseDto> markBanked(@PathVariable UUID agentId,
+                                                                   @Valid @RequestBody BankedRequest request,
+                                                                   @AuthenticationPrincipal Jwt jwt) {
+        ownOnly(agentId, jwt);
+        return billingApi.markAgentCashBanked(agentId, request.receiptIds(), request.reference()).stream()
+            .map(FieldReceiptQueueResponseDto::from).toList();
+    }
+
+    private void ownOnly(UUID agentId, Jwt jwt) {
+        if (!agentId.equals(AgentBook.ownAgentId(policyApi, jwt))) {
+            throw new AccessDeniedException("Access denied: an agent sees and vouches only for their own cash");
+        }
     }
 }
