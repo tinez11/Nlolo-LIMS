@@ -287,7 +287,8 @@ export function FollowUpPage({ audience = 'staff' }: { audience?: 'staff' | 'age
         return (
           <div className="flex flex-col items-end gap-1 py-1.5">
             <div className="flex items-center gap-1.5">
-              <Button asChild size="sm" variant="ghost">
+              {/* All three framed alike (2026-11-11, the user): a bare word beside a framed button read as text. */}
+              <Button asChild size="sm" variant="outline">
                 {agent ? (
                   <Link to={`/agents/cash?policy=${encodeURIComponent(r.policyNumber)}`}>Record cash</Link>
                 ) : (
@@ -298,7 +299,7 @@ export function FollowUpPage({ audience = 'staff' }: { audience?: 'staff' | 'age
               </Button>
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 pending={busy && calling?.invoiceId !== r.invoiceId}
                 onClick={() => {
                   if (busy) return;
