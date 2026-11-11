@@ -46,8 +46,16 @@ public class CollectionActionController {
     public OpenPremiumView.ActionView recordCall(@Valid @RequestBody CallRequest request, @AuthenticationPrincipal Jwt jwt,
                                                  Authentication authentication) {
         AgentBook.require(policyApi, billingApi.getInvoice(request.invoiceId()).policyNumber(), jwt, authentication);
-        return billingApi.recordCall(request.invoiceId(), request.outcome(), request.promisedOn(), request.note(),
-            jwt == null ? null : jwt.getSubject());
+        return billingApi.recordCall(request.invoiceId(), request.outcome(), request.promisedOn(), request.note(), by(jwt));
+    }
+
+    /** Who did it, as the follow-up list shows it: the person's name, as ReportController names who prepared a report. */
+    static String by(Jwt jwt) {
+        if (jwt == null) return "system";
+        String name = jwt.getClaimAsString("name");
+        if (name == null || name.isBlank()) name = jwt.getClaimAsString("preferred_username");
+        if (name == null || name.isBlank()) name = jwt.getSubject();
+        return name;
     }
 
     @PostMapping("/collections/actions/reminders")
@@ -56,6 +64,6 @@ public class CollectionActionController {
     public OpenPremiumView.ActionView sendReminder(@Valid @RequestBody ReminderRequest request,
                                                    @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         AgentBook.require(policyApi, billingApi.getInvoice(request.invoiceId()).policyNumber(), jwt, authentication);
-        return billingApi.sendPremiumReminder(request.invoiceId(), jwt == null ? null : jwt.getSubject());
+        return billingApi.sendPremiumReminder(request.invoiceId(), by(jwt));
     }
 }

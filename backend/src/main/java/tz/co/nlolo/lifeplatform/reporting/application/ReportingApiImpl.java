@@ -53,9 +53,13 @@ public class ReportingApiImpl implements ReportingApi {
     private final Clock clock;
     private final ReportQueries queries;
     private final SolvencyFactorSets solvencyFactorSets;
+    /** Premiums to follow up and the collection figures (2026-11-11). */
+    private final FollowUpQueue followUpQueue;
 
     public ReportingApiImpl(List<Report> beans, LabelsFactory labelsFactory, RebuildService rebuildService,
-                            ReportingClock clock, ReportQueries queries, SolvencyFactorSets solvencyFactorSets) {
+                            ReportingClock clock, ReportQueries queries, SolvencyFactorSets solvencyFactorSets,
+                            FollowUpQueue followUpQueue) {
+        this.followUpQueue = followUpQueue;
         beans.stream().sorted(Comparator.comparingInt(r -> {
             int i = ORDER.indexOf(r.definition().key());
             return i < 0 ? Integer.MAX_VALUE : i;
@@ -129,5 +133,32 @@ public class ReportingApiImpl implements ReportingApi {
     @Override
     public RebuildStatusView rebuildStatus() {
         return rebuildService.status(TenantContext.get());
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reporting.api.FollowUpPage followUp(FollowUpQuery query) {
+        return followUpQueue.page(query, null);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reporting.api.FollowUpPage followUpForAgentParty(UUID agentPartyId, FollowUpQuery query) {
+        if (agentPartyId == null) throw new IllegalArgumentException("An agent's list needs the agent's party");
+        return followUpQueue.page(query, agentPartyId);
+    }
+
+    @Override
+    public ReportResult followUpReport(FollowUpQuery query, UUID agentPartyId) {
+        return followUpQueue.report(query, agentPartyId);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures collectionFigures(LocalDate from, LocalDate to,
+                                                                                     LocalDate today) {
+        return followUpQueue.figures(from, to, today);
+    }
+
+    @Override
+    public void listDownloaded(String list, String format, int rows, String by) {
+        followUpQueue.downloaded(list, format, rows, by);
     }
 }

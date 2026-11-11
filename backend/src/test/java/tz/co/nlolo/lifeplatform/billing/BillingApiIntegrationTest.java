@@ -1435,6 +1435,28 @@ class BillingApiIntegrationTest {
     }
 
     @Test
+    void invoicesDueInAPeriodCarryWhatIsStillOwedPaidOrNot() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "FOLLOW-UP-03");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView first = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.invoicesDueBetween(first.dueDate(), first.dueDate())).singleElement().satisfies(i -> {
+            assertThat(i.invoiceId()).isEqualTo(first.invoiceId());
+            assertThat(i.amount()).isEqualByComparingTo("15000.00");
+            assertThat(i.owed()).isEqualByComparingTo("15000.00");
+        });
+
+        TenantContext.set(tenantId);
+        billingApi.captureFieldReceipt(UUID.randomUUID(), null, policyNumber, new BigDecimal("15000.00"), "TZS",
+            "key-" + UUID.randomUUID(), Instant.now());
+        TenantContext.set(tenantId);
+        assertThat(billingApi.invoicesDueBetween(first.dueDate(), first.dueDate())).singleElement()
+            .satisfies(i -> assertThat(i.owed()).isEqualByComparingTo("0"));
+    }
+
+    @Test
     void agentCashPaysThePremiumTheMomentTheAgentRecordsItPostedToDueFromAgents() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "AGENT-CASH-01");

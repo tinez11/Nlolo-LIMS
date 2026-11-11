@@ -491,6 +491,20 @@ public class BillingApiImpl implements BillingApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<InvoiceDueView> invoicesDueBetween(java.time.LocalDate from, java.time.LocalDate to) {
+        UUID tenantId = TenantContext.get();
+        // isSavingsType reads policy and product once per policy, so it is asked once per policy, not per invoice.
+        Map<String, Boolean> savings = new HashMap<>();
+        return premiumInvoiceRepository.findByTenantIdAndDueDateBetweenAndStatusNotIn(tenantId, from, to, List.of("WAIVED"))
+            .stream()
+            .filter(i -> !savings.computeIfAbsent(i.getPolicyNumber(), this::isSavingsType))
+            .map(i -> new InvoiceDueView(i.getInvoiceId(), i.getPolicyNumber(), i.getDueDate(), i.getAmount(),
+                i.balanceDue(creditedAgainst(i)), i.getCurrency().trim(), i.getStatus()))
+            .toList();
+    }
+
+    @Override
     @Transactional
     public void requestPaymentForInvoice(UUID invoiceId, String payerRef, String idempotencyKey) {
         requestPaymentForInvoice(invoiceId, payerRef, idempotencyKey, "system");

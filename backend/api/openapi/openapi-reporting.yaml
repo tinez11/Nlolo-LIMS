@@ -186,14 +186,199 @@ paths:
               schema: { $ref: '#/components/schemas/RebuildStatus' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /collections/follow-up:
+    get:
+      summary: Premiums to follow up -- due today, due soon or overdue, with the client to call and what was done
+      description: >
+        Staff with collections.view or collections.manage. A policy never activated (an offer) is left out, and so is a
+        premium the policy balance or the agent's cash already covers. The three counts are for the same filters, so a
+        tab can show how many it holds.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FollowUpView'
+        - $ref: '#/components/parameters/SoonDays'
+        - $ref: '#/components/parameters/LateBand'
+        - { name: agentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: branchCode, in: query, required: false, schema: { type: string } }
+        - { name: productId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: One page of the list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FollowUpPage' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /collections/follow-up/export:
+    get:
+      summary: The same list, every row, as a file (recorded as reporting.ListDownloaded)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [xlsx, csv, pdf] } }
+        - $ref: '#/components/parameters/FollowUpView'
+        - $ref: '#/components/parameters/SoonDays'
+        - $ref: '#/components/parameters/LateBand'
+        - { name: agentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: branchCode, in: query, required: false, schema: { type: string } }
+        - { name: productId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: search, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListFile' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/follow-up:
+    get:
+      summary: The signed-in agent's premiums to follow up -- the policies their team sold
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - $ref: '#/components/parameters/FollowUpView'
+        - $ref: '#/components/parameters/SoonDays'
+        - $ref: '#/components/parameters/LateBand'
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: One page of the agent's list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FollowUpPage' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/follow-up/export:
+    get:
+      summary: The agent's list as a file, for a hard copy (recorded as reporting.ListDownloaded)
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [xlsx, csv, pdf] } }
+        - $ref: '#/components/parameters/FollowUpView'
+        - $ref: '#/components/parameters/SoonDays'
+        - $ref: '#/components/parameters/LateBand'
+        - { name: search, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListFile' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /collections/figures:
+    get:
+      summary: The collection figures -- of the premiums due in the period, how much is paid, and the rate
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: The figures
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollectionFigures' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
+  parameters:
+    FollowUpView:
+      { name: view, in: query, required: false, schema: { type: string, enum: [DUE_TODAY, DUE_SOON, OVERDUE], default: OVERDUE } }
+    SoonDays:
+      { name: soonDays, in: query, required: false, schema: { type: integer, enum: [7, 14, 30], default: 7 } }
+    LateBand:
+      name: lateBand
+      in: query
+      required: false
+      schema: { type: string, enum: ["1–7 days", "8–14 days", "15–30 days", "31–60 days", "61–90 days", "More than 90 days"] }
   responses:
+    ListFile:
+      description: The file, as an attachment
+      content:
+        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+          schema: { type: string, format: binary }
+        text/csv:
+          schema: { type: string, format: binary }
+        application/pdf:
+          schema: { type: string, format: binary }
     Problem:
       description: An error, as RFC 7807 problem details
       content:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    FollowUpAction:
+      type: object
+      additionalProperties: false
+      required: [kind, recordedBy, recordedAt]
+      properties:
+        kind: { type: string, enum: [CALL, REMINDER, PAYMENT_REQUEST] }
+        outcome: { type: [string, "null"], enum: [WILL_PAY, CANNOT_PAY_NOW, NO_ANSWER, WRONG_NUMBER, null] }
+        promisedOn: { type: [string, "null"], format: date }
+        note: { type: [string, "null"] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+    FollowUpRow:
+      type: object
+      additionalProperties: false
+      required: [invoiceId, policyNumber, owed, currency, dueDate, daysLate, actions]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        clientName: { type: [string, "null"] }
+        clientPhone: { type: [string, "null"] }
+        productName: { type: [string, "null"] }
+        agentId: { type: [string, "null"], format: uuid }
+        agentName: { type: [string, "null"] }
+        branchCode: { type: [string, "null"] }
+        owed: { type: number }
+        currency: { type: string }
+        dueDate: { type: string, format: date }
+        daysLate: { type: integer, description: "0 when not yet late" }
+        lateBand: { type: [string, "null"] }
+        policyStatus: { type: [string, "null"] }
+        lapseExpectedOn: { type: [string, "null"], format: date }
+        agentCashHeld: { type: [number, "null"], description: "Cash an agent holds on the policy, less than what is owed" }
+        agentCashWith: { type: [string, "null"] }
+        actions:
+          type: array
+          description: "What was done, newest first, at most five"
+          items: { $ref: '#/components/schemas/FollowUpAction' }
+    FollowUpPage:
+      type: object
+      additionalProperties: false
+      required: [rows, total, page, pageSize, dueToday, dueSoon, overdue, overdueOwed]
+      properties:
+        rows: { type: array, items: { $ref: '#/components/schemas/FollowUpRow' } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        dueToday: { type: integer }
+        dueSoon: { type: integer }
+        overdue: { type: integer }
+        overdueOwed: { type: number }
+    CollectionFigures:
+      type: object
+      additionalProperties: false
+      required: [from, to, due, paid, dueTodayCount, dueTodayOwed, overdueCount, overdueOwed, currency]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        due: { type: number }
+        paid: { type: number }
+        ratePercent: { type: [string, "null"], description: "paid ÷ due, one decimal; null when nothing fell due" }
+        dueTodayCount: { type: integer }
+        dueTodayOwed: { type: number }
+        overdueCount: { type: integer }
+        overdueOwed: { type: number }
+        currency: { type: string }
     GroupBy:
       type: string
       enum: [PRODUCT, PRODUCT_CATEGORY, AGENT, CHANNEL, BRANCH]

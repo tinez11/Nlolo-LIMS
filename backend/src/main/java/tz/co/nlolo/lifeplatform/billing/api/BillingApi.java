@@ -172,6 +172,13 @@ public interface BillingApi {
     /** Sends the client a reminder (billing.PremiumReminderSent); at most one per premium per day. */
     OpenPremiumView.ActionView sendPremiumReminder(UUID invoiceId, String by);
 
+    /**
+     * Every premium falling due from {@code from} to {@code to} inclusive, paid or not, for the collection rate
+     * (2026-11-11). Waived premiums are left out (nothing was asked for), and so are savings-type policies
+     * ({@link #isSavingsType}): their deposits are the customer's choice, not a premium the company is owed.
+     */
+    List<InvoiceDueView> invoicesDueBetween(LocalDate from, LocalDate to);
+
     /** Applies a payment.PaymentConfirmed collection to the invoice it was requested for (M5) --
      * see PremiumInvoice.applyPayment for the PAID/PARTIALLY_PAID decision and WAIVED's
      * no-overwrite rule. Also resolves any open ArrearsCase for the invoice, reusing the exact

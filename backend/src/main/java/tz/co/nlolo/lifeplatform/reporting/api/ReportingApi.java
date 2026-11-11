@@ -47,4 +47,34 @@ public interface ReportingApi {
     RebuildStatusView startRebuild(String requestedBy);
 
     RebuildStatusView rebuildStatus();
+
+    /**
+     * What the premiums-to-follow-up list is asked for (2026-11-11).
+     *
+     * @param view     DUE_TODAY, DUE_SOON (due in the next {@code soonDays}) or OVERDUE
+     * @param soonDays 7, 14 or 30
+     * @param lateBand one of {@link #LATE_BANDS}, OVERDUE only; null for every band
+     */
+    record FollowUpQuery(String view, int soonDays, String lateBand, UUID agentId, String branchCode, UUID productId,
+                         String search, int page, int pageSize) {}
+
+    List<String> FOLLOW_UP_VIEWS = List.of("DUE_TODAY", "DUE_SOON", "OVERDUE");
+    List<Integer> SOON_DAYS = List.of(7, 14, 30);
+    List<String> LATE_BANDS = List.of("1–7 days", "8–14 days", "15–30 days", "31–60 days", "61–90 days",
+        "More than 90 days");
+
+    /** Premiums to follow up across the company (staff). */
+    FollowUpPage followUp(FollowUpQuery query);
+
+    /** Premiums to follow up on the policies this agent's team sold -- the agent's own and their downline's. */
+    FollowUpPage followUpForAgentParty(UUID agentPartyId, FollowUpQuery query);
+
+    /** The same list, every row, as a report for Excel or PDF. {@code agentPartyId} null for staff. */
+    ReportResult followUpReport(FollowUpQuery query, UUID agentPartyId);
+
+    /** The collection figures for premiums due {@code from} to {@code to}, and what is due or overdue on {@code today}. */
+    CollectionFigures collectionFigures(LocalDate from, LocalDate to, LocalDate today);
+
+    /** Records that a list was downloaded, by whom (reporting.ListDownloaded, kept by audit). */
+    void listDownloaded(String list, String format, int rows, String by);
 }
