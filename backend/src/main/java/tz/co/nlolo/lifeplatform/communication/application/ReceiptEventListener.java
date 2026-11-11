@@ -66,6 +66,11 @@ public class ReceiptEventListener {
             case "billing.FieldReceiptCaptured" -> tell(envelope, payload, "AGENT_CASH_RECEIVED", Map.of(
                 "policyNumber", policyNumber, "amount", money(payload.get("amount")),
                 "agentName", agentName(envelope, payload.get("agentPartyId"))));
+            // A reminder staff or the customer's agent sent from Premiums to follow up (2026-11-11).
+            case "billing.PremiumReminderSent" -> tell(envelope, payload, "PREMIUM_REMINDER", Map.of(
+                "policyNumber", policyNumber, "amount", money(payload.get("amount")),
+                "dueDate", java.time.LocalDate.parse((String) payload.get("dueDate"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))));
             default -> { /* not a receipt */ }
         }
     }
