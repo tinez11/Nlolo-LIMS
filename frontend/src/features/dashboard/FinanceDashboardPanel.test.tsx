@@ -140,6 +140,31 @@ describe('FinanceDashboardPanel', () => {
     expect(screen.queryByText('Policies in arrears at the lapse level')).not.toBeInTheDocument();
   });
 
+  /** Collections first (2026-11-11, the user: "collections for finance should be somewhere topwise"). */
+  it('opens on collections, and its month / quarter / year switch sets the one dashboard range', async () => {
+    vi.mocked(getFinanceDashboard).mockResolvedValue({
+      ...VIEW,
+      collections: {
+        from: '2026-07-01', to: '2026-09-30', due: 1000000, paid: 830000, ratePercent: '83.0',
+        dueTodayCount: 6, dueTodayOwed: 412000, overdueCount: 42, overdueOwed: 3200000, currency: 'TZS',
+      },
+    });
+    const onRange = vi.fn();
+    renderScreen(<FinanceDashboardPanel range={RANGE} onRange={onRange} />);
+
+    const first = (await screen.findAllByRole('heading', { level: 2 }))[0]!;
+    expect(first).toHaveTextContent('Collections');
+    const section = first.closest('section') as HTMLElement;
+    for (const label of ['Premiums due', 'Premiums paid', 'Collection rate', 'Overdue now', 'Due today']) {
+      expect(within(section).getByText(label)).toBeInTheDocument();
+    }
+    expect(within(section).getByText('83.0%')).toBeInTheDocument();
+    expect(within(section).getByRole('link', { name: /Overdue now/ })).toHaveAttribute('href', '/staff/follow-up');
+
+    within(section).getByRole('button', { name: 'This year' }).click();
+    expect(onRange).toHaveBeenCalledWith({ from: expect.stringMatching(/^\d{4}-01$/), to: expect.any(String) });
+  });
+
   it('builds links and month ends correctly', () => {
     expect(reportLink('balance-sheet', { monthFrom: '2026-10' })).toBe('/staff/reports/balance-sheet?monthFrom=2026-10');
     expect(lastDayOf('2026-02')).toBe('2026-02-28');

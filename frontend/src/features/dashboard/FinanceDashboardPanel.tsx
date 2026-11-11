@@ -16,7 +16,10 @@ import { selectFinance, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import type { PanelProps } from './DashboardPage';
 import { DashboardRail } from './DashboardRail';
-import { describeRange, shiftMonth } from './range';
+import { describeRange, keyFor, monthOf, rangeFor, shiftMonth } from './range';
+import type { CollectionFiguresView } from '@/api/dashboard';
+import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/dates';
 import { lastDayOf, reportLink } from './reportLinks';
 import { donutParts, monthCategories, moneyPoints, trendOf, versus } from './series';
 import { StatRow, type Stat } from './StatTile';
@@ -30,11 +33,108 @@ const BANDS = [
 ] as const;
 const COLORS = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'] as const;
 
+const SPANS = [
+  { key: 'month', label: 'This month' },
+  { key: 'quarter', label: 'This quarter' },
+  { key: 'ytd', label: 'This year' },
+] as const;
+
+/** The server's figure as money; formatting only. */
+function tzs(amount: number | null | undefined, currency = 'TZS'): string | null {
+  return amount == null ? null : formatMoneyCompact({ amount: amount.toFixed(2), currencyCode: currency });
+}
+
+/**
+ * Collections, first (2026-11-11, the user: "collections for finance should be somewhere topwise"): of the premiums
+ * due in the range, how much is paid and the rate, and what is overdue or due today. The month / quarter / year switch
+ * sets the dashboard's one range -- the picker above moves with it.
+ */
+function CollectionsSection({
+  figures,
+  range,
+  onRange,
+}: {
+  figures: CollectionFiguresView | null;
+  range: { from: string; to: string };
+  onRange?: (range: { from: string; to: string }) => void;
+}) {
+  const current = monthOf(new Date());
+  const active = keyFor(range, current);
+  const items: { label: string; value: string | null; hint: string; to?: string }[] = figures
+    ? [
+        { label: 'Premiums due', value: tzs(figures.due, figures.currency),
+          hint: `falling due ${formatDate(figures.from)} to ${formatDate(figures.to)}` },
+        { label: 'Premiums paid', value: tzs(figures.paid, figures.currency), hint: 'of the premiums due' },
+        { label: 'Collection rate', value: figures.ratePercent ? `${figures.ratePercent}%` : null,
+          hint: figures.ratePercent ? 'of the premiums due, how much is paid' : 'nothing fell due' },
+        { label: 'Overdue now', value: figures.overdueCount.toLocaleString(),
+          hint: `${tzs(figures.overdueOwed, figures.currency)} owed`, to: '/staff/follow-up' },
+        { label: 'Due today', value: figures.dueTodayCount.toLocaleString(),
+          hint: `${tzs(figures.dueTodayOwed, figures.currency)} to collect`, to: '/staff/follow-up?view=DUE_TODAY' },
+      ]
+    : [];
+
+  return (
+    <Panel
+      title="Collections"
+      subtitle={`Premiums due ${describeRange(range.from, range.to)}, and who to follow up today`}
+      actions={
+        onRange && (
+          <div role="group" aria-label="Collections period" className="inline-flex gap-0.5 rounded-lg bg-control p-0.5">
+            {SPANS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                aria-pressed={active === s.key}
+                onClick={() => onRange(rangeFor(s.key, current))}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3',
+                  active === s.key && 'bg-surface text-foreground shadow-raise',
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    >
+      <div className="px-4 pb-4">
+        {figures === null ? (
+          <p className="text-xs text-muted-foreground">The collection figures could not be read.</p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-3">
+            {items.map((item) => {
+              const body = (
+                <>
+                  <span className="block text-xs font-medium text-muted-foreground">{item.label}</span>
+                  <span className={cn('mt-1 block whitespace-nowrap text-figure', item.value === null && 'text-subtle-foreground')}>
+                    {item.value ?? '—'}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-subtle-foreground">{item.hint}</span>
+                </>
+              );
+              const frame = '@container block min-w-0 rounded-lg border border-border px-4 py-3';
+              return item.to ? (
+                <Link key={item.label} to={item.to} className={cn(frame, 'transition-colors hover:bg-hover active:bg-selected active:duration-0')}>
+                  {body}
+                </Link>
+              ) : (
+                <div key={item.label} className={frame}>{body}</div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 /**
  * The finance dashboard (2026-10-14; ranged and charted 2026-10-23). Every money figure is the server's: the range's
  * collections and their change, each product line's share, what is owed by age. The browser draws.
  */
-export function FinanceDashboardPanel({ range }: PanelProps) {
+export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
   const resource = useDashboardStore(selectFinance);
   const load = useDashboardStore((s) => s.load);
   const signatures = useApprovalsStore((s) => s.approvals);
@@ -118,6 +218,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
 
   return (
     <div className="space-y-5">
+      <CollectionsSection figures={v.collections} range={range} {...(onRange ? { onRange } : {})} />
       <StatRow stats={stats} />
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="xl:col-span-8">

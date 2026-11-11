@@ -13,6 +13,8 @@ import type { components } from '@/types/api/dashboard';
 export type UnderwritingDashboard = components['schemas']['UnderwritingDashboardView'];
 export type ClaimsDashboard = components['schemas']['ClaimsDashboardView'];
 export type FinanceDashboard = components['schemas']['FinanceDashboardView'];
+/** The period's collection figures, shown first on the finance dashboard (2026-11-11). */
+export type CollectionFiguresView = components['schemas']['CollectionFigures'];
 export type AgentDashboard = components['schemas']['AgentDashboardView'];
 export type ActivityItem = components['schemas']['ActivityItem'];
 
