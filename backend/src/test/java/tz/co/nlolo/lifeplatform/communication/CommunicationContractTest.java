@@ -55,8 +55,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     properties = { "communication.reminder-drain-interval-ms=3600000", "communication.sms-gateway.live=true" })
 class CommunicationContractTest {
 
-    /** V8's four messages (16 rows), V17's agent cash (2, SMS only) and V19's nine customer notices (36). */
-    private static final int SEEDED_TEMPLATES = 16 + 2 + 36;
+    /**
+     * V8's four messages (16 rows), V17's agent cash (2, SMS) with V21's email for it (2, 2026-11-11), and V19's nine
+     * customer notices (36).
+     */
+    private static final int SEEDED_TEMPLATES = 16 + 2 + 2 + 36;
 
     private static final String SPEC_PATH = "api/openapi/openapi-communication.yaml";
     private static final UUID SEEDED_TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
