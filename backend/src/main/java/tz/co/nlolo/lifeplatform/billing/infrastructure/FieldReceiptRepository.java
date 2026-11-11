@@ -33,6 +33,10 @@ public interface FieldReceiptRepository extends JpaRepository<FieldReceipt, UUID
      * receipts with near-identical server timestamps, and paging an order with ties can show one
      * receipt twice and never show another. On unreconciled cash that is money nobody chases.
      */
+    /** The agent cash on these policies in these states -- what an agent still holds (premiums to follow up). */
+    List<FieldReceipt> findByTenantIdAndPolicyNumberInAndStatusIn(UUID tenantId, java.util.Collection<String> policyNumbers,
+                                                                  java.util.Collection<String> statuses);
+
     /** Open agent cash per agent and currency: (agentId, count, sum, currency, oldest captured), longest-held first. */
     @Query("select r.agentId, count(r), sum(r.amount), r.currency, min(r.capturedAtServer) from FieldReceipt r"
         + " where r.tenantId = :tenantId and r.status in ('PENDING_RECONCILIATION', 'RECONCILIATION_OVERDUE')"

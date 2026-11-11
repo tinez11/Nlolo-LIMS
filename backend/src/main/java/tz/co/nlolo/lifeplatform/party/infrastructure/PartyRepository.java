@@ -100,6 +100,12 @@ public interface PartyRepository extends JpaRepository<Party, UUID> {
     java.util.List<Object[]> findDisplayNames(@Param("tenantId") UUID tenantId,
                                     @Param("partyIds") java.util.Collection<UUID> partyIds);
 
+    /** Id and phone number, for a list of clients to call (2026-11-11); parties with no phone are left out. */
+    @Query("SELECT p.partyId, p.phoneNumber FROM Party p WHERE p.tenantId = :tenantId AND p.partyId IN :partyIds"
+        + " AND p.phoneNumber IS NOT NULL")
+    java.util.List<Object[]> findPhoneNumbers(@Param("tenantId") UUID tenantId,
+                                              @Param("partyIds") java.util.Collection<UUID> partyIds);
+
     /**
      * The same ids-only projection, matched on name instead of creator, so another module
      * can scope its own query by "the parties called something like this".

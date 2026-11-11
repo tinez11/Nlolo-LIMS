@@ -82,6 +82,54 @@ class ReportingContractTest {
         }
     }
 
+    // ---- premiums to follow up (2026-11-11, analytics plan 1) ------------------------------------------------------
+
+    @Test
+    void theFollowUpListAndFiguresMatchTheContract() throws Exception {
+        mockMvc.perform(get("/collections/follow-up").param("view", "DUE_SOON").param("soonDays", "14")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.total").value(0));
+        mockMvc.perform(get("/collections/figures").param("from", "2026-11-01").param("to", "2026-11-30")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.currency").value("TZS"));
+        mockMvc.perform(get("/collections/follow-up/export").param("format", "xlsx")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", containsString("premiums-to-follow-up")));
+    }
+
+    @Test
+    void theFollowUpListRefusesAViewItDoesNotHaveAndAnUnderwriter() throws Exception {
+        mockMvc.perform(get("/collections/follow-up").param("view", "LATER").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/collections/follow-up").with(staff(tenant, "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void anAgentReadsTheirOwnListAndNeedsTheirParty() throws Exception {
+        mockMvc.perform(get("/agents/me/follow-up").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .jwt(b -> b.subject("agent-1").claim("tenant_id", tenant.toString())
+                    .claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.rows").isEmpty());
+        mockMvc.perform(get("/agents/me/follow-up").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .jwt(b -> b.subject("agent-1").claim("tenant_id", tenant.toString()))))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/collections/follow-up").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .jwt(b -> b.subject("agent-1").claim("tenant_id", tenant.toString())
+                    .claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void anUnderwriterIsRefused() throws Exception {
         mockMvc.perform(get("/reports/catalogue").with(staff(tenant, "UNDERWRITER"))).andExpect(status().isForbidden());

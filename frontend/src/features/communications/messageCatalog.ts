@@ -31,6 +31,7 @@ const CATALOG: Record<string, Entry> = {
   OFFER_EXPIRED: { name: 'Offer closed unpaid', topic: 'Onboarding', when: 'When an offer closes without its first premium.' },
   // Policies & premiums: what happens every month, then what changes now and then.
   PAYMENT_RECEIVED: { name: 'Payment received', topic: 'Policies & premiums', when: 'When a premium payment is confirmed and its receipt issued.' },
+  PREMIUM_REMINDER: { name: 'Premium reminder', topic: 'Policies & premiums', when: 'When staff or the customer’s agent sends a reminder from Premiums to follow up.' },
   AGENT_CASH_RECEIVED: { name: 'Cash collected by an agent', topic: 'Policies & premiums', when: 'When an agent records cash collected from the customer, before it reaches the bank.' },
   POLICY_LAPSED: { name: 'Policy lapsed', topic: 'Policies & premiums', when: 'When a policy lapses for unpaid premiums.' },
   POLICY_REINSTATED: { name: 'Policy reinstated', topic: 'Policies & premiums', when: 'When a lapsed policy is reinstated and cover resumes.' },
@@ -106,6 +107,8 @@ const SAMPLES: Record<string, string> = {
   monthsCovered: '2',
   closingValue: '1,250,000.00',
   priceDate: '31/12/2026',
+  dueDate: '05/12/2026',
+  agentName: 'Juma Senior',
 };
 
 export function sampleFor(name: string): string {

@@ -15,7 +15,8 @@ import { keyFor, monthOf, rangeFor } from './range';
 import { RangePicker } from './RangePicker';
 import { UnderwritingDashboardPanel } from './UnderwritingDashboardPanel';
 
-export type PanelProps = { range: Required<MonthRange> };
+/** `onRange` sets the one dashboard range -- the picker's, in the URL; a panel never keeps a second one. */
+export type PanelProps = { range: Required<MonthRange>; onRange?: (range: Required<MonthRange>) => void };
 
 const PANEL: Record<DashboardKind, (props: PanelProps) => ReactElement | null> = {
   underwriting: UnderwritingDashboardPanel,
@@ -58,7 +59,7 @@ export function DashboardPage({ realm }: { realm: 'staff' | 'agents' }) {
 
   const tabs: TabDef[] = kinds.map((kind) => {
     const Panel = PANEL[kind];
-    return { value: kind, label: DASHBOARD_LABEL[kind], content: <Panel range={range} /> };
+    return { value: kind, label: DASHBOARD_LABEL[kind], content: <Panel range={range} onRange={setRange} /> };
   });
 
   return (

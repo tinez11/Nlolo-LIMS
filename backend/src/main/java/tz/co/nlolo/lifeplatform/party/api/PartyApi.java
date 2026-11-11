@@ -229,6 +229,9 @@ public interface PartyApi {
      */
     java.util.Map<UUID, String> displayNames(java.util.Collection<UUID> partyIds);
 
+    /** Phone numbers for these parties, in one read (2026-11-11, premiums to follow up). Absent when none is recorded. */
+    java.util.Map<UUID, String> phoneNumbers(java.util.Collection<UUID> partyIds);
+
     /**
      * The ids of parties whose display name contains {@code q}, case-insensitively — the same
      * ids-only idiom as {@link #partyIdsRegisteredBy}, for a module that holds party ids and

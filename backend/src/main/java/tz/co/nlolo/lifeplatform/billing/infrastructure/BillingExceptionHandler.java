@@ -43,6 +43,12 @@ public class BillingExceptionHandler {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "BALANCE_REFUSED");
     }
 
+    /** A call or reminder not recorded as asked (premiums to follow up, 2026-11-11). */
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.billing.api.CollectionActionRefusedException.class)
+    public ProblemDetail handleCollectionActionRefused(tz.co.nlolo.lifeplatform.billing.api.CollectionActionRefusedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "COLLECTION_ACTION_REFUSED");
+    }
+
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setProperty("errorCode", errorCode);

@@ -88,6 +88,9 @@ public class BillingApiImpl implements BillingApi {
     private final BalanceEntryRepository balanceEntryRepository;
     /** What a policy that charges no more premiums gives back (money movement step 3a). */
     private final BalanceWithdrawals balanceWithdrawals;
+    /** Premiums to follow up (2026-11-11). */
+    private final OpenPremiums openPremiums;
+    private final CollectionActions collectionActions;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
                            PremiumCreditRepository premiumCreditRepository,
@@ -97,7 +100,10 @@ public class BillingApiImpl implements BillingApi {
                            ArrearsNotificationSweep arrearsNotificationSweep,
                            PremiumReceiptRepository premiumReceiptRepository,
                            PolicyBalanceRepository policyBalanceRepository, BalanceEntryRepository balanceEntryRepository,
-                           BalanceWithdrawals balanceWithdrawals) {
+                           BalanceWithdrawals balanceWithdrawals,
+                           OpenPremiums openPremiums, CollectionActions collectionActions) {
+        this.openPremiums = openPremiums;
+        this.collectionActions = collectionActions;
         this.balanceWithdrawals = balanceWithdrawals;
         this.policyBalanceRepository = policyBalanceRepository;
         this.balanceEntryRepository = balanceEntryRepository;
@@ -469,8 +475,48 @@ public class BillingApiImpl implements BillingApi {
     }
 
     @Override
+    public List<OpenPremiumView> openPremiums(java.time.LocalDate dueOnOrBefore) {
+        return openPremiums.list(dueOnOrBefore);
+    }
+
+    @Override
+    public OpenPremiumView.ActionView recordCall(UUID invoiceId, String outcome, java.time.LocalDate promisedOn,
+                                                 String note, String by) {
+        return collectionActions.recordCall(invoiceId, outcome, promisedOn, note, by);
+    }
+
+    @Override
+    public OpenPremiumView.ActionView sendPremiumReminder(UUID invoiceId, String by) {
+        return collectionActions.sendReminder(invoiceId, by);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<InvoiceDueView> invoicesDueBetween(java.time.LocalDate from, java.time.LocalDate to) {
+        UUID tenantId = TenantContext.get();
+        // isSavingsType reads policy and product once per policy, so it is asked once per policy, not per invoice.
+        Map<String, Boolean> savings = new HashMap<>();
+        List<PremiumInvoice> due = premiumInvoiceRepository
+            .findByTenantIdAndDueDateBetweenAndStatusNotIn(tenantId, from, to, List.of("WAIVED")).stream()
+            .filter(i -> !savings.computeIfAbsent(i.getPolicyNumber(), this::isSavingsType))
+            .toList();
+        Map<UUID, BigDecimal> credited = openPremiums.creditedAgainst(tenantId, due);
+        return due.stream()
+            .map(i -> new InvoiceDueView(i.getInvoiceId(), i.getPolicyNumber(), i.getDueDate(), i.getAmount(),
+                i.balanceDue(credited.getOrDefault(i.getInvoiceId(), BigDecimal.ZERO)), i.getCurrency().trim(),
+                i.getStatus()))
+            .toList();
+    }
+
+    @Override
     @Transactional
     public void requestPaymentForInvoice(UUID invoiceId, String payerRef, String idempotencyKey) {
+        requestPaymentForInvoice(invoiceId, payerRef, idempotencyKey, "system");
+    }
+
+    @Override
+    @Transactional
+    public void requestPaymentForInvoice(UUID invoiceId, String payerRef, String idempotencyKey, String requestedBy) {
         UUID tenantId = TenantContext.get();
         // Review fix (I1): validated here as well as at the HTTP layer, not only there. This is a
         // published API method on BillingApi, so a future non-HTTP caller (a batch collection run,
@@ -507,6 +553,7 @@ public class BillingApiImpl implements BillingApi {
                    // is the ONLY thing standing between "safe duplicate, drop it" and "genuine
                    // retry, send it".
                    "idempotencyKey", idempotencyKey)));
+        collectionActions.paymentRequested(invoice, requestedBy == null ? "system" : requestedBy);
     }
 
     @Override

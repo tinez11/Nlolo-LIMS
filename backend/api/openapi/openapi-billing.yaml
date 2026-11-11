@@ -364,6 +364,72 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /collections/actions/calls:
+    post:
+      summary: Record a call about a premium still owed (premiums to follow up)
+      description: >
+        Staff with collections.manage on any premium; an agent only on a policy in their own book. A promise to pay
+        is a note only -- nothing holds back reminders or dunning on it.
+      security:
+        - staffAuth: []
+        - agentsAuth: [agent]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [invoiceId, outcome]
+              properties:
+                invoiceId: { type: string, format: uuid }
+                outcome: { type: string, enum: [WILL_PAY, CANNOT_PAY_NOW, NO_ANSWER, WRONG_NUMBER] }
+                promisedOn: { type: [string, "null"], format: date }
+                note: { type: [string, "null"], maxLength: 500 }
+      responses:
+        '201':
+          description: The call, recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollectionActionView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Not recorded as asked: no outcome, a promise in the past, or the premium is no longer owed (COLLECTION_ACTION_REFUSED)"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /collections/actions/reminders:
+    post:
+      summary: Send the client a reminder about a premium still owed (at most one a day per premium)
+      security:
+        - staffAuth: []
+        - agentsAuth: [agent]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [invoiceId]
+              properties:
+                invoiceId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: The reminder, sent (billing.PremiumReminderSent)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollectionActionView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Not sent: already sent today, or the premium is no longer owed (COLLECTION_ACTION_REFUSED)"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /agents/{agentId}/field-receipts:
     post:
       summary: Record cash the agent collected from a customer
@@ -759,6 +825,17 @@ paths:
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
+    CollectionActionView:
+      type: object
+      additionalProperties: false
+      required: [kind, recordedBy, recordedAt]
+      properties:
+        kind: { type: string, enum: [CALL, REMINDER, PAYMENT_REQUEST] }
+        outcome: { type: [string, "null"], enum: [WILL_PAY, CANNOT_PAY_NOW, NO_ANSWER, WRONG_NUMBER, null] }
+        promisedOn: { type: [string, "null"], format: date }
+        note: { type: [string, "null"] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
     LenderRefund:
       type: object
       required: [creditId, policyNumber, payee, amount, currency, status, raisedAt]

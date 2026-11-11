@@ -11,6 +11,14 @@ import java.util.UUID;
 
 public interface PremiumInvoiceRepository extends JpaRepository<PremiumInvoice, PremiumInvoice.PremiumInvoiceId> {
     List<PremiumInvoice> findByPolicyNumberAndTenantIdOrderByDueDate(String policyNumber, UUID tenantId);
+
+    /** Every premium in these states falling due on or before a day, oldest first (premiums to follow up). */
+    List<PremiumInvoice> findByTenantIdAndStatusInAndDueDateLessThanEqualOrderByDueDateAsc(UUID tenantId,
+                                                                                         Collection<String> statuses,
+                                                                                         LocalDate dueOnOrBefore);
+    /** Every premium falling due in a period but those in these states (the collection rate). */
+    List<PremiumInvoice> findByTenantIdAndDueDateBetweenAndStatusNotIn(UUID tenantId, LocalDate from, LocalDate to,
+                                                                       Collection<String> statuses);
     List<PremiumInvoice> findByPolicyNumberAndTenantIdAndStatusIn(String policyNumber, UUID tenantId, List<String> statuses);
     Optional<PremiumInvoice> findFirstByPolicyNumberAndTenantIdAndStatusInOrderByDueDateAsc(
         String policyNumber, UUID tenantId, List<String> statuses);

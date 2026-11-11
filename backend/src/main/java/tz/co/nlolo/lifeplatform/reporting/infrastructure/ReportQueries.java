@@ -116,6 +116,26 @@ public class ReportQueries {
 
     /** The same policies one row each, with the status each held on asOf. Unbounded on purpose: the export
      * carries every row, and the console decides how many to draw. */
+    /** What the follow-up list needs to know of a policy: its product, holder, agent, branch and status today. */
+    public record FollowUpPolicyRow(String policyNumber, UUID productId, UUID holderPartyId, UUID agentId,
+                                    String branchCode, String status) {}
+
+    /**
+     * The policies behind premiums to follow up (2026-11-11), with their status as of {@code asOf}. A policy never
+     * activated (an offer not taken up) is left out: its first premium is the offer's business, not collections'.
+     */
+    public List<FollowUpPolicyRow> followUpPolicies(UUID tenantId, LocalDate asOf, java.util.Collection<String> policyNumbers) {
+        if (policyNumbers.isEmpty()) return List.of();
+        return jdbc.query("WITH " + LAST_CHANGE_CTE + " SELECT p.policy_number, p.product_id, p.holder_party_id,"
+                + " p.agent_id, p.branch_code, l.to_status"
+                + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number"
+                + " WHERE p.tenant_id = ? AND p.activated_on IS NOT NULL AND p.policy_number = ANY(?)",
+            (rs, i) -> new FollowUpPolicyRow(rs.getString("policy_number"), rs.getObject("product_id", UUID.class),
+                rs.getObject("holder_party_id", UUID.class), rs.getObject("agent_id", UUID.class),
+                rs.getString("branch_code"), rs.getString("to_status")),
+            tenantId, asOf, tenantId, policyNumbers.toArray(String[]::new));
+    }
+
     public List<PolicyListRow> policyList(UUID tenantId, LocalDate asOf, ReportFilter f) {
         List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf));
         StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT p.policy_number,"

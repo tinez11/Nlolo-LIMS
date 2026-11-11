@@ -20,4 +20,7 @@ public interface PremiumCreditRepository extends JpaRepository<PremiumCredit, UU
     List<PremiumCredit> findByTenantIdAndRefundStatusOrderByCreatedAt(UUID tenantId, String refundStatus);
 
     List<PremiumCredit> findByTenantIdAndOriginalInvoiceId(UUID tenantId, UUID originalInvoiceId);
+
+    /** The credits against many invoices in one read (premiums to follow up: one query for the list, not one per row). */
+    List<PremiumCredit> findByTenantIdAndOriginalInvoiceIdIn(UUID tenantId, java.util.Collection<UUID> originalInvoiceIds);
 }

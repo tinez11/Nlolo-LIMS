@@ -125,7 +125,9 @@ public class FinanceDashboard {
             byLine == null ? List.of() : byLine,
             newNow, newBefore,
             newNow == null ? null : DashboardPeriod.changePercent(BigDecimal.valueOf(newNow), BigDecimal.valueOf(newBefore)),
-            issuedSeries, Money.of(outstanding(aging), WORKING_CURRENCY));
+            issuedSeries, Money.of(outstanding(aging), WORKING_CURRENCY),
+            Safely.read("collection figures", () -> reporting.collectionFigures(period.from().atDay(1),
+                period.to().atEndOfMonth().isAfter(today) ? today : period.to().atEndOfMonth(), today)));
     }
 
     private static List<MonthPoint> series(List<YearMonth> months, Map<YearMonth, BigDecimal> monthly) {

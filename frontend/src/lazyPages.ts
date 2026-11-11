@@ -29,6 +29,9 @@ export const MessagesPage = lazy(() =>
 export const TemplatesPage = lazy(() =>
   import('@/features/communications/TemplatesPage').then((m) => ({ default: m.TemplatesPage })),
 );
+export const FollowUpPage = lazy(() =>
+  import('@/features/collections/FollowUpPage').then((m) => ({ default: m.FollowUpPage })),
+);
 export const ArrearsPage = lazy(() =>
   import('@/features/billing/ArrearsPage').then((m) => ({ default: m.ArrearsPage })),
 );
