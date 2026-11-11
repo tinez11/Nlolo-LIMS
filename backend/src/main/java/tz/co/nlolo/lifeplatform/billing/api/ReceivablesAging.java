@@ -20,5 +20,9 @@ public record ReceivablesAging(String currency, List<Bucket> buckets) {
     public record Bucket(String name, long cases, BigDecimal outstanding) {}
 
     /** The five bands, in the order a statement reads them: youngest first. */
-    public static final List<String> BUCKETS = List.of("NOT_DUE", "D1_30", "D31_60", "D61_90", "OVER_90");
+    /**
+     * The PRD's six lateness bands (2026-11-11), the same the follow-up list uses, after NOT_DUE: due today, or held
+     * by an open arrears case before its due date -- owed, not yet overdue.
+     */
+    public static final List<String> BUCKETS = List.of("NOT_DUE", "D1_7", "D8_14", "D15_30", "D31_60", "D61_90", "OVER_90");
 }

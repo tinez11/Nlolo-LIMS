@@ -389,7 +389,7 @@ components:
             additionalProperties: false
             required: [name, cases, outstanding]
             properties:
-              name: { type: string, enum: [NOT_DUE, D1_30, D31_60, D61_90, OVER_90] }
+              name: { type: string, enum: [NOT_DUE, D1_7, D8_14, D15_30, D31_60, D61_90, OVER_90] }
               cases: { type: integer, format: int64, minimum: 0 }
               outstanding:
                 description: The invoice amount less what has been paid; a part-paid invoice owes the remainder.
