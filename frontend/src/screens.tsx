@@ -24,6 +24,7 @@ import {
   Send,
   Shield,
   TrendingDown,
+  PhoneCall,
   TrendingUp,
   UserCheck,
   UserPlus,
@@ -86,6 +87,7 @@ import {
   AuditLogPage,
   MessagesPage,
   TemplatesPage,
+  FollowUpPage,
   ArrearsPage,
   FieldReceiptsPage,
   EftExecutionPage,
@@ -392,7 +394,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'receipts/new': ['collections.manage', 'policies.service', 'accounts.transact'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
   'receipt-numbers/:receiptNumber': ['collections.view', 'collections.manage'],
   'receipts/:receiptId/reverse': ['collections.manage'],
-  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
+  'follow-up': ['collections.view'], arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
   payouts: ['payouts.view'], 'payouts/all': ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
   funds: ['funds.view'],
@@ -638,6 +640,13 @@ const STAFF_SCREENS: Screen[] = [
   // up, and this is a queue somebody has to clear. It earned a nav item the day GET /arrears
   // existed -- before that the platform escalated policies through five dunning levels and
   // recommended them for lapse with no screen able to show a single one of them.
+  // First of all (2026-11-11, analytics plan 1): who to call today -- due today, due soon and overdue, with the phone,
+  // what was already done, and the call, reminder or payment request to do next. The arrears ladder stays beside it.
+  {
+    path: 'follow-up',
+    element: <FollowUpPage />,
+    reach: { group: 'collections', label: 'Premiums to follow up', icon: PhoneCall },
+  },
   {
     path: 'arrears',
     element: <ArrearsPage />,
