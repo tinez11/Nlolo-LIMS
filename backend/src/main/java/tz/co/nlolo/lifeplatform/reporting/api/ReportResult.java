@@ -9,10 +9,12 @@ import java.util.List;
  *
  * @param notices what a reader must know before trusting the figures -- "Placeholder risk charges, not TIRA's" --
  *                shown above them, never in a footnote (2026-11-09, the solvency reports)
+ * @param dataUpTo the newest change the reports' own copy had taken in for this tenant when the report ran
+ *                 (2026-11-11, analytics plan 2); null when the report does not read the copy (it reads live)
  */
 public record ReportResult(String key, String title, String filterSummary, Instant generatedAt,
                            List<ReportSection> sections, List<ReportFigure> figures, ReportChart chart,
-                           String comparisonLabel, List<String> notices) {
+                           String comparisonLabel, List<String> notices, Instant dataUpTo) {
 
     public ReportResult {
         figures = figures == null ? List.of() : List.copyOf(figures);
@@ -21,12 +23,18 @@ public record ReportResult(String key, String title, String filterSummary, Insta
 
     public ReportResult(String key, String title, String filterSummary, Instant generatedAt,
                         List<ReportSection> sections, List<ReportFigure> figures, ReportChart chart,
+                        String comparisonLabel, List<String> notices) {
+        this(key, title, filterSummary, generatedAt, sections, figures, chart, comparisonLabel, notices, null);
+    }
+
+    public ReportResult(String key, String title, String filterSummary, Instant generatedAt,
+                        List<ReportSection> sections, List<ReportFigure> figures, ReportChart chart,
                         String comparisonLabel) {
-        this(key, title, filterSummary, generatedAt, sections, figures, chart, comparisonLabel, List.of());
+        this(key, title, filterSummary, generatedAt, sections, figures, chart, comparisonLabel, List.of(), null);
     }
 
     public ReportResult(String key, String title, String filterSummary, Instant generatedAt,
                         List<ReportSection> sections) {
-        this(key, title, filterSummary, generatedAt, sections, List.of(), null, null, List.of());
+        this(key, title, filterSummary, generatedAt, sections, List.of(), null, null, List.of(), null);
     }
 }

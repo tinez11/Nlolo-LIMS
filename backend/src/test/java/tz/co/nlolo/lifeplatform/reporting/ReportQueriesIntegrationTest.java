@@ -486,6 +486,20 @@ class ReportQueriesIntegrationTest {
         });
     }
 
+    /**
+     * How fresh the figures are (2026-11-11, analytics plan 2): a report on the reports' copy says the newest change it
+     * took in; a ledger report reads live and says nothing of the copy; every report says what it reads.
+     */
+    @Test
+    void aReportOnTheCopySaysTheLastChangeItTookIn() {
+        events.sell(tenant, Sale.of("F-1", product, d("2026-01-05")));
+
+        assertThat(run("policies-in-force", ReportFilter.asOf(d("2026-01-31"))).dataUpTo())
+            .isNotNull().isBeforeOrEqualTo(java.time.Instant.now());
+        assertThat(run("trial-balance", ReportFilter.month(YearMonth.of(2026, 9))).dataUpTo()).isNull();
+        assertThat(reportingApi.catalogue()).allSatisfy(d -> assertThat(d.sources()).as(d.key()).isNotEmpty());
+    }
+
     @Test
     void theCatalogueListsReportsInBusinessOrder() {
         assertThat(reportingApi.catalogue()).extracting(ReportDefinitionView::key)

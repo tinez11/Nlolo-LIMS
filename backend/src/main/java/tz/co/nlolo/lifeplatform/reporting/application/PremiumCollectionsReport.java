@@ -42,7 +42,7 @@ public class PremiumCollectionsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("premium-collections", "Premium collections",
         "Premiums received each month, by payment method, against the period before; the policies that paid most; and"
             + " what is still owed at the period's end, by how overdue it is.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods().from("REPORTING_COPY", "BILLING");
 
     /** Every way a premium is paid, in words (2026-11-11). FIELD_CASH is the old guess, kept for rows projected before. */
     static final Map<String, String> METHODS = Map.of("MOBILE_MONEY", "Mobile money", "LIPA_NUMBER", "Lipa number",

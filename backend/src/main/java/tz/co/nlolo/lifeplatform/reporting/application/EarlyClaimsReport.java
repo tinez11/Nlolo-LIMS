@@ -39,7 +39,7 @@ public class EarlyClaimsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("early-claims", "Early claims",
         "Claims registered in the period whose event fell within one or two years of the policy starting, by agent and"
             + " branch, against the period before.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

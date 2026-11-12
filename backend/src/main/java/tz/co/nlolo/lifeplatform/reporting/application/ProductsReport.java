@@ -46,7 +46,7 @@ public class ProductsReport implements Report {
         // Shown to the reader as written, so a real dash rather than this codebase's two-hyphen comment style.
         "Each product's book on a date — policies written, in force and lapsed, with their cover and annual premium — "
             + "and every policy behind it with its client, status, cover, premium and agent.",
-        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF, List.of(), false);
+        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF, List.of(), false).from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

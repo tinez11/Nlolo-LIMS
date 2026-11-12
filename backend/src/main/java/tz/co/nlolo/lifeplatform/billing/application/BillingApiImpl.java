@@ -150,6 +150,7 @@ public class BillingApiImpl implements BillingApi {
         return cases.map(c -> toView(c, invoicesById.get(c.getInvoiceId())));
     }
 
+    /** "Owed today", explained in reporting's CollectionsFigureDefinitions -- change the words with the formula. */
     @Override
     public List<ReceivablesAging> receivablesAging(java.time.LocalDate asOf) {
         // The query returns only the bands that have rows; the view promises every band, in order,
@@ -509,6 +510,7 @@ public class BillingApiImpl implements BillingApi {
         return collectionActions.sendReminder(invoiceId, by);
     }
 
+    /** "Premiums due" and "paid", explained in reporting's CollectionsFigureDefinitions -- change the words with the formula. */
     @Override
     @Transactional(readOnly = true)
     public List<InvoiceDueView> invoicesDueBetween(java.time.LocalDate from, java.time.LocalDate to) {

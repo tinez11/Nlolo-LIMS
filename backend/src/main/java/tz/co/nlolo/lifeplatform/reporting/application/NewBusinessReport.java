@@ -35,7 +35,7 @@ public class NewBusinessReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("new-business", "New business",
         "Policies activated each month, offers that expired unpaid, and the take-up rate between them, against the period"
             + " before or the same period last year.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

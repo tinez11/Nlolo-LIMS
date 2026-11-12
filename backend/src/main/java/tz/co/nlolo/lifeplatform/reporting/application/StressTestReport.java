@@ -39,7 +39,7 @@ public class StressTestReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("stress-tests", "Stress tests",
         "The capital adequacy ratio under each named shock -- markets, rates, deaths, lapses, a reinsurer failing, a"
             + " catastrophe -- worst first, against the minimum.",
-        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), false);
+        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), false).from("LEDGER");
 
     static final String APPROXIMATION = "An approximation: an asset shock moves the account balances it names, and a"
         + " mortality or lapse shock scales the insurance-risk charge. The contracts themselves are not re-projected.";

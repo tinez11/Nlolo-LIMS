@@ -103,6 +103,16 @@ class ReportingContractTest {
     }
 
     @Test
+    void theFigureDefinitionsMatchTheContractAndAreForReportReaders() throws Exception {
+        mockMvc.perform(get("/reports/figure-definitions").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$[0].title").value("Collections"));
+        mockMvc.perform(get("/reports/figure-definitions").with(staff(tenant, "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void theFollowUpListRefusesAViewItDoesNotHaveAndAnUnderwriter() throws Exception {
         mockMvc.perform(get("/collections/follow-up").param("view", "LATER").with(staff(tenant, "FINANCE_OFFICER")))
             .andExpect(status().isBadRequest());

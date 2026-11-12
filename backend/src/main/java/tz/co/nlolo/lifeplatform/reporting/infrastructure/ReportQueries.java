@@ -117,6 +117,16 @@ public class ReportQueries {
 
     /** The same policies one row each, with the status each held on asOf. Unbounded on purpose: the export
      * carries every row, and the console decides how many to draw. */
+    /**
+     * The newest change the reports' own copy has taken in for this tenant (2026-11-11, analytics plan 2): the latest
+     * applied event. Null when it has taken in nothing yet.
+     */
+    public Instant lastAppliedAt(UUID tenantId) {
+        java.sql.Timestamp at = jdbc.queryForObject(
+            "SELECT max(applied_at) FROM reporting.applied_event WHERE tenant_id = ?", java.sql.Timestamp.class, tenantId);
+        return at == null ? null : at.toInstant();
+    }
+
     /** What the follow-up list needs to know of a policy: its product, holder, agent, branch and status today. */
     public record FollowUpPolicyRow(String policyNumber, UUID productId, UUID holderPartyId, UUID agentId,
                                     String branchCode, String status) {}

@@ -45,7 +45,7 @@ public class BalanceSheetReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("balance-sheet", "Balance sheet",
         "Assets, liabilities and equity through the chosen period, by the chart's own groups, against the period it is"
             + " compared with.",
-        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), true).comparingPeriods();
+        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), true).comparingPeriods().from("LEDGER");
 
     /** A balance sheet's tree goes back to the ledger's first posting: a position is everything up to the month. */
     private static final String INCEPTION = "1900-01";

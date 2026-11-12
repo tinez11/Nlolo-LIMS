@@ -43,7 +43,7 @@ public class PoliciesInForceReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("policies-in-force", "Policies in force",
         "Policies on cover on a date: count, sum assured and premium, and how the book moved since a month (or a year)"
             + " earlier. Suspended and paid-up policies are in force; a paid-up policy contributes no premium.",
-        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF, List.of(GroupBy.values()), true).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF, List.of(GroupBy.values()), true).comparingPeriods().from("REPORTING_COPY");
 
     static final Set<String> IN_FORCE = Set.of("ACTIVE", "SUSPENDED", "PAID_UP");
 

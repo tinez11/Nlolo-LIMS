@@ -38,7 +38,7 @@ public class ClaimOutcomesReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claim-outcomes", "Claim outcomes",
         "Claims registered, approved and declined in the period, those still open at its end, and the reasons for"
             + " declining, against the period before.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

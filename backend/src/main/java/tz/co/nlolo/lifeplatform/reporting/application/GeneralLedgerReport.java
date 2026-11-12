@@ -54,7 +54,7 @@ public class GeneralLedgerReport implements Report {
      *  without one and showing the server's refusal where the report should be. */
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("general-ledger", "General ledger",
         "Every posting to one account across a span of periods, with its opening and closing balance.",
-        ReportCategory.ACCOUNTING, DateFilterKind.MONTH_RANGE, List.of(), false, true);
+        ReportCategory.ACCOUNTING, DateFilterKind.MONTH_RANGE, List.of(), false, true).from("LEDGER");
 
     private final FinaccountingApi finaccounting;
 

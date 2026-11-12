@@ -34,7 +34,7 @@ public class ClientsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("clients", "Clients",
         "Clients by type and KYC status, individuals by age band and sex, and every group or corporate scheme with "
             + "its lives covered, joiners and leavers.",
-        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

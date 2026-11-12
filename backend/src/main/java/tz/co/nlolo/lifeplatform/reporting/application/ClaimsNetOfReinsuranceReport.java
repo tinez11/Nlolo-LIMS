@@ -41,7 +41,7 @@ public class ClaimsNetOfReinsuranceReport implements Report {
         "Claims net of reinsurance",
         "Every claim approved in the period, what the reinsurance treaties make recoverable on it, and what the company"
             + " keeps.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY", "REINSURANCE");
 
     private final ReportQueries queries;
     private final ReinsuranceApi reinsurance;

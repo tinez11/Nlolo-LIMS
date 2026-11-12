@@ -35,7 +35,7 @@ public class ApprovedVsPaidReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claims-approved-vs-paid", "Approved vs paid",
         "Claims paid in the period: approved, netted and paid; and approved claims still unpaid at its end, by age.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private static final int[][] AGES = { { 0, 30 }, { 31, 60 }, { 61, 90 }, { 91, Integer.MAX_VALUE } };
 

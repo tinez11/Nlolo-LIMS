@@ -58,7 +58,7 @@ public class CommissionsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("commissions", "Commissions",
         "Commission earned, clawed back and paid across every agent, by agent and by product against the premium"
             + " collected, and the statements not yet paid, by age.",
-        ReportCategory.COMMISSIONS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.COMMISSIONS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("DISTRIBUTION", "REPORTING_COPY");
 
     private final DistributionApi distribution;
     private final ReportQueries queries;

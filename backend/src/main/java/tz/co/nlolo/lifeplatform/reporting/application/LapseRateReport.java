@@ -37,7 +37,7 @@ public class LapseRateReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("lapse-rate", "Lapse rate",
         "Lapses in the period divided by the average number of policies in force (start plus end, halved), "
             + "gross and net of reinstatements in the same period.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

@@ -45,6 +45,16 @@ public class ReportController {
         return reportingApi.catalogue();
     }
 
+    /**
+     * Figures explained that belong to no single report (2026-11-11, decision K1): read-only, from the code. Mapped
+     * before /reports/{reportKey} so it can never be read as a report key.
+     */
+    @GetMapping("/reports/figure-definitions")
+    @PreAuthorize("@access.can('reports.view')")
+    public List<tz.co.nlolo.lifeplatform.reporting.api.FigureGroup> figureDefinitions() {
+        return reportingApi.figureGroups();
+    }
+
     @GetMapping("/reports/{reportKey}")
     @PreAuthorize("@access.can('reports.view')")
     public ReportResult run(@PathVariable String reportKey, @RequestParam Map<String, String> query) {
