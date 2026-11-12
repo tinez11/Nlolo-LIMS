@@ -12,7 +12,7 @@ describe('permission groups', () => {
   it('places every catalogue area in exactly one group', () => {
     const areas = PERMISSION_GROUPS.flatMap((g) => g.areas);
     expect(new Set(areas).size).toBe(areas.length);
-    expect(areas).toHaveLength(19);
+    expect(areas).toHaveLength(20); // OVERVIEW added 2026-11-12 (analytics plan 5)
   });
 
   it('lists a group in the order its areas are given, and drops groups with nothing', () => {
