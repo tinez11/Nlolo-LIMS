@@ -3,16 +3,18 @@ import {
   getAgentDashboard,
   getClaimsDashboard,
   getFinanceDashboard,
+  getManagementDashboard,
   getUnderwritingDashboard,
   type AgentDashboard,
   type ClaimsDashboard,
   type FinanceDashboard,
+  type ManagementDashboard,
   type AgentRange,
   type UnderwritingDashboard,
 } from '@/api/dashboard';
 import { idle, track, type Resource } from './createResourceSlice';
 
-export type DashboardKind = 'underwriting' | 'claims' | 'finance' | 'agent';
+export type DashboardKind = 'overview' | 'underwriting' | 'claims' | 'finance' | 'agent';
 
 /**
  * One slot per dashboard rather than one shared slot: a person holding two roles switches tabs, and the tab they
@@ -26,6 +28,7 @@ interface DashboardState {
   claims: Resource<ClaimsDashboard>;
   finance: Resource<FinanceDashboard>;
   agent: Resource<AgentDashboard>;
+  overview: Resource<ManagementDashboard>;
   load: (kind: DashboardKind, range?: AgentRange) => Promise<void>;
 }
 
@@ -34,6 +37,7 @@ export const useDashboardStore = create<DashboardState>((set, getState) => ({
   claims: idle(),
   finance: idle(),
   agent: idle(),
+  overview: idle(),
 
   load: (kind, range) => {
     switch (kind) {
@@ -46,6 +50,9 @@ export const useDashboardStore = create<DashboardState>((set, getState) => ({
       case 'finance':
         return track('dashboard.finance', getState().finance, (next) => set({ finance: next }),
           () => getFinanceDashboard(range));
+      case 'overview':
+        return track('dashboard.overview', getState().overview, (next) => set({ overview: next }),
+          () => getManagementDashboard(range));
       case 'agent':
         return track('dashboard.agent', getState().agent, (next) => set({ agent: next }),
           () => getAgentDashboard(range));
@@ -57,3 +64,4 @@ export const selectUnderwriting = (s: DashboardState) => s.underwriting;
 export const selectClaims = (s: DashboardState) => s.claims;
 export const selectFinance = (s: DashboardState) => s.finance;
 export const selectAgent = (s: DashboardState) => s.agent;
+export const selectOverview = (s: DashboardState) => s.overview;
