@@ -1,4 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { FilterChip } from '@/components/FilterChip';
+import { activePreset, periodPresets } from './periodPresets';
 import { useProductStore } from '@/store/productStore';
 import { listChartOfAccounts } from '@/api/finaccounting';
 import type { ChartOfAccountView } from '@/api/types';
@@ -77,9 +79,30 @@ export function ReportFilterBar({
     </label>
   );
 
+  // The period choices (2026-11-11, the user: "more filters on reports, including quarters"). A choice fills the dates
+  // below; Run still runs. "Pick dates" is the dates themselves, so it is lit whenever no choice matches them.
+  const presets = periodPresets(kind, new Date());
+  const active = activePreset(presets, state);
+  const firstDate = useRef<HTMLDivElement>(null);
+
   return (
     <form onSubmit={submit} aria-label="Report filters" className="space-y-2 border-b border-border pb-4">
-      <div className="flex flex-wrap items-end gap-3">
+      {presets.length > 0 && (
+        <div role="group" aria-label="Period" className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-muted-foreground" aria-hidden>
+            Period
+          </span>
+          {presets.map((p) => (
+            <FilterChip key={p.id} label={p.label} active={active === p.id} onClick={() => setState((s) => ({ ...s, ...p.set }))} />
+          ))}
+          <FilterChip
+            label="Pick dates…"
+            active={active === null}
+            onClick={() => firstDate.current?.querySelector('input')?.focus()}
+          />
+        </div>
+      )}
+      <div ref={firstDate} className="flex flex-wrap items-end gap-3">
         {(kind === 'AS_OF' || kind === 'AS_OF_AND_PERIOD') && field('asOf', 'As of', 'date')}
         {kind === 'AS_OF' && definition.comparable && !definition.comparesPeriods && field('compareAsOf', 'Compare with', 'date')}
         {(kind === 'PERIOD' || kind === 'AS_OF_AND_PERIOD') && field('from', 'From', 'date')}
