@@ -143,6 +143,19 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
 
     // ---- periods ----
 
+    /** Finance finding 90 (2026-11-12): only a month that has ended can start closing. */
+    @Test
+    void thisMonthAndLaterCannotStartClosing() {
+        UUID tenant = tenantWithChart();
+        as(tenant);
+        java.time.YearMonth now = java.time.YearMonth.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        assertThatThrownBy(() -> api.startClosing(now.toString(), "alice"))
+            .isInstanceOf(PeriodStateException.class).hasMessageContaining("has not ended yet");
+        assertThatThrownBy(() -> api.startClosing(now.plusMonths(1).toString(), "alice"))
+            .isInstanceOf(PeriodStateException.class).hasMessageContaining("has not ended yet");
+        assertThat(api.startClosing(now.minusMonths(1).toString(), "alice").status()).isEqualTo(PeriodStatus.CLOSING);
+    }
+
     @Test
     void aPeriodLocksOnlyAfterEveryEarlierPeriodWithPostingsIsLocked() {
         UUID tenant = tenantWithChart();

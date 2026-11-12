@@ -17,6 +17,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRuleSet;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey;
@@ -76,6 +77,7 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     private final ChartOfAccountSeeder seeder;
 
     private final PolicyClassifier classifier;
+    private final PostingRules postingRules;
 
     public FinaccountingApiImpl(JournalEntryRepository journalEntryRepository,
                                  GlPostingRepository glPostingRepository,
@@ -85,8 +87,10 @@ public class FinaccountingApiImpl implements FinaccountingApi {
                                  AccountingPeriods periods,
                                  PolicyRegister register,
                                  ChartOfAccountSeeder seeder,
-                                 PolicyClassifier classifier) {
+                                 PolicyClassifier classifier,
+                                 PostingRules postingRules) {
         this.classifier = classifier;
+        this.postingRules = postingRules;
         this.elections = elections;
         this.periods = periods;
         this.register = register;
@@ -523,6 +527,29 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         if (status == AccountStatus.ACTIVE) {
             account.activate(updatedBy);
         } else {
+            // Not an account in use (2026-11-12, finding 57): one holding money, or one the posting rules book to, was
+            // retired, and the next automatic posting fell into Unposted events and blocked month-end.
+            java.math.BigDecimal balance = glPostingRepository.balanceOf(tenantId, accountCode);
+            if (balance != null && balance.signum() != 0) {
+                throw new AccountInUseException("Account " + accountCode + " holds " + balance.abs().toPlainString()
+                    + "; move it to another account by a manual journal before retiring it");
+            }
+            // BANK and RECEIPT stand for the account the money moved through: 1130/1140, and 1140/1120.
+            java.util.Set<String> standsFor = new java.util.HashSet<>();
+            if (accountCode.equals(PostingRuleSet.BANK_EFT) || accountCode.equals(PostingRuleSet.BANK_MOBILE_MONEY)) {
+                standsFor.add(PostingRuleSet.BANK);
+            }
+            if (accountCode.equals(PostingRuleSet.BANK_MOBILE_MONEY) || accountCode.equals(PostingRuleSet.RECEIPT_BANK)) {
+                standsFor.add(PostingRuleSet.RECEIPT);
+            }
+            List<String> rulesUsing = postingRules.ruleSet().rules().stream()
+                .filter(r -> r.lines().stream().anyMatch(l -> accountCode.equals(l.account())
+                    || standsFor.contains(l.account())))
+                .map(r -> r.id()).distinct().toList();
+            if (!rulesUsing.isEmpty()) {
+                throw new AccountInUseException("Account " + accountCode + " is where the posting rules book "
+                    + String.join(", ", rulesUsing) + "; it cannot be retired while they do");
+            }
             account.deactivate(updatedBy);
         }
         chartOfAccountRepository.save(account);

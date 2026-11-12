@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { MonthEndStep } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
+import { TaxRatesNotice } from './TaxRatesNotice';
 import { Panel } from '@/components/Panel';
 import { StaffName } from '@/components/StaffName';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -45,6 +46,10 @@ export function MonthEndPage() {
     const locked = view.status === 'LOCKED';
     return (
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Finding 101 (2026-11-12): a tax rate nobody set is said where the month is closed. */}
+        <div className="lg:col-span-2 empty:hidden">
+          <TaxRatesNotice />
+        </div>
         <Panel
           title={locked ? `${monthName(period)} is closed` : `Step ${view.current} of 8 is next`}
         >
@@ -75,6 +80,13 @@ export function MonthEndPage() {
                   <li key={b}>{b}</li>
                 ))}
               </ul>
+            )}
+            {/* D14 (2026-11-12): read before locking; never a block. */}
+            {(view.warnings ?? []).length > 0 && (
+              <div role="note" aria-label="Before you lock" className="mt-3 rounded-md bg-status-warning-bg px-3 py-2 text-status-warning-fg">
+                <p className="text-xs font-medium">Before you lock</p>
+                {(view.warnings ?? []).map((w) => <p key={w} className="mt-1 text-xs">{w}</p>)}
+              </div>
             )}
           </div>
         </Panel>

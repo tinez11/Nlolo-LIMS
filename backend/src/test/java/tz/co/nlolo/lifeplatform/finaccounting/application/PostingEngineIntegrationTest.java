@@ -210,7 +210,7 @@ class PostingEngineIntegrationTest {
         UUID tenant = UUID.randomUUID();
         issue(tenant, "POL-ENG-CLOSE", "TERM", null, "DIRECT", "DSM");
         TenantContext.set(tenant);
-        api.startClosing(THIS_MONTH, "finance-one");
+        ClosingThisMonth.start(jdbc, tenant, THIS_MONTH, "finance-one"); // the API closes only an ended month (finding 90)
 
         UUID invoiceId = invoice(tenant, "POL-ENG-CLOSE", "700.00", null);
         assertThat(lines(tenant, invoiceId.toString())).isEmpty();

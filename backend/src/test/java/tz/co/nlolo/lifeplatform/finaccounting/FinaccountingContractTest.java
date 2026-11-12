@@ -645,6 +645,19 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
+    /** Finding 57 (2026-11-12): an account the posting rules book to cannot be retired -- 1140 takes mobile money. */
+    @Test
+    void anAccountThePostingRulesUseCannotBeRetired() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1140")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_IN_USE"))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("posting rules")));
+    }
+
     @Test
     void deactivateReturns404ForAnUnknownAccountAndIsGatedOnFinanceOrAdmin() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -941,17 +954,17 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$.errorCode").value("ENGINE_NOT_FOUND"));
     }
 
-    /** IFRS 17 I6: the year-end close over HTTP -- a December payroll closed to retained earnings by two people. */
+    /** IFRS 17 I6: the year-end close over HTTP -- a December payroll closed to retained earnings by two people. A year that has ended (2025): only an ended month starts closing (finding 90, 2026-11-12). */
     @Test
     void theYearEndCloseOverHttp() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+        mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2025).with(financeStaffOf(tenantId)))
             .andExpect(status().isConflict())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("YEAR_END_STATE"));
 
         TenantContext.set(tenantId);
-        var payroll = manualJournals.create(new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput("2026-12",
+        var payroll = manualJournals.create(new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput("2025-12",
             CURRENCY, "December payroll", "Payroll summary from HR", null, "O-01", null, java.util.List.of(
                 new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput.Line("8110", PostingDirection.DR,
                     new BigDecimal("100.00"), "Salaries", null, null, null, null),
@@ -962,14 +975,14 @@ class FinaccountingContractTest {
         manualJournals.approve(payroll.id(), "finance-approver");
         TenantContext.clear();
 
-        mockMvc.perform(post("/finance/periods/{p}/closing", "2026-12").with(financeStaffOf(tenantId)))
+        mockMvc.perform(post("/finance/periods/{p}/closing", "2025-12").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk());
-        mockMvc.perform(get("/ifrs17/year-end/{y}/preview", 2026).with(financeStaffOf(tenantId)))
+        mockMvc.perform(get("/ifrs17/year-end/{y}/preview", 2025).with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.profit").value(-100.0))
             .andExpect(jsonPath("$.accounts[0].code").value("8110"));
-        String created = mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+        String created = mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2025).with(financeStaffOf(tenantId)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("PREPARED"))
@@ -981,14 +994,14 @@ class FinaccountingContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("POSTED"));
-        mockMvc.perform(get("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+        mockMvc.perform(get("/ifrs17/year-end/{y}/closes", 2025).with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.length()").value(1));
         mockMvc.perform(get("/ifrs17/year-end-closes/{id}", id).with(financeStaffOf(UUID.randomUUID())))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("YEAR_END_NOT_FOUND"));
-        mockMvc.perform(post("/finance/periods/{p}/lock", "2026-12").with(financeStaffOf(tenantId)))
+        mockMvc.perform(post("/finance/periods/{p}/lock", "2025-12").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk());
     }
 

@@ -6,6 +6,7 @@ import type { RegulatoryReturnView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
+import { PlaceholderReturnNotice } from './PlaceholderReturnNotice';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
@@ -103,6 +104,7 @@ export function RegulatoryReturnsPage() {
       />
 
       <div className="px-6 pb-6 space-y-4">
+        <PlaceholderReturnNotice />
         {creatingOpen && (
           <GenerateReturnForm
             onDone={(returnId) => {

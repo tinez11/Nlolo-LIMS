@@ -9,7 +9,9 @@ import java.util.List;
  * list of pages. {@code current} is the first step not yet done (9 when the month is locked). {@code blockers} are why
  * the month cannot lock now, in the words the lock itself would refuse with.
  */
-public record MonthEndView(String period, PeriodStatus status, int current, List<Step> steps, List<String> blockers) {
+public record MonthEndView(String period, PeriodStatus status, int current, List<Step> steps, List<String> blockers,
+                           /* 2026-11-12, D14: read before locking, never stopping it (no engine run, for one). */
+                           List<String> warnings) {
 
     /**
      * One step. {@code state}: DONE; WAITING -- with someone, usually a second person's decision; TODO -- finance's to
