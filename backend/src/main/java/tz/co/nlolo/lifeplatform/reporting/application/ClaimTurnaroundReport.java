@@ -28,7 +28,8 @@ import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.TEXT;
 import static tz.co.nlolo.lifeplatform.reporting.application.ClaimsReporting.Span;
 
 /**
- * C5, how long claims take against the period before (2026-11-09): days from registration to a decision, from
+ * C5, how long claims take against the period before (2026-11-09): days from registration to the first assessment
+ * and from it to a decision (2026-11-12, analytics plan 5), from registration to a decision, from
  * approval to payment and from registration to payment, and the claims paid later than the target
  * ({@link ClaimsReporting#TARGET_DAYS} days from registration).
  */
@@ -36,7 +37,7 @@ import static tz.co.nlolo.lifeplatform.reporting.application.ClaimsReporting.Spa
 public class ClaimTurnaroundReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claims-turnaround", "Claims turnaround",
-        "Average days to decide and to pay the claims settled in the period, against the period before, and the claims"
+        "Average days to assess, to decide and to pay the claims in the period, against the period before, and the claims"
             + " paid later than " + ClaimsReporting.TARGET_DAYS + " days from registration.",
         ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
@@ -76,6 +77,9 @@ public class ClaimTurnaroundReport implements Report {
             new ReportColumn("now", now.label(), TEXT)));
         if (before != null) columns.add(new ReportColumn("before", before.label(), TEXT));
         List<Map<String, String>> rows = new ArrayList<>();
+        // The steps first (analytics plan 5): registration to the first assessment, and from it to a decision.
+        rows.add(row("Average days from registration to assessment", t.toAssess(), w == null ? null : w.toAssess()));
+        rows.add(row("Average days from assessment to a decision", t.assessToDecide(), w == null ? null : w.assessToDecide()));
         rows.add(row("Average days from registration to a decision", t.toDecide(), w == null ? null : w.toDecide()));
         rows.add(row("Average days from approval to payment", t.approvalToPay(), w == null ? null : w.approvalToPay()));
         rows.add(row("Average days from registration to payment", t.registrationToPay(), w == null ? null : w.registrationToPay()));
@@ -104,16 +108,24 @@ public class ClaimTurnaroundReport implements Report {
             figures, null, StatementReports.comparisonLabel(f.comparisonMonths()));
     }
 
-    private record Times(BigDecimal toDecide, BigDecimal approvalToPay, BigDecimal registrationToPay, long paid,
-                         BigDecimal onTimePercent) {}
+    private record Times(BigDecimal toAssess, BigDecimal assessToDecide, BigDecimal toDecide, BigDecimal approvalToPay,
+                         BigDecimal registrationToPay, long paid, BigDecimal onTimePercent) {}
 
     private static Times times(List<ClaimFact> claims, Span span) {
+        List<Long> assess = new ArrayList<>();
+        List<Long> assessToDecide = new ArrayList<>();
         List<Long> decide = new ArrayList<>();
         List<Long> approvalToPay = new ArrayList<>();
         List<Long> registrationToPay = new ArrayList<>();
         long onTime = 0;
         for (ClaimFact c : claims) {
             LocalDate decided = c.approvedOn() != null ? c.approvedOn() : c.rejectedOn();
+            if (span.holds(c.assessedOn()) && c.registeredOn() != null) {
+                assess.add(ChronoUnit.DAYS.between(c.registeredOn(), c.assessedOn()));
+            }
+            if (span.holds(decided) && c.assessedOn() != null && !c.assessedOn().isAfter(decided)) {
+                assessToDecide.add(ChronoUnit.DAYS.between(c.assessedOn(), decided));
+            }
             if (span.holds(decided) && c.registeredOn() != null) decide.add(ChronoUnit.DAYS.between(c.registeredOn(), decided));
             if (span.holds(c.settledOn())) {
                 if (c.approvedOn() != null) approvalToPay.add(ChronoUnit.DAYS.between(c.approvedOn(), c.settledOn()));
@@ -124,7 +136,7 @@ public class ClaimTurnaroundReport implements Report {
                 }
             }
         }
-        return new Times(avg(decide), avg(approvalToPay), avg(registrationToPay), registrationToPay.size(),
+        return new Times(avg(assess), avg(assessToDecide), avg(decide), avg(approvalToPay), avg(registrationToPay), registrationToPay.size(),
             registrationToPay.isEmpty() ? null : BigDecimal.valueOf(onTime * 100L)
                 .divide(BigDecimal.valueOf(registrationToPay.size()), 1, RoundingMode.HALF_UP));
     }

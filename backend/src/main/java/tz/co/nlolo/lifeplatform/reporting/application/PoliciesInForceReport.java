@@ -36,6 +36,9 @@ import static tz.co.nlolo.lifeplatform.reporting.application.Sections.col;
  * compared with: opening + new + reinstated − lapsed − surrendered − matured − ended by a claim − cancelled in free-look
  * − ended = closing. Every policy that moved is counted once, by where it ended up, so the movement reconciles with the
  * in-force count on both dates by construction -- and says so if it ever does not.
+ *
+ * <p>The management overview (dashboard ManagementDashboard) reads the figures "policies" and "lapsed" by key: rename
+ * them knowingly.
  */
 @Component
 public class PoliciesInForceReport implements Report {

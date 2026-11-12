@@ -8,6 +8,7 @@ import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { EmptyState } from '@/components/states';
 import type { DashboardKind } from '@/store/dashboardStore';
 import { AgentDashboardPanel } from './AgentDashboardPanel';
+import { ManagementDashboardPanel } from './ManagementDashboardPanel';
 import { ClaimsDashboardPanel } from './ClaimsDashboardPanel';
 import { DASHBOARD_LABEL, dashboardsFor } from './dashboards';
 import { FinanceDashboardPanel } from './FinanceDashboardPanel';
@@ -23,6 +24,7 @@ const PANEL: Record<DashboardKind, (props: PanelProps) => ReactElement | null> =
   claims: ClaimsDashboardPanel,
   finance: FinanceDashboardPanel,
   agent: AgentDashboardPanel,
+  overview: ManagementDashboardPanel,
 };
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;

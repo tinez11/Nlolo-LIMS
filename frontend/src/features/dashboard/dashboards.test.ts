@@ -19,7 +19,9 @@ describe('dashboardsFor', () => {
     expect(dashboardsFor('staff', as('REALM_STAFF', 'CLAIMS_ASSESSOR'))).toEqual(['claims']);
     expect(dashboardsFor('staff', as('REALM_STAFF', 'CLAIMS_MANAGER'))).toEqual(['claims']);
     expect(dashboardsFor('staff', as('REALM_STAFF', 'FINANCE_OFFICER'))).toEqual(['finance']);
-    expect(dashboardsFor('staff', as('REALM_STAFF', 'ADMIN'))).toEqual(['finance']);
+    // The overview first (analytics plan 5): it is the whole business. Management sees the ledger, so finance too.
+    expect(dashboardsFor('staff', as('REALM_STAFF', 'ADMIN'))).toEqual(['overview', 'finance']);
+    expect(dashboardsFor('staff', as('REALM_STAFF', 'MANAGEMENT'))).toEqual(['overview', 'finance']);
     expect(dashboardsFor('staff', as('REALM_STAFF', 'UNDERWRITER', 'FINANCE_OFFICER', 'CLAIMS_MANAGER')))
       .toEqual(['underwriting', 'claims', 'finance']);
   });

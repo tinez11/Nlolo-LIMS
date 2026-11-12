@@ -58,7 +58,9 @@ public class ReportingEventHandlers {
         "party.PartyRegistered", "party.PartyKycStatusChanged", "party.PartyDetailsAmended",
         // Claims for the variance reports (2026-11-09, the reports redesign batch 2).
         "claims.ClaimRegistered", "claims.ClaimApproved", "claims.ClaimRejected", "claims.ClaimSettlementRequested",
-        "claims.ClaimSettled", "claims.ClaimReopened");
+        "claims.ClaimSettled", "claims.ClaimReopened",
+        // The day of the first assessment (2026-11-12, analytics plan 5).
+        "claims.ClaimAssessed");
 
     private final ProjectionStore store;
     private final MeterRegistry meters;
@@ -145,6 +147,9 @@ public class ReportingEventHandlers {
             case "claims.ClaimSettled" -> store.claimSettled(tenantId, uuid(p, "claimId"), policyNumber,
                 amount(p, "paidAmount") != null ? amount(p, "paidAmount") : amount(p, "settledAmount"),
                 onInstant(p, "settledAt", occurredAt));
+            // The event carries no date of its own: the day it happened.
+            case "claims.ClaimAssessed" -> store.claimAssessed(tenantId, uuid(p, "claimId"),
+                onInstant(p, "assessedAt", occurredAt));
             case "claims.ClaimReopened" -> store.claimReopened(tenantId, uuid(p, "claimId"), policyNumber,
                 onInstant(p, "reopenedAt", occurredAt));
             case "party.PartyRegistered", "party.PartyDetailsAmended" ->

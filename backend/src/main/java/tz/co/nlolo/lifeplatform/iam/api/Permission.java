@@ -130,6 +130,10 @@ public enum Permission {
     PRODUCTS_DECLARE_APPROVE_OWN("products.declare-approve-own", Area.PRODUCTS, "Approve rates and bonuses they declared",
         "Approve their own rate and bonus declarations without a second person. Recorded against their name."),
 
+    // Analytics plan 5, D1 (2026-11-12): its own area, so every area keeps exactly one "see" permission.
+    OVERVIEW_VIEW("overview.view", Area.OVERVIEW, "See the management overview",
+        "The dashboard of how the business is doing: premiums, policies, claims and work waiting."),
+
     REPORTS_VIEW("reports.view", Area.REPORTS, "See reports", "Management and accounting reports."),
     REPORTS_REBUILD("reports.rebuild", Area.REPORTS, "Rebuild reports", "Rebuild the reporting store."),
     REPORTS_SOLVENCY_FACTORS("reports.solvency-factors", Area.REPORTS, "Set solvency factors",
@@ -153,7 +157,7 @@ public enum Permission {
         CLIENTS("Clients"), UNDERWRITING("Underwriting"), POLICIES("Policies"), SCHEMES("Group schemes"),
         CLAIMS("Claims"), ACCOUNTS("Accounts & loans"), COLLECTIONS("Collections"), PAYOUTS("Paying out"),
         LEDGER("Ledger"), IFRS17("IFRS 17"), REINSURANCE("Reinsurance"), RETURNS("Regulatory returns"),
-        DISTRIBUTION("Distribution"), FUNDS("Funds"), PRODUCTS("Products"), REPORTS("Reports"),
+        DISTRIBUTION("Distribution"), FUNDS("Funds"), PRODUCTS("Products"), OVERVIEW("Overview"), REPORTS("Reports"),
         COMMUNICATIONS("Communications"), AUDIT("Audit"), ADMINISTRATION("Administration");
 
         private final String label;

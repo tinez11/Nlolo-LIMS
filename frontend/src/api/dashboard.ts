@@ -16,6 +16,8 @@ export type FinanceDashboard = components['schemas']['FinanceDashboardView'];
 /** The period's collection figures, shown first on the finance dashboard (2026-11-11). */
 export type CollectionFiguresView = components['schemas']['CollectionFigures'];
 export type AgentDashboard = components['schemas']['AgentDashboardView'];
+/** The management overview (2026-11-12, analytics plan 5): each figure read from the report that owns it. */
+export type ManagementDashboard = components['schemas']['ManagementDashboardView'];
 export type ActivityItem = components['schemas']['ActivityItem'];
 
 // Phase 2's aggregates. Each is the dashboard's own shape, not the owning module's -- see the view records.
@@ -54,6 +56,10 @@ export function getClaimsDashboard(range?: MonthRange): Promise<ClaimsDashboard>
 
 export function getFinanceDashboard(range?: MonthRange): Promise<FinanceDashboard> {
   return get<FinanceDashboard>('/dashboards/finance', params(range));
+}
+
+export function getManagementDashboard(range?: MonthRange): Promise<ManagementDashboard> {
+  return get<ManagementDashboard>('/dashboards/overview', params(range));
 }
 
 export function getAgentDashboard(range?: AgentRange): Promise<AgentDashboard> {

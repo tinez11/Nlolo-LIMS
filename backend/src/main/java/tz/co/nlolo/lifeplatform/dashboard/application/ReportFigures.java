@@ -32,6 +32,16 @@ final class ReportFigures {
         return null;
     }
 
+    /** A report's headline figure by key, as the report states it; null when the report or the figure is not there. */
+    static BigDecimal figure(ReportResult result, String key) {
+        if (result == null) {
+            return null;
+        }
+        return result.figures().stream().filter(f -> key.equals(f.key())).findFirst()
+            .map(f -> f.value() == null || f.value().isBlank() ? null : new BigDecimal(f.value()))
+            .orElse(null);
+    }
+
     /** The income statement's result, signed: the report states a loss as an unsigned amount beside its outcome. */
     static BigDecimal netResult(ReportResult result) {
         if (result == null) {

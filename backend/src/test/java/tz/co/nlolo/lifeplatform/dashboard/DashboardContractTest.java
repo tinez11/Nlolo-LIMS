@@ -82,6 +82,7 @@ class DashboardContractTest {
     @MockBean private FinanceDashboard finance;
     @MockBean private AgentDashboard agent;
     @MockBean private BooksMatch booksMatch;
+    @MockBean private tz.co.nlolo.lifeplatform.dashboard.application.ManagementDashboard management;
 
     private static RequestPostProcessor staff(String... roles) {
         SimpleGrantedAuthority[] authorities = new SimpleGrantedAuthority[roles.length + 1];
@@ -194,6 +195,27 @@ class DashboardContractTest {
             .andExpect(jsonPath("$.collections.ratePercent").value("92.7"))
             .andExpect(jsonPath("$.arrearsAtLapse").isEmpty())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /** Analytics plan 5: Management reads the overview; a job role that does not see every area is refused it. */
+    @Test
+    void managementReadsTheOverviewAndAClaimsManagerIsRefused() throws Exception {
+        when(management.build(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(
+            new tz.co.nlolo.lifeplatform.dashboard.api.ManagementDashboardView(
+                new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"),
+                new Money("482000000.00", "TZS"), new Money("431000000.00", "TZS"), "11.8", 410L, 376L, "9.0", 3120L,
+                new tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures(LocalDate.parse("2026-01-01"),
+                    LocalDate.parse("2026-10-15"), new java.math.BigDecimal("520000000.00"),
+                    new java.math.BigDecimal("482000000.00"), "92.7", 3, new java.math.BigDecimal("60000.00"), 12,
+                    new java.math.BigDecimal("400000.00"), "TZS"),
+                21L, new Money("90000000.00", "TZS"), 9L, 15L, null));
+
+        mockMvc.perform(get("/dashboards/overview").with(staff("MANAGEMENT")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.policiesInForce").value(3120))
+            .andExpect(jsonPath("$.claimsToDecide").isEmpty())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/dashboards/overview").with(staff("CLAIMS_MANAGER"))).andExpect(status().isForbidden());
     }
 
     @Test

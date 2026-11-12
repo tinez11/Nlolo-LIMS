@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The catalogue and the eight roles every tenant starts with. */
+/** The catalogue and the nine roles every tenant starts with. */
 class PermissionCatalogueTest {
 
     @Test
@@ -41,9 +41,9 @@ class PermissionCatalogueTest {
     }
 
     @Test
-    void theEightKeycloakRolesCarryOverByName() {
+    void theBuiltInRolesInBadgeOrder() {
         assertThat(BuiltInRoles.ALL).extracting(BuiltInRoles.Definition::code).containsExactly(
-            "ADMIN", "SENIOR_UNDERWRITER", "UNDERWRITER", "CLAIMS_MANAGER", "CLAIMS_ASSESSOR", "FINANCE_APPROVER",
+            "ADMIN", "MANAGEMENT", "SENIOR_UNDERWRITER", "UNDERWRITER", "CLAIMS_MANAGER", "CLAIMS_ASSESSOR", "FINANCE_APPROVER",
             "FINANCE_OFFICER", "CUSTOMER_SERVICE_REP");
     }
 
@@ -90,6 +90,22 @@ class PermissionCatalogueTest {
         assertThat(checked).as("annotations found").isGreaterThan(350);
         assertThat(unknown).isEmpty();
         assertThat(keycloakRoles).isEmpty();
+    }
+
+    /** Plan 5, D1 (2026-11-12): Management sees every area but Administration, and the overview; it changes nothing. */
+    @Test
+    void managementSeesEveryAreaButAdministrationAndChangesNothing() {
+        Set<Permission> management = BuiltInRoles.byCode("MANAGEMENT").permissions();
+        for (Permission p : Permission.values()) {
+            boolean expected = p.code().endsWith(".view") && p.area() != Permission.Area.ADMINISTRATION;
+            assertThat(management.contains(p)).as(p.code()).isEqualTo(expected);
+        }
+        assertThat(management).contains(Permission.OVERVIEW_VIEW, Permission.REPORTS_VIEW);
+    }
+
+    @Test
+    void administratorsSeeTheOverview() {
+        assertThat(BuiltInRoles.byCode("ADMIN").permissions()).contains(Permission.OVERVIEW_VIEW);
     }
 
     @Test

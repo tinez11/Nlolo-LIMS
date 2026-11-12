@@ -128,6 +128,11 @@ public class ReportingTestEvents {
             "approvedAmount", Map.of("amount", amount, "currencyCode", "TZS")));
     }
 
+    /** As the claims module sends it: the claim and the fraud flag, no date of its own (plan 5). */
+    public void claimAssessed(UUID tenant, UUID claimId, LocalDate on) {
+        apply(tenant, "claims.ClaimAssessed", on, Map.of("claimId", claimId, "fraudIndicator", false));
+    }
+
     public void claimRejected(UUID tenant, UUID claimId, String policyNumber, String claimType, String reason, LocalDate on) {
         apply(tenant, "claims.ClaimRejected", on, Map.of("claimId", claimId, "reason", reason,
             "policyNumber", policyNumber, "claimType", claimType));

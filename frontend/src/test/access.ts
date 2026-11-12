@@ -24,7 +24,7 @@ const ALL = [
   'ledger.manage', 'ledger.approve', 'ifrs17.view', 'ifrs17.manage', 'ifrs17.approve', 'reinsurance.view',
   'reinsurance.manage', 'reinsurance.approve', 'returns.view', 'returns.manage', 'agents.view', 'agents.manage',
   'commission.pay', 'funds.view', 'funds.manage', 'funds.approve', 'products.view', 'products.manage', 'products.charges',
-  'products.declare', 'products.declare-approve', 'reports.view', 'reports.rebuild', 'reports.solvency-factors',
+  'products.declare', 'products.declare-approve', 'overview.view', 'reports.view', 'reports.rebuild', 'reports.solvency-factors',
   'communications.view',
   'communications.templates', 'audit.view', 'users.view', 'users.manage', 'roles.manage', 'organisation.manage',
 ];
@@ -38,6 +38,8 @@ export const BUILT_IN_ROLES: Record<string, readonly string[]> = {
   ADMIN: ALL.filter((p) => !['ledger.approve', 'ifrs17.approve', 'reinsurance.approve', 'underwriting.assess',
     'underwriting.decide', 'underwriting.decide-against-recommendation', 'underwriting.refer', 'schemes.manage',
     'claims.assess', 'claims.settle'].includes(p)),
+  // Analytics plan 5 (2026-11-12): every "see" permission outside Administration; changes nothing.
+  MANAGEMENT: ALL.filter((p) => p.endsWith('.view') && p !== 'users.view'),
   SENIOR_UNDERWRITER: ['underwriting.view', 'underwriting.decide-against-recommendation', 'clients.view', 'policies.view',
     'products.view'],
   UNDERWRITER: ['clients.view', 'clients.edit', 'underwriting.view', 'underwriting.propose', 'underwriting.assess',

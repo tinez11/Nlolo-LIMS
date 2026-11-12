@@ -483,7 +483,8 @@ public class ReportQueries {
                             LocalDate registeredOn, LocalDate approvedOn, BigDecimal approvedAmount, LocalDate rejectedOn,
                             String rejectReason, BigDecimal payableAmount, LocalDate settledOn, BigDecimal paidAmount,
                             String currency, String productId, String productCategory, String branchCode,
-                            String salesChannel, String agentId, LocalDate activatedOn, LocalDate reopenedOn) {}
+                            String salesChannel, String agentId, LocalDate activatedOn, LocalDate reopenedOn,
+                            LocalDate assessedOn, LocalDate settlementRequestedOn) {}
 
     /**
      * Every claim with any step on or before {@code to}, with its policy's dimensions and the common filters applied.
@@ -506,7 +507,7 @@ public class ReportQueries {
             date(rs, "settled_on"), rs.getBigDecimal("paid_amount"), rs.getString("currency").trim(),
             rs.getString("product_id"), rs.getString("product_category"), rs.getString("branch_code"),
             rs.getString("sales_channel"), rs.getString("agent_id"), date(rs, "activated_on"),
-            date(rs, "reopened_on")), args.toArray());
+            date(rs, "reopened_on"), date(rs, "assessed_on"), date(rs, "settlement_requested_on")), args.toArray());
     }
 
     /** Premium collected in a span by product, for the loss ratio. */

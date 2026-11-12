@@ -191,6 +191,14 @@ public class ProjectionStore {
             tenantId, claimId, policyNumber, payable, on);
     }
 
+    /** The first assessment only (analytics plan 5): COALESCE keeps the day already recorded. */
+    public void claimAssessed(UUID tenantId, UUID claimId, LocalDate on) {
+        jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, assessed_on) VALUES (?, ?, ?)"
+            + " ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"
+            + " assessed_on = COALESCE(report_claim.assessed_on, EXCLUDED.assessed_on)",
+            tenantId, claimId, on);
+    }
+
     public void claimSettled(UUID tenantId, UUID claimId, String policyNumber, BigDecimal paid, LocalDate on) {
         jdbc.update("INSERT INTO reporting.report_claim (tenant_id, claim_id, policy_number, paid_amount, settled_on)"
             + " VALUES (?, ?, ?, ?, ?) ON CONFLICT (tenant_id, claim_id) DO UPDATE SET"

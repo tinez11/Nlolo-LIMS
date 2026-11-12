@@ -9,7 +9,7 @@ import java.util.Set;
 import static tz.co.nlolo.lifeplatform.iam.api.Permission.*;
 
 /**
- * The eight roles every tenant starts with -- Keycloak's staff realm roles, carried over by name -- and what each
+ * The nine roles every tenant starts with -- Keycloak's staff realm roles, carried over by name -- and what each
  * carries on day one (2026-10-26). An administrator may change any of them afterwards; these are only the seed.
  *
  * <p>Each mirrors what the role could do before the platform held permissions, with two deliberate changes the
@@ -45,6 +45,11 @@ public final class BuiltInRoles {
             "Runs the platform: products, users and roles, and every finance surface. Does not underwrite, assess "
                 + "claims or give the approver's second signature.",
             admin()),
+        // Analytics plan 5, D1 (2026-11-12): sees every area and the overview, and changes nothing. Not Administration:
+        // only administrators see who holds which access.
+        new Definition("MANAGEMENT", "Management",
+            "Sees every area, the reports and the management overview. Changes nothing.",
+            seeingOnly()),
         new Definition("SENIOR_UNDERWRITER", "Senior underwriter",
             "Decides against an assessor's recommendation. Held alongside Underwriter.",
             EnumSet.of(UNDERWRITING_VIEW, UNDERWRITING_DECIDE_AGAINST, CLIENTS_VIEW, POLICIES_VIEW, PRODUCTS_VIEW)),
@@ -85,6 +90,15 @@ public final class BuiltInRoles {
             REINSURANCE_MANAGE, RETURNS_VIEW, RETURNS_MANAGE, AGENTS_VIEW, AGENTS_MANAGE, COMMISSION_PAY, FUNDS_VIEW,
             FUNDS_MANAGE, FUNDS_APPROVE, PRODUCTS_VIEW, PRODUCTS_CHARGES, PRODUCTS_DECLARE_APPROVE, REPORTS_VIEW,
             COMMUNICATIONS_VIEW);
+    }
+
+    /** Every "see" permission (the codes ending ".view") outside Administration. */
+    private static Set<Permission> seeingOnly() {
+        Set<Permission> seeing = EnumSet.noneOf(Permission.class);
+        for (Permission p : Permission.values()) {
+            if (p.code().endsWith(".view") && p.area() != Permission.Area.ADMINISTRATION) seeing.add(p);
+        }
+        return seeing;
     }
 
     private static Set<Permission> admin() {

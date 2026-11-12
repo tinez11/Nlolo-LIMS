@@ -362,7 +362,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
 
 /** The built-in roles in the order the badge prefers them -- the server's own precedence (iam BuiltInRoles). */
 const ROLE_PRECEDENCE = [
-  'ADMIN', 'SENIOR_UNDERWRITER', 'UNDERWRITER', 'CLAIMS_MANAGER', 'CLAIMS_ASSESSOR', 'FINANCE_APPROVER',
+  'ADMIN', 'MANAGEMENT', 'SENIOR_UNDERWRITER', 'UNDERWRITER', 'CLAIMS_MANAGER', 'CLAIMS_ASSESSOR', 'FINANCE_APPROVER',
   'FINANCE_OFFICER', 'CUSTOMER_SERVICE_REP',
 ];
 
