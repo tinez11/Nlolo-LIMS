@@ -452,6 +452,52 @@ public class DistributionApiImpl implements DistributionApi {
             commissionAccrualRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber));
     }
 
+    @Override
+    @Transactional
+    public List<CommissionAccrualView> correctAccrual(UUID accrualId, BigDecimal correctAmount, String reason, String by) {
+        UUID tenantId = TenantContext.get();
+        if (reason == null || reason.isBlank()) {
+            throw new DistributionValidationException("Say why this commission is corrected");
+        }
+        if (correctAmount == null || correctAmount.signum() < 0) {
+            throw new DistributionValidationException("The corrected amount is zero or more");
+        }
+        CommissionAccrual original = commissionAccrualRepository.findById(accrualId)
+            .filter(a -> tenantId.equals(a.getTenantId()))
+            .orElseThrow(() -> new DistributionValidationException("Commission accrual " + accrualId + " not found"));
+        if (original.getReversesAccrualId() != null || original.getAmount().signum() <= 0) {
+            throw new DistributionValidationException("Only a commission booked, not a reversal, can be corrected");
+        }
+        if (correctAmount.compareTo(original.getAmount()) == 0) {
+            throw new DistributionValidationException("That is the amount already booked");
+        }
+        String period = java.time.YearMonth.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString();
+        String why = "correction: " + reason.trim();
+        List<CommissionAccrual> booked = new ArrayList<>();
+        // The source names the correction, so a second correction of the same accrual is refused, not doubled.
+        persistAccrual(tenantId, original.getAgentId(), original.getPolicyNumber(), original.getTierType(),
+            original.getAmount().negate(), original.getCurrency(), period, "correction:" + accrualId, accrualId, by)
+            .ifPresentOrElse(booked::add, () -> {
+                throw new DistributionValidationException("This commission has already been corrected");
+            });
+        if (correctAmount.signum() > 0) {
+            persistAccrual(tenantId, original.getAgentId(), original.getPolicyNumber(), original.getTierType(),
+                correctAmount.setScale(2, java.math.RoundingMode.HALF_UP), original.getCurrency(), period,
+                "restated:" + accrualId, null, by).ifPresent(booked::add);
+        }
+        // The reason on the record: the event journal keeps every event, so an auditor sees who corrected what, and why.
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("accrualId", accrualId);
+        payload.put("agentId", original.getAgentId());
+        payload.put("policyNumber", original.getPolicyNumber());
+        payload.put("was", Map.of("amount", original.getAmount().toPlainString(), "currencyCode", original.getCurrency()));
+        payload.put("now", Map.of("amount", correctAmount.toPlainString(), "currencyCode", original.getCurrency()));
+        payload.put("reason", why);
+        payload.put("correctedBy", by);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionCorrected", tenantId, payload));
+        return toAccrualViews(tenantId, booked);
+    }
+
     /** Each rule must be rate-XOR-flat, with flatCurrency paired to flatAmount, and whichever of
      * the two is present must be positive -- so the domain rejects a malformed rule before V2's
      * own {@code commission_rule_rate_xor_flat}/{@code commission_rule_flat_currency_paired}/
@@ -468,6 +514,12 @@ public class DistributionApiImpl implements DistributionApi {
         }
         if (hasRate && rule.rate().signum() <= 0) {
             throw new DistributionValidationException("Commission rule rate must be positive, got " + rule.rate());
+        }
+        // A rate is a fraction of the premium: 0.05 is 5%. Above 1 is more than the whole premium -- the 2026-11-10
+        // walkthrough found "5" (meant as 5%) stored as 500%, crediting an agent TZS 10M on a 2M deposit (finding 187).
+        if (hasRate && rule.rate().compareTo(BigDecimal.ONE) > 0) {
+            throw new DistributionValidationException("A commission rate cannot be more than 100% of the premium; "
+                + "got " + rule.rate().movePointRight(2).stripTrailingZeros().toPlainString() + "%");
         }
         if (hasFlat && rule.flatAmount().signum() <= 0) {
             throw new DistributionValidationException(

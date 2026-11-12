@@ -226,8 +226,18 @@ export function retryUnpostedEvent(id: string): Promise<UnpostedEventView> {
   return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/retry`, {});
 }
 
+/** Asks to dismiss: the event stays open until a second person confirms (2026-11-12, findings 74 and 116). */
 export function dismissUnpostedEvent(id: string, reason: string): Promise<UnpostedEventView> {
   return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/dismissal`, { reason });
+}
+
+/** ledger.approve -- the one who asked only with ledger.approve-own. */
+export function confirmUnpostedDismissal(id: string): Promise<UnpostedEventView> {
+  return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/dismissal/confirmation`, {});
+}
+
+export function refuseUnpostedDismissal(id: string): Promise<UnpostedEventView> {
+  return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/dismissal/refusal`, {});
 }
 
 // ---- Manual journals (IFRS 17 I4) ----

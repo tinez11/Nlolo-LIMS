@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { correctAccrual } from '@/api/distribution';
 import type { CommissionAccrualView, CommissionStatementView } from '@/api/types';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { DataTable, type Column } from '@/components/DataTable';
+import { FormField } from '@/components/FormField';
+import { InlineError } from '@/components/InlineError';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import type { ApiError } from '@/lib/http';
 import { Field } from '@/components/Field';
 import { Panel } from '@/components/Panel';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -143,6 +150,7 @@ function StatementLines({
   canManage: boolean;
 }) {
   const loadAccruals = useDistributionStore((s) => s.loadAccruals);
+  const loadStatements = useDistributionStore((s) => s.loadStatements);
   const accruals = useDistributionStore(selectAccruals(agentId, statement.statementId));
 
   useEffect(() => {
@@ -151,6 +159,9 @@ function StatementLines({
 
   const month = monthLabel(statement.period);
   const rows = accruals.data ?? [];
+  const [correcting, setCorrecting] = useState<CommissionAccrualView | null>(null);
+  // A line already corrected has a reversal booked against it by a correction.
+  const corrected = new Set(rows.filter((r) => r.sourceRef?.startsWith('correction:')).map((r) => r.reversesAccrualId));
   const title = accruals.data ? `${month} — ${rows.length} ${rows.length === 1 ? 'line' : 'lines'}` : month;
 
   const columns: Column<CommissionAccrualView>[] = [
@@ -179,6 +190,19 @@ function StatementLines({
         <span className={a.reversesAccrualId ? 'text-status-danger-fg' : undefined}>{formatMoney(a.amount)}</span>
       ),
     },
+    // Correct a line booked at the wrong amount (finding 187 / D8): staff who manage agents, while the month is open,
+    // on a line that is not itself a reversal and has not been corrected already.
+    ...(realm === 'staff' && canManage && statement.status === 'OPEN'
+      ? [{
+          key: 'correct',
+          header: '',
+          align: 'right' as const,
+          render: (a: CommissionAccrualView) =>
+            !a.reversesAccrualId && !corrected.has(a.accrualId) && Number(a.amount.amount) > 0 ? (
+              <Button size="sm" variant="outline" onClick={() => setCorrecting(a)}>Correct</Button>
+            ) : null,
+        }]
+      : []),
   ];
 
   return (
@@ -192,6 +216,17 @@ function StatementLines({
       {accruals.data && rows.length === 0 && <EmptyState title={`No commission earned in ${month} yet.`} />}
       {rows.length > 0 && (
         <DataTable caption={`Commission lines for ${month}`} columns={columns} rows={rows} rowKey={(a) => a.accrualId} />
+      )}
+      {correcting && (
+        <CorrectLine
+          line={correcting}
+          onDone={() => {
+            setCorrecting(null);
+            void loadAccruals(agentId, statement.statementId);
+            void loadStatements(agentId);
+          }}
+          onCancel={() => setCorrecting(null)}
+        />
       )}
       {/* The whole statement, not just its id: a confirmation that cannot name the amount it is
           about to pay is not a confirmation. */}
@@ -210,5 +245,65 @@ function StatementLines({
         )
       )}
     </Panel>
+  );
+}
+
+/**
+ * Correct one commission line booked at the wrong amount (2026-11-12, finance finding 187 / D8: a 5% plan stored as
+ * 500% credited TZS 10,000,000 on a 2,000,000 deposit). The server reverses it in full and books the right amount in
+ * this month's statement and the ledger, with the reason; the original line stays as it was.
+ */
+function CorrectLine({ line, onDone, onCancel }: { line: CommissionAccrualView; onDone: () => void; onCancel: () => void }) {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const valid = /^\d+(\.\d{1,2})?$/.test(amount.trim()) && reason.trim().length > 0
+    && Number(amount) !== Number(line.amount.amount);
+  const right = valid ? formatMoney({ amount: Number(amount).toFixed(2), currencyCode: line.amount.currencyCode }) : null;
+
+  async function correct() {
+    setBusy(true);
+    setError(null);
+    try {
+      await correctAccrual(line.accrualId, Number(amount).toFixed(2), reason.trim());
+      onDone();
+    } catch (e) {
+      setError(e as ApiError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 border-t border-border px-4 py-3">
+      <ConfirmAct
+        heading="Correct this commission?"
+        consequence={
+          <>
+            {line.clientName ?? line.policyNumber}: <strong>{formatMoney(line.amount)}</strong> is reversed in full
+            {right ? <> and <strong>{right}</strong> is booked in its place</> : null}, in this month&apos;s statement and
+            the ledger. The original line stays as it was, with the reason beside the correction.
+          </>
+        }
+        reversal="A commission can be corrected once. A mistake in the correction is put right by a manual journal."
+        confirmLabel="Correct commission"
+        tone="danger"
+        busy={busy}
+        confirmDisabled={!valid}
+        onConfirm={() => void correct()}
+        onCancel={onCancel}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField required label="The right amount (TZS)">
+            <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000.00" />
+          </FormField>
+          <FormField required label="Why it is corrected">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Rate typed as 500%, agreed 5%" />
+          </FormField>
+        </div>
+      </ConfirmAct>
+      {error && <InlineError lead="The commission could not be corrected" error={error} />}
+    </div>
   );
 }

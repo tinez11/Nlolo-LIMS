@@ -243,7 +243,27 @@ public class Deposits {
             action == MaturityAction.PAY_OUT ? blankToNull(payeeRef) : null, by);
         if (action == MaturityAction.PAY_OUT && route != null) instruction.payBy(route);
         MaturityInstruction saved = instructions.save(instruction);
+        // The client hears of it at once (2026-11-12, finance finding 146: one person could point a maturity at any
+        // number with no word to the client). Their number on record is told where the money will go, shown only by
+        // its end, so a redirect they did not ask for is caught before maturity.
+        if (action == MaturityAction.PAY_OUT && route != null) {
+            Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("policyNumber", policyNumber);
+            payload.put("policyholderPartyId", account.getPolicyholderPartyId());
+            payload.put("instructionId", saved.getInstructionId());
+            payload.put("last3", lastDigits(route));
+            payload.put("maturityDate", period.getMaturityDate().toString());
+            payload.put("recordedBy", by);
+            events.publishEvent(DomainEventEnvelope.of("accumulation.MaturityPayoutRedirected", TenantContext.get(), payload));
+        }
         return view(saved);
+    }
+
+    /** The last three digits of the number or account paid to: enough for the client to recognise, not to copy. */
+    static String lastDigits(tz.co.nlolo.lifeplatform.PayoutRoute route) {
+        String account = route.accountNumber() != null ? route.accountNumber() : route.payee();
+        String end = account == null ? "" : account.replaceAll("\\s", "");
+        return end.length() > 3 ? end.substring(end.length() - 3) : end;
     }
 
     @Transactional(readOnly = true)

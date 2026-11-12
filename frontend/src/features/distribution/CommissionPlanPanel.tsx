@@ -17,6 +17,7 @@ import {
   blankFlatRow,
   blankRateRow,
   createCommissionPlanFormSchema,
+  fractionToPercent,
   PLANNABLE_TIER_TYPES,
   toApiRequest,
   type CreateCommissionPlanFormValues,
@@ -90,7 +91,7 @@ export function CommissionPlanPanel({
                 key={rule.commissionRuleId}
                 label={rule.tierType.replace(/_/g, ' ').toLowerCase()}
                 value={
-                  rule.flatAmount ? formatMoney(rule.flatAmount) : `${rule.rate ?? '—'} (rate)`
+                  rule.flatAmount ? formatMoney(rule.flatAmount) : rule.rate == null ? '—' : `${fractionToPercent(rule.rate)}% of the premium`
                 }
               />
             ))}
@@ -182,11 +183,29 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
               </div>
 
               {mode === 'rate' ? (
-                <Input
-                  inputSize="sm" className="mt-2"
-                  placeholder="0.1000 (10%)"
-                  {...register(`rules.${index}.rate`)}
-                />
+                <>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input
+                      inputSize="sm" className="w-28" inputMode="decimal" aria-label="Rate, percent of the premium"
+                      placeholder="5"
+                      {...register(`rules.${index}.rate`)}
+                    />
+                    <span className="text-sm text-muted-foreground">% of the premium</span>
+                  </div>
+                  {/* What the typed figure means in money (finding 187): "5" pays 50,000 on a 1,000,000 premium. */}
+                  {(() => {
+                    const typed = rows?.[index]?.mode === 'rate' ? rows[index].rate.trim() : '';
+                    if (!/^\d+(\.\d{1,2})?$/.test(typed) || Number(typed) <= 0 || Number(typed) > 100) return null;
+                    // 1,000,000 × p% = p × 10,000 shillings; p has at most two decimals, so whole hundredths × 100.
+                    const shillings = Math.round(Number(typed) * 100) * 100;
+                    return (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        On a TZS 1,000,000.00 premium the agent earns{' '}
+                        {formatMoney({ amount: shillings.toFixed(2), currencyCode: 'TZS' })}.
+                      </p>
+                    );
+                  })()}
+                </>
               ) : (
                 <div className="mt-2 flex gap-2">
                   <Input

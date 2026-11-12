@@ -424,6 +424,38 @@ paths:
                 items: { $ref: '#/components/schemas/CommissionAccrualView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /commission-accruals/{accrualId}/correction:
+    post:
+      summary: Correct a commission booked at the wrong amount (agents.manage)
+      description: >-
+        Finance finding 187 / D8 (2026-11-12): the wrong accrual is reversed in full and the right amount booked in its
+        place, in the agent's open statement and in the ledger; the reason is recorded. Once per accrual.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: accrualId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, reason]
+              properties:
+                amount: { type: string, pattern: '^\d+(\.\d{1,2})?$', description: What should have been booked; 0 reverses only }
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: The accruals booked -- the reversal, then the restated amount when above zero
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommissionAccrualView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /agents/{agentId}/commission-statements:
     get:
       summary: List an agent's commission statements

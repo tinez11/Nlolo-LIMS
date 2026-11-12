@@ -14,4 +14,7 @@ public record UnpostedEventView(UUID id, String eventType, String sourceRef, Str
                                 String currency, Map<String, BigDecimal> amounts, Map<String, String> attributes,
                                 String reason, String detail, String ruleVersion, int attempts, Instant createdAt,
                                 Instant lastAttemptAt, String resolution, String resolutionReason, String resolvedBy,
-                                Instant resolvedAt, UUID journalEntryId) {}
+                                Instant resolvedAt, UUID journalEntryId,
+                                /* 2026-11-12, findings 74 and 116: a dismissal asked for, waiting for a second person. */
+                                String dismissalRequestedBy, Instant dismissalRequestedAt, String dismissalReason,
+                                boolean dismissedAlone) {}

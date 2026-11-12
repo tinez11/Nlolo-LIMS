@@ -5,7 +5,13 @@ describe('payoutReviewSchema', () => {
   it('requires a payee reference', () => {
     const result = payoutReviewSchema(false).safeParse({ payeeRef: '', proofOfLifeMethod: '' });
     expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe('A payout needs a payee reference');
+    expect(result.error?.issues[0]?.message).toBe('A payout needs the mobile money number it is paid to');
+  });
+
+  /** Finding 36 (2026-11-10): a payout was reviewed with payee "nothing" and paid. */
+  it('refuses a payee that is not a Tanzanian mobile number, and takes the everyday forms', () => {
+    expect(payoutReviewSchema(false).safeParse({ payeeRef: 'nothing', proofOfLifeMethod: '' }).success).toBe(false);
+    expect(payoutReviewSchema(false).safeParse({ payeeRef: '0712 345 678', proofOfLifeMethod: '' }).success).toBe(true);
   });
 
   it('treats whitespace as no payee at all', () => {

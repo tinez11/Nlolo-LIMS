@@ -47,6 +47,10 @@ public class AccumulationEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
+        if ("accumulation.MaturityPayoutRedirected".equals(envelope.eventType())) {
+            maturityPayoutRedirected(envelope);
+            return;
+        }
         if (!"accumulation.StatementIssued".equals(envelope.eventType())) {
             return;
         }
@@ -72,6 +76,37 @@ public class AccumulationEventListener {
             // The statement is filed either way; rolling that back to save an SMS would be backwards.
             // Logged loudly; the dispatch row records the failure for the desk.
             log.error("Failed to send the annual statement summary for policy {}", payload.get("policyNumber"), e);
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /**
+     * A deposit's maturity pointed at a payee (2026-11-12, finance finding 146): the client's number on record is told
+     * where the money will go, so a redirect they did not ask for is caught before maturity. Sent whatever else fails;
+     * the instruction stands either way.
+     */
+    private void maturityPayoutRedirected(DomainEventEnvelope<?> envelope) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelope.payload();
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(envelope.tenantId());
+        try {
+            String policyNumber = (String) payload.get("policyNumber");
+            LocalDate maturity = LocalDate.parse((String) payload.get("maturityDate"));
+            requiresNewTransactionTemplate.executeWithoutResult(status ->
+                notificationApi.notify(envelope.eventId(), (UUID) payload.get("policyholderPartyId"), policyNumber,
+                    "MATURITY_PAYOUT_REDIRECTED",
+                    Map.of("policyNumber", policyNumber,
+                        "last3", (String) payload.get("last3"),
+                        "maturityDate", String.format("%02d/%02d/%d", maturity.getDayOfMonth(), maturity.getMonthValue(),
+                            maturity.getYear()))));
+        } catch (Exception e) {
+            log.error("Failed to tell the client of the maturity payout redirect on policy {}", payload.get("policyNumber"), e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

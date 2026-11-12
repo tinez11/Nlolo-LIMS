@@ -19,7 +19,27 @@ import { CURRENCY_PATTERN } from '@/lib/patterns';
  * never-a-float treatment as every other money-adjacent value on this platform.
  */
 
-const RATE_PATTERN = /^\d+(\.\d{1,4})?$/;
+/**
+ * The rate is typed as a PERCENT (2026-11-12, finance finding 187): "5" is 5%. It used to be a fraction ("0.1000"),
+ * and "5" -- meant as 5% -- was saved as 500%, crediting an agent TZS 10M on a 2M deposit. Up to two decimals of a
+ * percent is the server's four decimals of a fraction, converted exactly by {@link percentToFraction}.
+ */
+const PERCENT_PATTERN = /^\d+(\.\d{1,2})?$/;
+
+/** The stored fraction as a percent to read: "0.0500" -> "5", "0.1250" -> "12.5", "5.0000" -> "500". */
+export function fractionToPercent(fraction: string): string {
+  const [whole = '0', part = ''] = fraction.trim().split('.');
+  const tenThousandths = Number(whole) * 10000 + Number(part.padEnd(4, '0').slice(0, 4));
+  const percent = `${Math.floor(tenThousandths / 100)}.${String(tenThousandths % 100).padStart(2, '0')}`;
+  return percent.replace(/\.?0+$/, '');
+}
+
+/** "5" -> "0.0500", "12.5" -> "0.1250", "100" -> "1.0000": string arithmetic, never a float. */
+export function percentToFraction(percent: string): string {
+  const [whole = '0', part = ''] = percent.trim().split('.');
+  const hundredths = Number(whole) * 100 + Number(part.padEnd(2, '0').slice(0, 2));
+  return `${Math.floor(hundredths / 10000)}.${String(hundredths % 10000).padStart(4, '0')}`;
+}
 
 const TIER_TYPE_ENUM = z.enum(['FIRST_YEAR', 'RENEWAL', 'OVERRIDE', 'SUPERVISOR_OVERRIDE']);
 
@@ -28,8 +48,10 @@ const rateRowSchema = z.object({
   tierType: TIER_TYPE_ENUM,
   rate: z
     .string()
-    .regex(RATE_PATTERN, 'Must be a decimal like 0.1000 (max 4 decimal places)')
-    .refine((v) => Number(v) > 0, 'Must be positive'),
+    .trim()
+    .regex(PERCENT_PATTERN, 'Type a percent, like 5 or 12.5')
+    .refine((v) => Number(v) > 0, 'Must be more than 0%')
+    .refine((v) => Number(v) <= 100, 'Cannot be more than 100% of the premium'),
 });
 
 const flatRowSchema = z.object({
@@ -76,7 +98,7 @@ export function toApiRequest(values: CreateCommissionPlanFormValues): CreateComm
     productId: values.productId,
     rules: values.rules.map((row) =>
       row.mode === 'rate'
-        ? { tierType: row.tierType, rate: row.rate, flatAmount: null }
+        ? { tierType: row.tierType, rate: percentToFraction(row.rate), flatAmount: null }
         : {
             tierType: row.tierType,
             rate: null,

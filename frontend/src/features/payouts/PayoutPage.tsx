@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
+import { getParty } from '@/api/party';
+import { getPolicy } from '@/api/policies';
 import type { PayoutInstalmentView, PayoutKind, ProofOfLifeMethod } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -188,6 +190,22 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
     defaultValues: blankPayoutReview(),
   });
 
+  // The client's number on record, offered first (finding 36, 2026-11-12): the reviewer confirms it or types another.
+  const [onRecord, setOnRecord] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    getPolicy(payout.policyNumber)
+      .then((policy) => (policy.policyholderPartyId ? getParty(policy.policyholderPartyId) : null))
+      .then((party) => {
+        const phone = party?.phoneNumber ?? null;
+        if (!live || !phone) return;
+        setOnRecord(phone);
+        if (!form.getValues('payeeRef')) form.setValue('payeeRef', phone);
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [payout.policyNumber, form]);
+
   const onSubmit = form.handleSubmit((values) => {
     void review(
       payout.instalmentId,
@@ -207,13 +225,17 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
         <GatePanel gates={gates} title="Before reviewing" />
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         <form onSubmit={onSubmit} className="space-y-3">
-          <FormField required label="Payee reference" error={form.formState.errors.payeeRef?.message}>
+          <FormField required label="Mobile money number it is paid to" error={form.formState.errors.payeeRef?.message}>
             <Input
               {...form.register('payeeRef')}
-              placeholder="Mobile money number or bank destination"
+              inputMode="tel"
+              placeholder="0712 345 678"
               disabled={refused}
             />
           </FormField>
+          {onRecord && (
+            <p className="-mt-1 text-xs text-muted-foreground">The client&apos;s number on record is {onRecord}.</p>
+          )}
           {needsProofOfLife && (
             <FormField required
               label="How was the life assured confirmed alive?"

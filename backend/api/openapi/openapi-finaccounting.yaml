@@ -583,7 +583,7 @@ paths:
         '409': { $ref: '#/components/responses/StateConflict' }
   /finance/unposted-events/{id}/dismissal:
     post:
-      summary: Close a queued event without posting it, with a reason
+      summary: Ask to close a queued event without posting it, with a reason -- a second person confirms
       security:
         - staffAuth: []
       parameters:
@@ -599,11 +599,46 @@ paths:
                 reason: { type: string, maxLength: 500 }
       responses:
         '200':
+          description: The event, still open, its dismissal waiting for a second person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnpostedEventView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/unposted-events/{id}/dismissal/confirmation:
+    post:
+      summary: Confirm a dismissal asked for (ledger.approve; the one who asked only with ledger.approve-own)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UnpostedEventId'
+      responses:
+        '200':
           description: The event, DISMISSED
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UnpostedEventView' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/unposted-events/{id}/dismissal/refusal:
+    post:
+      summary: Refuse a dismissal asked for -- the event waits to be posted (ledger.approve)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UnpostedEventId'
+      responses:
+        '200':
+          description: The event, open, no dismissal waiting
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnpostedEventView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1938,6 +1973,10 @@ components:
         resolvedBy: { type: [string, "null"] }
         resolvedAt: { type: [string, "null"], format: date-time }
         journalEntryId: { type: [string, "null"], format: uuid }
+        dismissalRequestedBy: { type: [string, "null"], description: "A dismissal asked for, waiting for a second person (2026-11-12)" }
+        dismissalRequestedAt: { type: [string, "null"], format: date-time }
+        dismissalReason: { type: [string, "null"] }
+        dismissedAlone: { type: boolean, description: "Dismissed by the one who asked, holding ledger.approve-own" }
     ManualJournalLineInput:
       type: object
       required: [accountCode, side, amount]

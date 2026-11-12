@@ -172,7 +172,7 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -850,8 +850,18 @@ class FinaccountingContractTest {
                     {"reason":"Test policy, never issued"}"""))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // Asked, not dismissed: a second person confirms (findings 74 and 116, 2026-11-12).
+            .andExpect(jsonPath("$.resolution").isEmpty())
+            .andExpect(jsonPath("$.dismissalRequestedBy").value("finance-officer"));
+        // The one who asked holds no approval to confirm; an approver does.
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal/confirmation", id).with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal/confirmation", id).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.resolution").value("DISMISSED"))
-            .andExpect(jsonPath("$.resolvedBy").value("finance-officer"));
+            .andExpect(jsonPath("$.resolutionReason").value("Test policy, never issued"))
+            .andExpect(jsonPath("$.resolvedBy").value("finance-approver"));
 
         mockMvc.perform(post("/finance/unposted-events/{id}/retry", id).with(financeStaffOf(tenantId)))
             .andExpect(status().isConflict())

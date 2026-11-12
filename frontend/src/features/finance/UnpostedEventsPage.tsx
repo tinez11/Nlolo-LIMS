@@ -1,7 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from 'react-oidc-context';
 import type { UnpostedEventView } from '@/api/types';
+import { can } from '@/auth/access';
+import { readIdentity } from '@/auth/claims';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -125,31 +129,83 @@ function OpenRow({ event }: { event: UnpostedEventView }) {
         {event.detail && <p className="text-xs">{event.detail}</p>}
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <div className="flex flex-wrap items-end gap-4">
-        <Button type="button" size="sm" disabled={busy} onClick={() => void retry(event.id)}>
-          Retry
-        </Button>
-        <DismissForm id={event.id} disabled={busy} />
-      </div>
+      {event.dismissalRequestedBy ? (
+        <DismissalWaiting event={event} disabled={busy} />
+      ) : (
+        <div className="flex flex-wrap items-end gap-4">
+          <Button type="button" size="sm" disabled={busy} onClick={() => void retry(event.id)}>
+            Retry
+          </Button>
+          <DismissForm id={event.id} disabled={busy} />
+        </div>
+      )}
     </div>
   );
 }
 
+/**
+ * Asking to dismiss (2026-11-12, findings 74 and 116): dismissing removes the amount from the books for good, so the
+ * form says so, and a second person confirms before anything is closed.
+ */
 function DismissForm({ id, disabled }: { id: string; disabled: boolean }) {
   const dismiss = useLedgerControlsStore((s) => s.dismissUnposted);
   const form = useForm<DismissValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(dismissSchema), defaultValues: { reason: '' } });
   return (
     <form
-      className="flex items-end gap-2"
-      aria-label="Dismiss event"
+      className="space-y-1"
+      aria-label="Ask to dismiss event"
       onSubmit={form.handleSubmit((v) => void dismiss(id, v.reason))}
     >
-      <FormField required label="Reason to dismiss" error={form.formState.errors.reason?.message}>
-        <Input inputSize="sm" disabled={disabled} {...form.register('reason')} />
-      </FormField>
-      <Button type="submit" size="sm" variant="ghost" disabled={disabled}>
-        Dismiss
-      </Button>
+      <div className="flex items-end gap-2">
+        <FormField required label="Reason to dismiss" error={form.formState.errors.reason?.message}>
+          <Input inputSize="sm" disabled={disabled} {...form.register('reason')} />
+        </FormField>
+        <Button type="submit" size="sm" variant="ghost" disabled={disabled}>
+          Ask to dismiss
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        A dismissed amount is never booked. A second person with ledger approval confirms it first.
+      </p>
     </form>
+  );
+}
+
+/** A dismissal asked for: who asked and why, and -- for a ledger approver -- confirm or refuse. */
+function DismissalWaiting({ event, disabled }: { event: UnpostedEventView; disabled: boolean }) {
+  const auth = useAuth();
+  const viewer = readIdentity(auth.user?.access_token)?.subject;
+  const confirm = useLedgerControlsStore((s) => s.confirmDismissal);
+  const refuse = useLedgerControlsStore((s) => s.refuseDismissal);
+  const mayDecide = can('ledger.approve');
+  const own = viewer !== undefined && viewer === event.dismissalRequestedBy;
+  const mayConfirm = mayDecide && (!own || mayActAlone('ledger'));
+  return (
+    <div className="space-y-2 rounded-md bg-band px-3 py-2">
+      <p className="text-xs">
+        <span className="font-medium">Dismissal asked</span> by{' '}
+        {event.dismissalRequestedBy && <StaffName subject={event.dismissalRequestedBy} />}
+        {event.dismissalRequestedAt ? ` · ${formatInstant(event.dismissalRequestedAt)}` : ''}
+        {event.dismissalReason ? ` — ${event.dismissalReason}` : ''}
+      </p>
+      {mayDecide ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="primary" disabled={disabled || !mayConfirm}
+            onClick={() => void confirm(event.id)}>
+            Confirm dismissal
+          </Button>
+          <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => void refuse(event.id)}>
+            Refuse
+          </Button>
+          {own && (
+            <span className="text-xs text-muted-foreground">
+              {mayActAlone('ledger') ? SIGNING_OWN : 'You asked for this, so someone else must confirm it.'}
+            </span>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Waiting for a second person with ledger approval.</p>
+      )}
+    </div>
   );
 }

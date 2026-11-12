@@ -3,10 +3,12 @@ import {
   blankFlatRow,
   blankRateRow,
   createCommissionPlanFormSchema,
+  fractionToPercent,
+  percentToFraction,
   toApiRequest,
 } from './createCommissionPlanForm';
 
-const validRateRule = () => ({ mode: 'rate' as const, tierType: 'FIRST_YEAR' as const, rate: '0.1000' });
+const validRateRule = () => ({ mode: 'rate' as const, tierType: 'FIRST_YEAR' as const, rate: '10' });
 const validFlatRule = () => ({
   mode: 'flat' as const,
   tierType: 'RENEWAL' as const,
@@ -51,6 +53,16 @@ describe('createCommissionPlanFormSchema', () => {
     );
   });
 
+  /** Finance finding 187 (2026-11-10): "5" meant 5% and was saved as 500%. Above 100% is refused. */
+  it('refuses more than 100% of the premium', () => {
+    expect(
+      createCommissionPlanFormSchema.safeParse({ ...valid(), rules: [{ ...validRateRule(), rate: '500' }] }).success,
+    ).toBe(false);
+    expect(
+      createCommissionPlanFormSchema.safeParse({ ...valid(), rules: [{ ...validRateRule(), rate: '100' }] }).success,
+    ).toBe(true);
+  });
+
   it('rejects a zero rate', () => {
     expect(
       createCommissionPlanFormSchema.safeParse({
@@ -60,11 +72,11 @@ describe('createCommissionPlanFormSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects a rate with more than 4 decimal places', () => {
+  it('rejects a percent with more than 2 decimal places', () => {
     expect(
       createCommissionPlanFormSchema.safeParse({
         ...valid(),
-        rules: [{ ...validRateRule(), rate: '0.12345' }],
+        rules: [{ ...validRateRule(), rate: '12.345' }],
       }).success,
     ).toBe(false);
   });
@@ -85,6 +97,21 @@ describe('createCommissionPlanFormSchema', () => {
         rules: [{ ...validFlatRule(), flatCurrency: 'tzs' }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('percentToFraction', () => {
+  it('turns a typed percent into the stored fraction exactly', () => {
+    expect(percentToFraction('5')).toBe('0.0500');
+    expect(percentToFraction('12.5')).toBe('0.1250');
+    expect(percentToFraction('0.25')).toBe('0.0025');
+    expect(percentToFraction('100')).toBe('1.0000');
+  });
+
+  it('reads a stored fraction back as a percent -- the 500% plan shows as 500', () => {
+    expect(fractionToPercent('0.0500')).toBe('5');
+    expect(fractionToPercent('0.1250')).toBe('12.5');
+    expect(fractionToPercent('5.0000')).toBe('500');
   });
 });
 

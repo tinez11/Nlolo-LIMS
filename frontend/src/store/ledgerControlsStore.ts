@@ -3,8 +3,10 @@ import {
   actOnPeriod,
   approvePolicyElection,
   getMonthEnd,
+  confirmUnpostedDismissal,
   dismissUnpostedEvent,
   getPostingRules,
+  refuseUnpostedDismissal,
   listPeriods,
   listUnpostedEvents,
   listPolicyElections,
@@ -54,6 +56,8 @@ interface LedgerControlsState {
   loadUnposted: () => Promise<void>;
   retryUnposted: (id: string) => Promise<boolean>;
   dismissUnposted: (id: string, reason: string) => Promise<boolean>;
+  confirmDismissal: (id: string) => Promise<boolean>;
+  refuseDismissal: (id: string) => Promise<boolean>;
 }
 
 export const useLedgerControlsStore = create<LedgerControlsState>((set, getState) => {
@@ -143,6 +147,18 @@ export const useLedgerControlsStore = create<LedgerControlsState>((set, getState
     dismissUnposted: (id, reason) =>
       act(`unposted.${id}`, async () => {
         await dismissUnpostedEvent(id, reason);
+        await getState().loadUnposted();
+      }),
+
+    confirmDismissal: (id) =>
+      act(`unposted.${id}`, async () => {
+        await confirmUnpostedDismissal(id);
+        await getState().loadUnposted();
+      }),
+
+    refuseDismissal: (id) =>
+      act(`unposted.${id}`, async () => {
+        await refuseUnpostedDismissal(id);
         await getState().loadUnposted();
       }),
   };

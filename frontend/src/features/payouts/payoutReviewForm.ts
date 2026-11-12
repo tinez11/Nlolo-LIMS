@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ProofOfLifeMethod } from '@/api/types';
+import { normalisePhone, PHONE_MESSAGE } from '@/lib/patterns';
 
 /**
  * Reviewing one payout: where the money goes, and for a benefit paid to a LIVING person, how that
@@ -32,11 +33,12 @@ export function blankPayoutReview(): PayoutReviewValues {
 export function payoutReviewSchema(needsProofOfLife: boolean) {
   return z
     .object({
+      // Paid by mobile money, so a real Tanzanian number (2026-11-12, finding 36: a payout went to "nothing").
       payeeRef: z
         .string()
         .trim()
-        .min(1, 'A payout needs a payee reference')
-        .max(200, 'A payee reference is at most 200 characters'),
+        .min(1, 'A payout needs the mobile money number it is paid to')
+        .refine((v) => normalisePhone(v) !== null, PHONE_MESSAGE),
       proofOfLifeMethod: z.enum(['', 'IN_PERSON', 'PHONE_OR_VIDEO', 'LIFE_CERTIFICATE']),
     })
     .refine((values) => !needsProofOfLife || values.proofOfLifeMethod !== '', {

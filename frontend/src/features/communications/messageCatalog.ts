@@ -45,6 +45,7 @@ const CATALOG: Record<string, Entry> = {
   UNIT_LINKED_LOW_FUND: { name: 'Fund running low', topic: 'Savings & investments', when: 'When the fund will cover only a few more months of charges.' },
   UNIT_LINKED_LAPSED_EXHAUSTED: { name: 'Lapsed: fund used up', topic: 'Savings & investments', when: 'When the fund can no longer pay the charges and cover lapses.' },
   PENSION_VESTING_REMINDER: { name: 'Pension starting soon', topic: 'Savings & investments', when: 'Ahead of the date a pension starts paying, to choose how it is paid.' },
+  MATURITY_PAYOUT_REDIRECTED: { name: 'Deposit payout destination set', topic: 'Savings & investments', when: 'When staff name the number or account a fixed deposit is paid to at maturity — sent to the client’s number on record.' },
   // Claims & payouts: a claim's steps, then money paid out.
   CLAIM_RECEIVED: { name: 'Claim received', topic: 'Claims & payouts', when: 'When a claim is registered — sent to the claimant.' },
   CLAIM_APPROVED: { name: 'Claim approved', topic: 'Claims & payouts', when: 'When a claim is approved, with the amount — sent to the claimant.' },
@@ -109,6 +110,8 @@ const SAMPLES: Record<string, string> = {
   priceDate: '31/12/2026',
   dueDate: '05/12/2026',
   agentName: 'Juma Senior',
+  maturityDate: '02/01/2027',
+  last3: '678',
 };
 
 export function sampleFor(name: string): string {

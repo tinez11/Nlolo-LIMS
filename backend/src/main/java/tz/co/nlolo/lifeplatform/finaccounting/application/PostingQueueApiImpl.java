@@ -25,9 +25,12 @@ public class PostingQueueApiImpl implements PostingQueueApi {
     private final PostingEngine engine;
 
     private final PolicyRegister register;
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
-    PostingQueueApiImpl(PostingRules rules, UnpostedEvents queue, PostingEngine engine, PolicyRegister register) {
+    PostingQueueApiImpl(PostingRules rules, UnpostedEvents queue, PostingEngine engine, PolicyRegister register,
+                        tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         this.register = register;
+        this.ownWork = ownWork;
         this.rules = rules;
         this.queue = queue;
         this.engine = engine;
@@ -79,9 +82,44 @@ public class PostingQueueApiImpl implements PostingQueueApi {
         }
         UUID tenantId = TenantContext.get();
         UnpostedEventView row = find(tenantId, id);
-        if (row.resolution() != null || !queue.dismiss(tenantId, id, reason.trim(), by)) {
-            throw new UnpostedEventResolvedException("This event was already "
-                + (row.resolution() == null ? "resolved" : row.resolution().toLowerCase()));
+        if (row.resolution() != null) {
+            throw new UnpostedEventResolvedException("This event was already " + row.resolution().toLowerCase());
+        }
+        if (!queue.askDismissal(tenantId, id, reason.trim(), by)) {
+            throw new UnpostedEventResolvedException("A dismissal of this event is already waiting for a second person");
+        }
+        return find(tenantId, id);
+    }
+
+    @Override
+    @Transactional
+    public UnpostedEventView confirmDismissal(UUID id, String by) {
+        UUID tenantId = TenantContext.get();
+        UnpostedEventView row = find(tenantId, id);
+        if (row.resolution() != null) {
+            throw new UnpostedEventResolvedException("This event was already " + row.resolution().toLowerCase());
+        }
+        String asker = queue.dismissalRequestedBy(tenantId, id);
+        if (asker == null) {
+            throw new UnpostedEventResolvedException("No dismissal of this event has been asked for");
+        }
+        boolean alone = asker.equals(by);
+        if (alone && !ownWork.mayActAlone("ledger.approve-own")) {
+            throw new FinaccountingValidationException("You asked to dismiss this event; a second person must confirm it");
+        }
+        if (!queue.confirmDismissal(tenantId, id, by, alone)) {
+            throw new UnpostedEventResolvedException("This event was resolved meanwhile");
+        }
+        if (alone) ownWork.record("Unposted event dismissed by the one who asked", id.toString(), row.policyNumber(), by);
+        return find(tenantId, id);
+    }
+
+    @Override
+    @Transactional
+    public UnpostedEventView refuseDismissal(UUID id, String by) {
+        UUID tenantId = TenantContext.get();
+        if (!queue.refuseDismissal(tenantId, id)) {
+            throw new UnpostedEventResolvedException("No dismissal of this event is waiting");
         }
         return find(tenantId, id);
     }

@@ -271,6 +271,19 @@ public class AgentController {
             .map(CommissionAccrualResponseDto::from).toList());
     }
 
+    /** A commission booked at the wrong amount, reversed and restated with a reason (finding 187 / D8, 2026-11-12). */
+    public record CorrectAccrualRequest(@jakarta.validation.constraints.NotBlank
+                                        @jakarta.validation.constraints.Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String amount,
+                                        @jakarta.validation.constraints.NotBlank String reason) {}
+
+    @PostMapping("/commission-accruals/{accrualId}/correction")
+    @PreAuthorize("@access.can('agents.manage')")
+    public ResponseEntity<List<CommissionAccrualResponseDto>> correctAccrual(@PathVariable UUID accrualId,
+            @Valid @RequestBody CorrectAccrualRequest request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(distributionApi.correctAccrual(accrualId, new BigDecimal(request.amount()),
+            request.reason(), jwt.getSubject()).stream().map(CommissionAccrualResponseDto::from).toList());
+    }
+
     @GetMapping("/agents/{agentId}/commission-statements")
     @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('agents.view')")
     public ResponseEntity<List<CommissionStatementResponseDto>> listStatements(@PathVariable UUID agentId,

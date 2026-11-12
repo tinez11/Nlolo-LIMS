@@ -148,7 +148,7 @@ class PostingEngine {
         // The rule decides SYSTEM (source: SYSTEM), not the event type.
         Result result = post(tenantId, today, by);
         if (result.outcome() == Outcome.NOTHING_TO_POST) {
-            requiresNew.executeWithoutResult(status -> queue.dismiss(tenantId, unpostedEventId,
+            requiresNew.executeWithoutResult(status -> queue.closeNothingToPost(tenantId, unpostedEventId,
                 "Retried: the rules in force post nothing for these facts", by));
         }
         return result;
