@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.iam;
 
+import tz.co.nlolo.lifeplatform.iam.application.BuiltInRoles;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,7 +84,7 @@ class AccessIntegrationTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM iam.role WHERE tenant_id = ? AND built_in", Integer.class,
-            tenant)).isEqualTo(8);
+            tenant)).isEqualTo(BuiltInRoles.ALL.size());
 
         // Keycloak now says finance; the platform already holds this person, so it is not read again.
         accessService.evict(tenant, user);

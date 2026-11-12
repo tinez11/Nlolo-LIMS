@@ -15,7 +15,7 @@ export const PERMISSION_GROUPS: readonly { id: string; label: string; areas: rea
   { id: 'valuation', label: 'Valuation & close', areas: ['IFRS17', 'FUNDS'] },
   { id: 'reinsurance-returns', label: 'Reinsurance & returns', areas: ['REINSURANCE', 'RETURNS'] },
   { id: 'distribution', label: 'Distribution', areas: ['DISTRIBUTION'] },
-  { id: 'reports', label: 'Reports', areas: ['REPORTS'] },
+  { id: 'reports', label: 'Reports', areas: ['OVERVIEW', 'REPORTS'] },
   { id: 'records', label: 'Records', areas: ['AUDIT'] },
   { id: 'communications', label: 'Communications', areas: ['COMMUNICATIONS'] },
   { id: 'configuration', label: 'Configuration', areas: ['PRODUCTS'] },

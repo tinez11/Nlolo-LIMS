@@ -174,7 +174,7 @@ public class AccessService implements AccessApi {
         seedBuiltInRoles(tenantId);
     }
 
-    /** The eight built-in roles, once per tenant. A concurrent first request inserts nothing twice. */
+    /** The built-in roles, once per tenant (a role added later is seeded on the next request). A concurrent first request inserts nothing twice. */
     private void seedBuiltInRoles(UUID tenantId) {
         MapSqlParameterSource t = new MapSqlParameterSource("tenant", tenantId);
         Integer count = jdbc.queryForObject("SELECT count(*) FROM iam.role WHERE tenant_id = :tenant AND built_in", t,

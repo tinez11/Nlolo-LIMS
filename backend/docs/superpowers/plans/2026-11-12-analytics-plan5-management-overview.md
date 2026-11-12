@@ -47,7 +47,12 @@ PRD 9 (movement) and PRD 10 ("awaiting documents", "under investigation" stages 
 - **Dashboards read report figures already.** `dashboard/application/ReportFigures` reads a report's own number out
   of its result "so it can never disagree with the report a finance officer opens from the card".
 
-## Decisions to confirm (the user)
+## Decisions (the user, 2026-11-12)
+
+"d1 yes d2 yes d3 yes d4 ok proceed remember impeccable" — all four as recommended below; frontend work goes through
+impeccable.
+
+## Decisions as first asked
 
 | # | Question | Facts | Recommended |
 |---|---|---|---|
