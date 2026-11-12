@@ -14,6 +14,8 @@ describe('capRows', () => {
 });
 
 const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparable = false): ReportDefinition => ({
+  sources: [],
+  figures: [],
   key: 'k',
   title: 'T',
   description: 'D',

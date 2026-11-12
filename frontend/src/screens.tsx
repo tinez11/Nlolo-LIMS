@@ -120,6 +120,7 @@ import {
   ProductsPage,
   RegulatoryReturnDetailPage,
   ReportsPage,
+  FiguresGuidePage,
   SolvencyFactorsPage,
   RegulatoryReturnsPage,
   CreateTreatyPage,
@@ -410,7 +411,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'treaties/:treatyId/bordereaux/:bordereauId': ['reinsurance.view'],
   'treaties/:treatyId/statements/:statementId': ['reinsurance.view'], 'reinsurance-statements': ['reinsurance.view'],
   'regulatory-returns': ['returns.view'], 'regulatory-returns/:returnId': ['returns.view'],
-  reports: ['reports.view'], 'reports/:reportKey': ['reports.view'], 'solvency-factors': ['reports.view'],
+  reports: ['reports.view'], 'reports/what-the-figures-mean': ['reports.view'], 'reports/:reportKey': ['reports.view'], 'solvency-factors': ['reports.view'],
   users: ['users.view'], 'users/new': ['users.manage'], 'users/:userId': ['users.view'], roles: ['users.view'],
   organisation: ['organisation.manage'],
   'roles/new': ['roles.manage'], 'roles/:roleId': ['users.view'],
@@ -822,6 +823,9 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'regulatory-returns/:returnId', element: <RegulatoryReturnDetailPage />, reach: 'drill-in' },
   // One menu item; the report list lives inside the page (2026-11-09, the reports redesign).
   { path: 'reports', element: <ReportsPage />, reach: { group: 'reports', label: 'Reports', icon: ChartColumn } },
+  // What the figures mean (2026-11-11, decision K1): read-only, from the code. Before reports/:reportKey, whose
+  // dynamic segment would otherwise read it as a report key.
+  { path: 'reports/what-the-figures-mean', element: <FiguresGuidePage />, reach: 'drill-in' },
   { path: 'reports/:reportKey', element: <ReportsPage />, reach: 'drill-in' },
   { path: 'solvency-factors', element: <SolvencyFactorsPage />, reach: 'drill-in' },
 ];
