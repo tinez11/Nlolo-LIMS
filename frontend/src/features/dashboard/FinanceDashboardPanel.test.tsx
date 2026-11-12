@@ -92,6 +92,13 @@ describe('FinanceDashboardPanel', () => {
     expect(within(tile).getByText('vs Jul to Sep 2025')).toBeInTheDocument();
   });
 
+  it('opens the policies the New policies card counted, for the same months', async () => {
+    renderScreen(<FinanceDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByRole('link', { name: /New policies/ })).toHaveAttribute(
+      'href', '/staff/reports/new-business?from=2026-07-01&to=2026-09-30');
+  });
+
   it('marks fewer new policies as bad news, in words as well as colour', async () => {
     renderScreen(<FinanceDashboardPanel range={RANGE} />);
 

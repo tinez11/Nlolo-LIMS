@@ -21,6 +21,7 @@ import { ActivityFeed } from './ActivityFeed';
 import type { PanelProps } from './DashboardPage';
 import { DashboardRail } from './DashboardRail';
 import { describeRange } from './range';
+import { lastDayOf } from './reportLinks';
 import { countPoints, donutParts, monthCategories, moneyPoints, trendOf, versus } from './series';
 import { StatRow, type Stat } from './StatTile';
 
@@ -74,6 +75,8 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
       value: countValue(view.registeredInPeriod),
       hint: span,
       trend: view.registeredSeries.map((c) => c.count),
+      // The claims it counted, for the same months (2026-11-11, analytics plan 2).
+      to: `/staff/claims?registeredFrom=${p.from}-01&registeredTo=${lastDayOf(p.to)}`,
     },
     {
       label: 'Benefits paid',

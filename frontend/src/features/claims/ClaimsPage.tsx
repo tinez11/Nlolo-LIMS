@@ -1,5 +1,5 @@
 import { can } from '@/auth/access';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CLAIM_STATUSES, type ClaimStatus, type ClaimView } from '@/api/types';
@@ -20,6 +20,8 @@ import { ClaimDrawer } from './ClaimDrawer';
 import { FilterChip } from '@/components/FilterChip';
 import { ProductFilter } from '@/components/ProductFilter';
 import { useProductStore } from '@/store/productStore';
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * `GET /claims` is one of only four paged endpoints on the platform, so this
@@ -62,16 +64,28 @@ export function ClaimsPage({
   const list = useClaimStore((s) => s.list);
   const loadList = useClaimStore((s) => s.loadList);
 
+  // What a dashboard card opens (2026-11-11, analytics plan 2): claims registered in its months.
+  const registeredFrom = ISO_DAY.test(params.get('registeredFrom') ?? '') ? params.get('registeredFrom')! : undefined;
+  const registeredTo = ISO_DAY.test(params.get('registeredTo') ?? '') ? params.get('registeredTo')! : undefined;
+
   useEffect(() => {
     void loadList({
       ...(status ? { status } : {}),
       ...(qParam ? { q: qParam } : {}),
       ...(productCategory ? { productCategory } : {}),
       ...(productId ? { productId } : {}),
+      ...(registeredFrom ? { registeredFrom } : {}),
+      ...(registeredTo ? { registeredTo } : {}),
       page,
       pageSize: DEFAULT_PAGE_SIZE,
     });
-  }, [loadList, status, qParam, productCategory, productId, page]);
+  }, [loadList, status, qParam, productCategory, productId, registeredFrom, registeredTo, page]);
+
+  function clearRegistered() {
+    const merged = new URLSearchParams(params);
+    for (const key of ['registeredFrom', 'registeredTo', 'page']) merged.delete(key);
+    setParams(merged);
+  }
 
   // Keeps the input in sync if the URL changes from outside this input (back
   // button, a status-chip click that also clears q via `update` below).
@@ -180,7 +194,13 @@ export function ClaimsPage({
         <ErrorPanel
           error={list.error}
           onRetry={() =>
-            void loadList({ ...(status ? { status } : {}), ...(qParam ? { q: qParam } : {}), page })
+            void loadList({
+              ...(status ? { status } : {}),
+              ...(qParam ? { q: qParam } : {}),
+              ...(registeredFrom ? { registeredFrom } : {}),
+              ...(registeredTo ? { registeredTo } : {}),
+              page,
+            })
           }
         />
       );
@@ -271,6 +291,14 @@ export function ClaimsPage({
 
       <div className="px-6 pb-6">
         <div className="rounded-xl border border-border bg-surface shadow-card">
+          {(registeredFrom || registeredTo) && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-sm">
+              <span>Registered {formatDate(registeredFrom ?? null)} to {formatDate(registeredTo ?? null)}</span>
+              <Button size="sm" variant="ghost" onClick={clearRegistered} aria-label="Clear the registered dates">
+                <X />
+              </Button>
+            </div>
+          )}
           {/* `gap-y-2` because this row wraps, and it wraps sooner here than on the policies
               register: there are more claim statuses than policy statuses, and the chips are
               32px tall, so without it the search box lands hard against them. */}

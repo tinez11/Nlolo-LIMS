@@ -35,6 +35,10 @@ export interface UnderwritingListParams {
   applicantPartyId?: string;
   /** Where the cases came from (2026-10-29): the customer online, a call back, an agent, or the office. */
   source?: CaseSource;
+  /** Decided between these days, inclusive (YYYY-MM-DD), and with this outcome -- what a dashboard card opens. */
+  decidedFrom?: string;
+  decidedTo?: string;
+  outcome?: string;
   page?: number;
   pageSize?: number;
 }
@@ -63,6 +67,9 @@ export async function listCases(params: UnderwritingListParams = {}): Promise<Pa
       ...(params.status ? { status: params.status } : {}),
       ...(params.applicantPartyId ? { applicantPartyId: params.applicantPartyId } : {}),
       ...(params.source ? { source: params.source } : {}),
+      ...(params.decidedFrom ? { decidedFrom: params.decidedFrom } : {}),
+      ...(params.decidedTo ? { decidedTo: params.decidedTo } : {}),
+      ...(params.outcome ? { outcome: params.outcome } : {}),
       page,
       pageSize,
     },

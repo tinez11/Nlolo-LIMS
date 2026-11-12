@@ -192,6 +192,8 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
       versus: versus(p),
       hint: span,
       trend: v.newPoliciesSeries.map((c) => c.count),
+      // The policies it counted, for the same months (2026-11-11, analytics plan 2).
+      to: reportLink('new-business', { from: `${p.from}-01`, to: lastDayOf(p.to) }),
     },
     {
       label: 'Net result, year to date',
