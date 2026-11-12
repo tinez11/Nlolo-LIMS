@@ -57,12 +57,22 @@ class CustomerDocumentRenderTest {
         byte[] pdf = DocumentPdf.render(schedule());
         Files.write(Path.of("target", "sample-payment-schedule.pdf"), pdf);
         try (var doc = Loader.loadPDF(pdf)) {
-            assertThat(doc.getNumberOfPages()).isEqualTo(2);
+            // Since the letterhead (2026-11-09) the first page holds fewer rows: the count of pages is whatever the
+            // schedule needs, never one, and every page says which of how many it is.
+            int pages = doc.getNumberOfPages();
+            assertThat(pages).isGreaterThan(1);
             String text = new PDFTextStripper().getText(doc);
             assertThat(text).contains("Premium payment schedule", "nlolo-group2", "GRP-9E1BFD2A", "MM-rtaohmxpdhfx",
-                "3,500.00", "Next payment", "Page 1 of 2", "Page 2 of 2");
-            // The column labels repeat at the top of the second page.
-            assertThat(text.split("Receipt ref", -1)).hasSize(3);
+                "3,500.00", "Next payment", "Page 1 of " + pages, "Page " + pages + " of " + pages);
+            // The column labels repeat at the top of every page that carries rows (a last page may hold only the
+            // totals and notes).
+            for (int p = 1; p <= pages; p++) {
+                var stripper = new PDFTextStripper();
+                stripper.setStartPage(p);
+                stripper.setEndPage(p);
+                String page = stripper.getText(doc);
+                if (page.contains("MM-")) assertThat(page).as("page " + p).contains("Receipt ref");
+            }
         }
     }
 
@@ -72,7 +82,15 @@ class CustomerDocumentRenderTest {
         Files.write(Path.of("target", "sample-payment-schedule.xlsx"), xlsx);
         try (var book = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
             var sheet = book.getSheetAt(0);
-            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Premium payment schedule");
+            // The title sits under the letterhead (2026-11-09), wherever that ends.
+            boolean titled = false;
+            for (int r = 0; r <= sheet.getLastRowNum(); r++) {
+                var row = sheet.getRow(r);
+                if (row != null && row.getCell(0) != null && "Premium payment schedule".equals(row.getCell(0).getStringCellValue())) {
+                    titled = true;
+                }
+            }
+            assertThat(titled).isTrue();
             int header = -1;
             for (int r = 0; r <= sheet.getLastRowNum(); r++) {
                 var row = sheet.getRow(r);
