@@ -126,13 +126,12 @@ describe('AgentDashboardPanel', () => {
   it('shows the sales in money, with single premiums and savings deposits apart', async () => {
     renderScreen(<AgentDashboardPanel range={RANGE} />);
 
-    expect(await screen.findByText('TZS 1,200,000.00 a year')).toBeInTheDocument();
+    expect(await screen.findByText('TZS 1,200,000.00')).toBeInTheDocument();
     expect(screen.getByText('100.0% up', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('TZS 2,000,000.00')).toBeInTheDocument();
-    expect(screen.getByText('75.0%')).toBeInTheDocument();
-    expect(screen.getByText('TZS 500,000.00')).toBeInTheDocument();
-    expect(screen.getByText('TZS 20,000.00')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /My sales report/ })).toHaveAttribute('href', '/agents/sales');
+    expect(screen.getByText(/75.0% of this month’s premiums paid/)).toBeInTheDocument();
+    expect(screen.getByText('Single premiums TZS 500,000.00 · Savings deposits TZS 20,000.00')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sales report' })).toHaveAttribute('href', '/agents/sales');
   });
 
   it('shows no Me / My team switch to an agent with no team', async () => {
@@ -152,6 +151,6 @@ describe('AgentDashboardPanel', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your sales' })).toBeInTheDocument();
     await waitFor(() => expect(getAgentDashboard).toHaveBeenLastCalledWith({ ...RANGE, agentId: 'agent-me' }));
-    expect(screen.getByRole('link', { name: /My sales report/ })).toHaveAttribute('href', '/agents/sales?show=me');
+    expect(screen.getByRole('link', { name: 'Sales report' })).toHaveAttribute('href', '/agents/sales?show=me');
   });
 });
