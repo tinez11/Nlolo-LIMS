@@ -15,6 +15,11 @@ import java.util.UUID;
  * @param commissionSeries every month of the period: what was paid and what is still to be paid
  * @param sold policies issued in the period on the agent's team
  * @param bookByProduct the team's policies in force today per product category, with each one's share
+ * @param premiumSold the yearly premium of the regular-premium policies sold in the period, savings left out
+ *     (2026-11-12, analytics plan 3); "sold" means cover started (D1) -- {@code sold} counts the same way since
+ * @param singlePremiumsSold one-time premiums sold, apart (D2)
+ * @param savingsDepositsTaken the opening deposit of each savings or fixed-deposit policy sold, apart (D3)
+ * @param customersPaid this month's premiums due on the agent's customers, and how much is paid (D4); null when unread
  */
 public record AgentDashboardView(Long clients, Long clientsAwaitingKyc, Long clientsKycRejected, Long policiesInBook,
                                  Long applicationsInUnderwriting,
@@ -22,7 +27,10 @@ public record AgentDashboardView(Long clients, Long clientsAwaitingKyc, Long cli
                                  List<ClientAwaitingKyc> awaitingKyc,
                                  Period period, Money commissionInPeriod, List<CommissionPoint> commissionSeries,
                                  Long sold, Long soldBefore, String soldChangePercent, List<CountPoint> soldSeries,
-                                 List<Share> bookByProduct) {
+                                 List<Share> bookByProduct,
+                                 Money premiumSold, Money premiumSoldBefore, String premiumSoldChangePercent,
+                                 Money singlePremiumsSold, Money coverSold, Money savingsDepositsTaken,
+                                 tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures customersPaid) {
 
     public record ClientAwaitingKyc(UUID partyId, String displayName, String kycStatus) {}
 

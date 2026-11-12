@@ -65,6 +65,11 @@ paths:
       parameters:
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - name: agentId
+          in: query
+          required: false
+          description: "Me (2026-11-12): the sales figures for one agent inside the signed-in agent's team"
+          schema: { type: string, format: uuid }
       summary: The agent's dashboard (agents realm, scoped to the token)
       security:
         - agentsAuth: [agent]
@@ -467,8 +472,25 @@ components:
       additionalProperties: false
       required: [clients, clientsAwaitingKyc, clientsKycRejected, policiesInBook, applicationsInUnderwriting,
                  commissionPeriod, commissionEarned, commissionStatus, awaitingKyc, period, commissionInPeriod,
-                 commissionSeries, sold, soldBefore, soldChangePercent, soldSeries, bookByProduct]
+                 commissionSeries, sold, soldBefore, soldChangePercent, soldSeries, bookByProduct,
+                 premiumSold, premiumSoldBefore, premiumSoldChangePercent, singlePremiumsSold, coverSold,
+                 savingsDepositsTaken, customersPaid]
       properties:
+        premiumSold:
+          description: >-
+            The yearly premium of the regular-premium policies sold in the period, savings left out (2026-11-12). Sold
+            means cover started -- sold, soldBefore and soldSeries count the same way.
+          $ref: '#/components/schemas/Money'
+        premiumSoldBefore: { $ref: '#/components/schemas/Money' }
+        premiumSoldChangePercent: { $ref: '#/components/schemas/Percent' }
+        singlePremiumsSold: { description: "One-time premiums sold, apart", $ref: '#/components/schemas/Money' }
+        coverSold: { $ref: '#/components/schemas/Money' }
+        savingsDepositsTaken: { description: "The opening deposit of each savings or fixed-deposit policy sold", $ref: '#/components/schemas/Money' }
+        customersPaid:
+          description: "This month's premiums due on the agent's customers, and how much is paid. Null when unread."
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/CollectionFigures'
         clients: { $ref: '#/components/schemas/Count' }
         clientsAwaitingKyc: { $ref: '#/components/schemas/Count' }
         clientsKycRejected: { $ref: '#/components/schemas/Count' }

@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
+import tz.co.nlolo.lifeplatform.reporting.api.SalesTotals;
 import tz.co.nlolo.lifeplatform.reporting.domain.PolicyStatus;
 
 import java.math.BigDecimal;
@@ -313,12 +314,71 @@ public class ReportQueries {
     public List<MonthlyCount> issuedByMonth(UUID tenantId, LocalDate from, LocalDate to, Set<UUID> agentIds) {
         if (agentIds != null && agentIds.isEmpty()) return List.of();
         List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
-        StringBuilder sql = new StringBuilder("SELECT to_char(p.issue_date, 'YYYY-MM') AS month, COUNT(*) AS n"
-            + " FROM reporting.report_policy p WHERE p.tenant_id = ? AND p.issue_date BETWEEN ? AND ?");
+        // On the day cover started (2026-11-12, the user, analytics plan 3 D1: "count a sale on the day cover starts,
+        // everywhere"). It counted the issue date, which took in offers never paid, so the dashboards and the New
+        // business report gave two "sold" numbers for one month.
+        StringBuilder sql = new StringBuilder("SELECT to_char(p.activated_on, 'YYYY-MM') AS month, COUNT(*) AS n"
+            + " FROM reporting.report_policy p WHERE p.tenant_id = ? AND p.activated_on BETWEEN ? AND ?");
         appendAgents(sql, args, agentIds);
         sql.append(" GROUP BY month ORDER BY month");
         return jdbc.query(sql.toString(), (rs, i) -> new MonthlyCount(YearMonth.parse(rs.getString("month")),
             rs.getLong("n")), args.toArray());
+    }
+
+    /** How a sales bucket is named, from a closed list -- never request text. */
+    private static final Map<String, String> SALES_BUCKETS = Map.of(
+        "MONTH", "to_char(p.activated_on, 'YYYY-MM')",
+        "QUARTER", "to_char(p.activated_on, 'YYYY') || '-Q' || to_char(p.activated_on, 'Q')",
+        "YEAR", "to_char(p.activated_on, 'YYYY')");
+
+    /** Savings and fixed deposits: their money is deposits, not premium (2026-11-12, plan 3, D3). */
+    private static final String SAVINGS = "COALESCE(p.portfolio_code, '') IN ('SAV', 'DEP')";
+
+    /**
+     * An agent team's sales in money (2026-11-12, analytics plan 3), counted on the day cover started (D1), per bucket
+     * and currency. Premium a year and single premiums leave savings out; savings deposits count each savings or
+     * fixed-deposit policy's opening deposit -- its single deposit, or one regular deposit ({@code premium} is one
+     * instalment) (D3). An EMPTY agent set is no sales, never every policy.
+     */
+    public List<SalesTotals> salesTotals(UUID tenantId, LocalDate from, LocalDate to, Set<UUID> agentIds, String by) {
+        String bucket = SALES_BUCKETS.get(by);
+        if (bucket == null) throw new IllegalArgumentException("by must be one of " + SALES_BUCKETS.keySet() + "; got " + by);
+        if (agentIds != null && agentIds.isEmpty()) return List.of();
+        List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
+        StringBuilder sql = new StringBuilder("SELECT " + bucket + " AS bucket, p.currency, COUNT(*) AS policies,"
+            + " COALESCE(SUM(CASE WHEN NOT " + SAVINGS + " THEN " + ANNUALISED_AT_SALE + " END), 0) AS premium_a_year,"
+            + " COALESCE(SUM(CASE WHEN NOT " + SAVINGS + " THEN " + SINGLE_PREMIUM + " END), 0) AS single_premiums,"
+            + " COALESCE(SUM(" + COVER + "), 0) AS cover,"
+            + " COALESCE(SUM(CASE WHEN " + SAVINGS + " THEN p.premium END), 0) AS savings_deposits"
+            + " FROM reporting.report_policy p WHERE p.tenant_id = ? AND p.activated_on BETWEEN ? AND ?");
+        appendAgents(sql, args, agentIds);
+        sql.append(" GROUP BY bucket, p.currency ORDER BY bucket, p.currency");
+        return jdbc.query(sql.toString(), (rs, i) -> new SalesTotals(rs.getString("bucket"),
+            rs.getString("currency").trim(), rs.getLong("policies"), rs.getBigDecimal("premium_a_year"),
+            rs.getBigDecimal("single_premiums"), rs.getBigDecimal("cover"), rs.getBigDecimal("savings_deposits")),
+            args.toArray());
+    }
+
+    /** One policy behind a sales figure (2026-11-12, plan 3). premiumAYear null for a single premium. */
+    public record SoldRow(String policyNumber, UUID productId, String clientName, LocalDate onCoverFrom, String frequency,
+                          BigDecimal premium, BigDecimal premiumAYear, BigDecimal cover, boolean savings,
+                          String currency, UUID agentId) {}
+
+    /** The policies an agent team sold -- cover started -- between two days, newest first (the list behind a figure). */
+    public List<SoldRow> policiesSold(UUID tenantId, LocalDate from, LocalDate to, Set<UUID> agentIds) {
+        if (agentIds != null && agentIds.isEmpty()) return List.of();
+        List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
+        StringBuilder sql = new StringBuilder("SELECT p.policy_number, p.product_id, c.display_name, p.activated_on,"
+            + " p.premium_frequency, p.premium, " + ANNUALISED_AT_SALE + " AS premium_a_year, " + COVER + " AS cover,"
+            + " " + SAVINGS + " AS savings, p.currency, p.agent_id FROM reporting.report_policy p" + CLIENT_JOIN
+            + " WHERE p.tenant_id = ? AND p.activated_on BETWEEN ? AND ?");
+        appendAgents(sql, args, agentIds);
+        sql.append(" ORDER BY p.activated_on DESC, p.policy_number");
+        return jdbc.query(sql.toString(), (rs, i) -> new SoldRow(rs.getString("policy_number"),
+            rs.getObject("product_id", UUID.class), rs.getString("display_name"),
+            rs.getObject("activated_on", LocalDate.class), rs.getString("premium_frequency"), rs.getBigDecimal("premium"),
+            rs.getBigDecimal("premium_a_year"), rs.getBigDecimal("cover"), rs.getBoolean("savings"),
+            rs.getString("currency").trim(), rs.getObject("agent_id", UUID.class)), args.toArray());
     }
 
     /** Policies in force on {@code asOf} per product category, scoped as {@link #issuedByMonth} is. */

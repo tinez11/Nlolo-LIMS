@@ -92,13 +92,15 @@ public class DashboardController {
     @PreAuthorize("hasRole('REALM_AGENTS')")
     public ResponseEntity<AgentDashboardView> agent(@AuthenticationPrincipal Jwt jwt,
                                                     @RequestParam(required = false) String from,
-                                                    @RequestParam(required = false) String to) {
+                                                    @RequestParam(required = false) String to,
+                                                    // "Me" (2026-11-12, plan 3): one agent inside the team, sales only.
+                                                    @RequestParam(required = false) UUID agentId) {
         String partyId = jwt.getClaimAsString("party_id");
         if (partyId == null) {
             throw new AccessDeniedException("Agent token carries no party_id claim");
         }
         LocalDate today = LocalDate.now(CIVIL);
         return ResponseEntity.ok(agent.build(jwt.getSubject(), UUID.fromString(partyId),
-            DashboardPeriod.of(from, to, today), today));
+            DashboardPeriod.of(from, to, today), today, agentId));
     }
 }

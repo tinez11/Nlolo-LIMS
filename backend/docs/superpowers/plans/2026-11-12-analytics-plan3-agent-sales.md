@@ -27,7 +27,20 @@ Cover sold: TZS 214M · savings deposits taken: TZS 6.0M (shown apart)", "Show: 
 premiums paid 81% · Of premiums due this month", "My sales report — premium sold a year, quarter by quarter … show by
 month, quarter or year · Download".
 
-## Decisions to confirm before building (each with the recommendation the tasks assume)
+## Decisions (the user, 2026-11-12)
+
+- **D1 yes:** a sale counts on the day cover starts, everywhere an agent sees "sold".
+- **D2 yes:** single premiums that are not savings shown apart as "Single premiums sold".
+- **D3: the opening deposit only** (the user chose (b) over (c) on the recommendation): "Savings deposits taken" =
+  the first money in on each savings or fixed-deposit policy sold — its single deposit, or its first regular deposit
+  (one instalment, not a year of them). Later deposits are not sales. Never added into premium.
+- **D4 yes:** "Your customers' premiums paid" on the dashboard, this month.
+
+The SQL in Task 1 follows D3: `savings_deposits` = `SUM(CASE WHEN portfolio IN ('SAV','DEP') THEN COALESCE(<SINGLE_PREMIUM>, p.premium) END)`
+-- for a SINGLE policy its single deposit, otherwise one regular deposit (`p.premium` is one instalment).
+The test's SAV MONTHLY TZS 20,000 policy therefore gives savingsDeposits 20,000.00, not 240,000.00.
+
+## Decisions as first asked (kept for the record)
 
 | # | Question | Facts found (2026-11-12) | Recommended |
 |---|---|---|---|

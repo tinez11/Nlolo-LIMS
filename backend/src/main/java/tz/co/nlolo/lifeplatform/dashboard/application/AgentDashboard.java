@@ -13,7 +13,8 @@ import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
 import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
-import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
+import tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures;
+import tz.co.nlolo.lifeplatform.reporting.api.SalesTotals;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
 
 import java.math.BigDecimal;
@@ -64,6 +65,15 @@ public class AgentDashboard {
 
     /** @param period the months the ranged figures cover (2026-10-23); client counts and the book stay "now" */
     public AgentDashboardView build(String subject, UUID partyId, DashboardPeriod range, LocalDate today) {
+        return build(subject, partyId, range, today, null);
+    }
+
+    /**
+     * @param onlyAgentId "Me" (2026-11-12, analytics plan 3): the sales figures for one agent inside the team; null for
+     *                    the whole team. An agent outside the team is refused by reporting.
+     */
+    public AgentDashboardView build(String subject, UUID partyId, DashboardPeriod range, LocalDate today,
+                                    UUID onlyAgentId) {
         Long clients = Safely.read("my clients",
             () -> parties.searchParties(null, subject, null, null, TOTAL_ONLY).getTotalElements());
         Long awaitingKyc = Safely.read("clients awaiting KYC",
@@ -122,12 +132,21 @@ public class AgentDashboard {
         BigDecimal commissionTotal = statements == null || currency == null ? null : statements.stream()
             .filter(s -> currency.equals(s.totalCurrency()) && s.totalAmount() != null)
             .map(CommissionStatementView::totalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        Map<YearMonth, Long> issued = team == null ? null : Safely.read("policies sold", () ->
-            reporting.policiesIssuedByMonth(range.compareFrom(), range.to(), team).stream()
-                .collect(Collectors.toMap(MonthlyCount::month, MonthlyCount::count)));
+        // Sold on the day cover started (2026-11-12, plan 3, D1): the count and the money from one read, so they agree.
+        // It used to count by issue date, which took in offers never paid; the New business report counted on cover.
+        Map<YearMonth, SalesTotals> salesByMonth = Safely.read("policies sold", () ->
+            reporting.salesByPeriod(partyId, onlyAgentId, range.compareFrom().atDay(1), range.to().atEndOfMonth(), "MONTH")
+                .stream().collect(Collectors.toMap(s -> YearMonth.parse(s.bucket()), s -> s, (a, b) -> a)));
+        Map<YearMonth, Long> issued = salesByMonth == null ? null : salesByMonth.entrySet().stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().policies()));
         Long sold = issued == null ? null : range.months().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
         Long soldBefore = issued == null ? null
             : range.compareMonths().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
+        BigDecimal premiumSold = sum(salesByMonth, range.months(), SalesTotals::premiumAYear);
+        BigDecimal premiumSoldBefore = sum(salesByMonth, range.compareMonths(), SalesTotals::premiumAYear);
+        // The agent's customers' premiums paid, this month (D4): the same rate finance reads, on their own customers.
+        CollectionFigures customersPaid = Safely.read("my customers' premiums paid", () ->
+            reporting.agentCollectionFigures(partyId, today.withDayOfMonth(1), today, today));
         List<Share> byProduct = team == null ? List.of() : Safely.read("my book by product", () -> {
             List<CategoryCount> rows = reporting.policiesInForceByCategory(today, team);
             return DashboardPeriod.shares(rows.stream()
@@ -144,6 +163,23 @@ public class AgentDashboard {
             sold == null ? null : DashboardPeriod.changePercent(BigDecimal.valueOf(sold), BigDecimal.valueOf(soldBefore)),
             issued == null ? List.of()
                 : range.months().stream().map(m -> new CountPoint(m.toString(), issued.getOrDefault(m, 0L))).toList(),
-            byProduct == null ? List.of() : byProduct);
+            byProduct == null ? List.of() : byProduct,
+            // What they sold in money (2026-11-12, plan 3): a year of premium, single premiums and savings apart.
+            Money.of(premiumSold, WORKING_CURRENCY), Money.of(premiumSoldBefore, WORKING_CURRENCY),
+            premiumSold == null ? null : DashboardPeriod.changePercent(premiumSold, premiumSoldBefore),
+            Money.of(sum(salesByMonth, range.months(), SalesTotals::singlePremiums), WORKING_CURRENCY),
+            Money.of(sum(salesByMonth, range.months(), SalesTotals::cover), WORKING_CURRENCY),
+            Money.of(sum(salesByMonth, range.months(), SalesTotals::savingsDeposits), WORKING_CURRENCY),
+            customersPaid);
+    }
+
+    private static final String WORKING_CURRENCY = "TZS";
+
+    /** One money figure over some months, from the sales read; null when that read failed. */
+    private static BigDecimal sum(Map<YearMonth, SalesTotals> byMonth, List<YearMonth> months,
+                                  java.util.function.Function<SalesTotals, BigDecimal> figure) {
+        if (byMonth == null) return null;
+        return months.stream().map(byMonth::get).filter(java.util.Objects::nonNull).map(figure)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

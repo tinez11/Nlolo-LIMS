@@ -339,6 +339,10 @@ class ReportQueriesIntegrationTest {
         assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), Set.of(mine)))
             .extracting(m -> m.month() + " " + m.count()).containsExactly("2026-01 1", "2026-02 1");
         assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), Set.of())).isEmpty();
+        // Sold means cover started (2026-11-12, the user, plan 3 D1): an offer never paid is not counted.
+        events.offerNotTakenUp(tenant, Sale.of("C-OFFER", product, d("2026-02-15")).agent(mine), d("2026-03-15"));
+        assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), Set.of(mine)))
+            .extracting(m -> m.month() + " " + m.count()).containsExactly("2026-01 1", "2026-02 1");
 
         // C-3 lapsed in March: in force for nobody on 31 March, and never in my book.
         assertThat(reportingApi.policiesInForceByCategory(d("2026-03-31"), null))
@@ -464,6 +468,38 @@ class ReportQueriesIntegrationTest {
         assertThat(rows(result, 0)).singleElement()
             .satisfies(r -> assertThat(r.get("product")).isEqualTo(product.toString()));
         assertThat(rows(result, 1)).extracting(r -> r.get("policyNumber")).containsExactly("P-A");
+    }
+
+    /**
+     * An agent's sales in money (2026-11-12, analytics plan 3): counted on the day cover started (D1); a monthly premium
+     * counts twelve times a year; a single premium apart (D2); savings count their opening deposit only, apart (D3).
+     */
+    @Autowired private tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportQueries reportQueries;
+
+    @Test
+    void anAgentsSalesInMoneyCountAYearOfPremiumAndSavingsApart() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        events.sell(tenant, Sale.of("S-TERM", product, d("2026-10-05")).agent(a).premium("MONTHLY", "100000.00"));
+        events.sell(tenant, Sale.of("S-CRL", product, d("2026-10-06")).agent(a).premium("SINGLE", "500000.00"));
+        events.sell(tenant, Sale.of("S-SAV", product, d("2026-10-07")).agent(a).portfolio("SAV").premium("MONTHLY", "20000.00"));
+        events.sell(tenant, Sale.of("S-OTHER", product, d("2026-10-08")).agent(b));
+
+        List<tz.co.nlolo.lifeplatform.reporting.api.SalesTotals> october =
+            reportQueries.salesTotals(tenant, d("2026-10-01"), d("2026-10-31"), Set.of(a), "MONTH");
+
+        assertThat(october).singleElement().satisfies(s -> {
+            assertThat(s.bucket()).isEqualTo("2026-10");
+            assertThat(s.policies()).isEqualTo(3);
+            assertThat(s.premiumAYear()).isEqualByComparingTo("1200000.00");
+            assertThat(s.singlePremiums()).isEqualByComparingTo("500000.00");
+            // The term and the credit-life cover; a savings account gives none.
+            assertThat(s.cover()).isEqualByComparingTo("2000000.00");
+            assertThat(s.savingsDeposits()).isEqualByComparingTo("20000.00");
+        });
+        assertThat(reportQueries.salesTotals(tenant, d("2026-10-01"), d("2026-12-31"), Set.of(a), "QUARTER"))
+            .extracting(tz.co.nlolo.lifeplatform.reporting.api.SalesTotals::bucket).containsExactly("2026-Q4");
+        assertThat(reportQueries.salesTotals(tenant, d("2026-10-01"), d("2026-10-31"), Set.of(), "MONTH")).isEmpty();
     }
 
     /** Drill-down (2026-11-11, analytics plan 2): each policy, its client and its agent open their own record. */

@@ -56,6 +56,8 @@ class ReportingContractTest {
     static void migrate() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             ReportingTestMigrations.ALL);
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            ReportingTestMigrations.DISTRIBUTION);
     }
 
     @Autowired private MockMvc mockMvc;
@@ -109,6 +111,30 @@ class ReportingContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
             .andExpect(jsonPath("$[0].title").value("Collections"));
         mockMvc.perform(get("/reports/figure-definitions").with(staff(tenant, "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+    }
+
+    /** An agent's own sales (2026-11-12, analytics plan 3): every path valid for an agent; refused without a party. */
+    @Test
+    void anAgentsSalesMatchTheContractAndNeedTheirParty() throws Exception {
+        var agent = jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+            .jwt(b -> b.subject("agent-1").claim("tenant_id", tenant.toString())
+                .claim("party_id", UUID.randomUUID().toString()));
+        for (String path : new String[] { "/agents/me/sales", "/agents/me/sales/report", "/agents/me/sales/policies" }) {
+            mockMvc.perform(get(path).param("from", "2026-01-01").param("to", "2026-11-12").with(agent))
+                .andExpect(status().isOk())
+                .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        }
+        mockMvc.perform(get("/agents/me/sales/export").param("from", "2026-01-01").param("to", "2026-11-12")
+                .param("format", "xlsx").with(agent))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", containsString("my-sales")));
+        mockMvc.perform(get("/agents/me/sales").param("from", "2026-01-01").param("to", "2026-11-12")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(b -> b.subject("agent-1").claim("tenant_id", tenant.toString()))))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/agents/me/sales").param("from", "2026-01-01").param("to", "2026-11-12")
+                .with(staff(tenant, "FINANCE_OFFICER")))
             .andExpect(status().isForbidden());
     }
 
