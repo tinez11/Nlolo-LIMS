@@ -88,7 +88,9 @@ export function ReportFilterBar({
   return (
     <form onSubmit={submit} aria-label="Report filters" className="space-y-2 border-b border-border pb-4">
       {presets.length > 0 && (
-        <div role="group" aria-label="Period" className="flex flex-wrap items-center gap-1.5">
+        // "Period choices", not "Period": a one-month report's own month field is labelled "Period", and two controls
+        // of one name are two answers to "where is Period?" for a screen reader (and a test).
+        <div role="group" aria-label="Period choices" className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-muted-foreground" aria-hidden>
             Period
           </span>

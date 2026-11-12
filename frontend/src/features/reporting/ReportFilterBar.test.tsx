@@ -26,7 +26,7 @@ describe('ReportFilterBar', () => {
     const user = userEvent.setup();
     renderScreen(<ReportFilterBar definition={PERIOD_REPORT} initial={defaultFilters(PERIOD_REPORT, new Date())} onRun={onRun} />);
 
-    const period = screen.getByRole('group', { name: 'Period' });
+    const period = screen.getByRole('group', { name: 'Period choices' });
     // The default is this month so far: that choice is lit.
     expect(within(period).getByRole('button', { name: 'This month' })).toHaveAttribute('aria-pressed', 'true');
 
@@ -45,7 +45,7 @@ describe('ReportFilterBar', () => {
 
     await user.clear(screen.getByLabelText('From'));
     await user.type(screen.getByLabelText('From'), '2026-10-05');
-    expect(within(screen.getByRole('group', { name: 'Period' })).getByRole('button', { name: 'Pick dates…' }))
+    expect(within(screen.getByRole('group', { name: 'Period choices' })).getByRole('button', { name: 'Pick dates…' }))
       .toHaveAttribute('aria-pressed', 'true');
   });
 });
