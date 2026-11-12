@@ -60,6 +60,25 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FinanceDashboardView' }
         '403': { $ref: '#/components/responses/Problem' }
+  /dashboards/overview:
+    get:
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      summary: The management overview (overview.view -- the Management role and administrators)
+      description: >
+        Premiums collected and new policies against the same months a year earlier; policies in force and lapsed;
+        the collection rate; claims paid and open; what waits for a decision. Each figure is read from the report or
+        dashboard that owns it (2026-11-12, analytics plan 5).
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManagementDashboardView' }
+        '403': { $ref: '#/components/responses/Problem' }
   /dashboards/agent:
     get:
       parameters:
@@ -452,6 +471,33 @@ components:
           anyOf:
             - type: 'null'
             - $ref: '#/components/schemas/CollectionFigures'
+    ManagementDashboardView:
+      description: >-
+        The management overview (2026-11-12, analytics plan 5): each figure read from the report or dashboard that owns
+        it. Null means it could not be read -- never zero.
+      type: object
+      additionalProperties: false
+      required: [period, collected, collectedBefore, collectedChangePercent, newPolicies, newPoliciesBefore,
+                 newPoliciesChangePercent, policiesInForce, collections, lapsed, claimsPaid, openClaims, casesToDecide,
+                 claimsToDecide]
+      properties:
+        period: { $ref: '#/components/schemas/Period' }
+        collected: { $ref: '#/components/schemas/Money' }
+        collectedBefore: { $ref: '#/components/schemas/Money' }
+        collectedChangePercent: { $ref: '#/components/schemas/Percent' }
+        newPolicies: { $ref: '#/components/schemas/Count' }
+        newPoliciesBefore: { $ref: '#/components/schemas/Count' }
+        newPoliciesChangePercent: { $ref: '#/components/schemas/Percent' }
+        policiesInForce: { $ref: '#/components/schemas/Count' }
+        collections:
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/CollectionFigures'
+        lapsed: { $ref: '#/components/schemas/Count' }
+        claimsPaid: { $ref: '#/components/schemas/Money' }
+        openClaims: { $ref: '#/components/schemas/Count' }
+        casesToDecide: { $ref: '#/components/schemas/Count' }
+        claimsToDecide: { $ref: '#/components/schemas/Count' }
     CollectionFigures:
       type: object
       additionalProperties: false

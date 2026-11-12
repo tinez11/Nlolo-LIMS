@@ -16,11 +16,13 @@ import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.ManagementDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.application.AgentDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.DashboardPeriod;
 import tz.co.nlolo.lifeplatform.dashboard.application.FinanceDashboard;
+import tz.co.nlolo.lifeplatform.dashboard.application.ManagementDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
 
 import java.time.LocalDate;
@@ -41,15 +43,29 @@ public class DashboardController {
     private final ClaimsDashboard claims;
     private final FinanceDashboard finance;
     private final AgentDashboard agent;
+    private final ManagementDashboard management;
     private final CurrentAccess currentAccess;
 
     public DashboardController(UnderwritingDashboard underwriting, ClaimsDashboard claims, FinanceDashboard finance,
-                               AgentDashboard agent, CurrentAccess currentAccess) {
+                               AgentDashboard agent, ManagementDashboard management, CurrentAccess currentAccess) {
+        this.management = management;
         this.currentAccess = currentAccess;
         this.underwriting = underwriting;
         this.claims = claims;
         this.finance = finance;
         this.agent = agent;
+    }
+
+    /**
+     * The management overview (2026-11-12, analytics plan 5). Its figures come from every area, so it is for a person
+     * who sees every area: the Management role holds every view its figures come from (D1), administrators too.
+     */
+    @GetMapping("/dashboards/overview")
+    @PreAuthorize("@access.can('overview.view')")
+    public ResponseEntity<ManagementDashboardView> overview(@RequestParam(required = false) String from,
+                                                            @RequestParam(required = false) String to) {
+        LocalDate today = LocalDate.now(CIVIL);
+        return ResponseEntity.ok(management.build(DashboardPeriod.of(from, to, today), today));
     }
 
     @GetMapping("/dashboards/underwriting")

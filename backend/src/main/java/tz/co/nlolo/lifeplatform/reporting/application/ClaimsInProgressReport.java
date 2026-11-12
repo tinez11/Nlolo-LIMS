@@ -34,6 +34,8 @@ import static tz.co.nlolo.lifeplatform.reporting.api.ColumnType.TEXT;
  * sends no event, so its history cannot be rebuilt; the claims dashboard shows those live (D3). A claim reopened after
  * it was paid or declined counts as "Reopened" from the day it was reopened -- only its first assessment is kept, so
  * whether it has been looked at again is not known here.
+ *
+ * <p>The management overview (dashboard ManagementDashboard) reads the figure "open" by key: rename it knowingly.
  */
 @Component
 public class ClaimsInProgressReport implements Report {
