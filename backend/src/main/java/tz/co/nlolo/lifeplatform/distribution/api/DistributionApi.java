@@ -161,6 +161,17 @@ public interface DistributionApi {
 
     /** Every accrual and clawback booked on one policy, oldest first -- what it has earned whom. */
     List<CommissionAccrualView> listAccrualsForPolicy(String policyNumber);
+
+    /**
+     * Correct a commission booked at the wrong amount (2026-11-12, finance finding 187 / D8: a 5% plan stored as 500%
+     * credited TZS 10M on a 2M deposit). The wrong accrual is reversed in full and the right amount booked in its
+     * place, both into the agent's open statement and both to the ledger, with the reason recorded. Never a change to
+     * the original row. Once per accrual.
+     *
+     * @param correctAmount what should have been booked; zero reverses it only
+     * @return the accruals booked: the reversal, and the restated amount when it is above zero
+     */
+    List<CommissionAccrualView> correctAccrual(UUID accrualId, BigDecimal correctAmount, String reason, String by);
     CommissionPlanView getApplicablePlan(UUID agentId, UUID productId);
 
     List<CommissionStatementView> listStatements(UUID agentId, String period);

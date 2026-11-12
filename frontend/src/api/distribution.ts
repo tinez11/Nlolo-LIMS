@@ -184,6 +184,15 @@ export function setCommissionRate(agentId: string, productId: string, ratePercen
 }
 
 /** `GET /commission-accruals?policyNumber=` -- staff. What one policy has earned, and clawed back. */
+/**
+ * `POST /commission-accruals/{accrualId}/correction` -- agents.manage (2026-11-12, finance finding 187 / D8): the
+ * wrong accrual reversed in full and the right amount booked, with the reason. Once per accrual.
+ */
+export function correctAccrual(accrualId: string, amount: string, reason: string): Promise<CommissionAccrualView[]> {
+  return post<CommissionAccrualView[]>(`/commission-accruals/${encodeURIComponent(accrualId)}/correction`,
+    { amount, reason });
+}
+
 export function listPolicyAccruals(policyNumber: string): Promise<CommissionAccrualView[]> {
   return get<CommissionAccrualView[]>('/commission-accruals', { params: { policyNumber } });
 }

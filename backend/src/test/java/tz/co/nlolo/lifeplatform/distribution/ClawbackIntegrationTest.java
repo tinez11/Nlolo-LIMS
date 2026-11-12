@@ -282,6 +282,48 @@ class ClawbackIntegrationTest {
         }
     }
 
+    /**
+     * Finance finding 187 / D8 (2026-11-12): a commission booked at the wrong amount is reversed in full and restated,
+     * the original row untouched, the statement's total the corrected figure -- and a second correction is refused.
+     */
+    @Test
+    void aWrongCommissionIsReversedAndRestatedOnce() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CORRECT");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "CORRECT-01");
+
+        TenantContext.set(tenantId);
+        CommissionAccrual original = originalFirstYearAccrual(tenantId, policyNumber);
+        assertThat(original.getAmount()).isEqualByComparingTo("10000.00");
+
+        List<tz.co.nlolo.lifeplatform.distribution.api.CommissionAccrualView> booked =
+            distributionApi.correctAccrual(original.getAccrualId(), new BigDecimal("5000.00"), "rate typed as 10%, agreed 5%",
+                "finance-1");
+
+        assertThat(booked).extracting(a -> a.amount().setScale(2).toPlainString()).containsExactly("-10000.00", "5000.00");
+        assertThat(commissionAccrualRepository.findById(original.getAccrualId()).orElseThrow().getAmount())
+            .isEqualByComparingTo("10000.00");
+        CommissionStatement statement = commissionStatementRepository
+            .findByStatementIdAndTenantId(original.getStatementId(), tenantId).orElseThrow();
+        assertThat(statement.getTotalAmount()).isEqualByComparingTo("5000.00");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> distributionApi.correctAccrual(original.getAccrualId(),
+                new BigDecimal("4000.00"), "again", "finance-1"))
+            .hasMessageContaining("already been corrected");
+    }
+
+    /** Finance finding 187: a rate above 100% of the premium is refused at the plan. */
+    @Test
+    void aCommissionRateAboveTheWholePremiumIsRefused() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CAP");
+        TenantContext.set(tenantId);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> distributionApi.createCommissionPlan(fixture.productId(),
+                List.of(new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("5.0000"), null, null)),
+                "finance-1"))
+            .hasMessageContaining("cannot be more than 100%");
+    }
+
     @Test
     void aLapseInsideTheWindowReversesTheFirstYearAccrualLeavingTheOriginalRowIntact() {
         UUID tenantId = UUID.randomUUID();
