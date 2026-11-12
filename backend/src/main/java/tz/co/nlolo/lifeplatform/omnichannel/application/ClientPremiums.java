@@ -1,7 +1,5 @@
 package tz.co.nlolo.lifeplatform.omnichannel.application;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
@@ -18,7 +16,7 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.payment.api.PaymentApi;
 import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
-import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
+import tz.co.nlolo.lifeplatform.policy.api.HeldPolicy;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
@@ -50,7 +48,6 @@ public class ClientPremiums {
     static final String CURRENCY = "TZS";
     private static final Set<InvoiceStatus> OPEN =
         EnumSet.of(InvoiceStatus.DUE, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.IN_GRACE, InvoiceStatus.OVERDUE);
-    private static final int PAGE = 200;
 
     private final PolicyApi policyApi;
     private final BillingApi billingApi;
@@ -80,9 +77,21 @@ public class ClientPremiums {
         LastReceipt last = null;
         Row next = null;
 
-        for (PolicyView policy : policies(partyId)) {
+        // Two reads for the whole book, not two per policy: 176 policies took 29 seconds one by one (2026-11-12).
+        List<HeldPolicy> held = policyApi.policiesHeldBy(partyId);
+        List<String> numbers = held.stream().map(HeldPolicy::policyNumber).toList();
+        Map<String, List<InvoiceView>> invoicesByPolicy = new HashMap<>();
+        for (InvoiceView i : billingApi.invoicesForPolicies(numbers)) {
+            invoicesByPolicy.computeIfAbsent(i.policyNumber(), k -> new ArrayList<>()).add(i);
+        }
+        Map<String, List<ReceiptView>> receiptsByPolicy = new HashMap<>();
+        for (ReceiptView r : paymentApi.receiptsForPolicies(numbers)) {
+            receiptsByPolicy.computeIfAbsent(r.policyNumber(), k -> new ArrayList<>()).add(r);
+        }
+
+        for (HeldPolicy policy : held) {
             String product = productNames.computeIfAbsent(policy.productId(), this::productName);
-            List<InvoiceView> invoices = billingApi.listInvoices(policy.policyNumber(), null);
+            List<InvoiceView> invoices = invoicesByPolicy.getOrDefault(policy.policyNumber(), List.of());
             boolean anyAhead = false;
             for (InvoiceView i : invoices) {
                 if (!OPEN.contains(i.status()) || i.balanceDue() == null || i.balanceDue().signum() <= 0) continue;
@@ -93,14 +102,15 @@ public class ClientPremiums {
                     overdue.add(row);
                     continue;
                 }
-                if (next == null || row.dueDate().isBefore(next.dueDate())) next = row;
+                // Next due is a date still ahead: one past due but in its grace is owed now, not "next".
+                if (!row.dueDate().isBefore(today) && (next == null || row.dueDate().isBefore(next.dueDate()))) next = row;
                 if (until == null || !row.dueDate().isAfter(until)) coming.add(row);
             }
             if (!anyAhead && "SINGLE".equals(policy.premiumFrequency())) {
                 notInvoiced.add(new NotInvoiced(policy.policyNumber(), product,
                     invoices.isEmpty() ? "PER_ENROLMENT_FILE" : "ONCE"));
             }
-            for (ReceiptView r : paymentApi.receiptsForPolicy(policy.policyNumber())) {
+            for (ReceiptView r : receiptsByPolicy.getOrDefault(policy.policyNumber(), List.of())) {
                 if (!"CONFIRMED".equals(r.status()) || r.receiptNumber() == null) continue;
                 LocalDate on = receivedOn(r);
                 if (last == null || on.isAfter(last.receivedOn())) {
@@ -149,17 +159,6 @@ public class ClientPremiums {
             new Field("Showing", "Overdue, and " + windowWords(window)),
             new Field("Printed on", PolicyDocuments.DMY.format(today)));
         return new CustomerDocument(PolicyDocuments.ISSUER, "Premiums due", header, columns, rows, totals, notes, false);
-    }
-
-    private List<PolicyView> policies(UUID partyId) {
-        List<PolicyView> all = new ArrayList<>();
-        int page = 0;
-        Page<PolicyView> p;
-        do {
-            p = policyApi.searchPolicies(partyId, null, null, null, null, PageRequest.of(page++, PAGE));
-            all.addAll(p.getContent());
-        } while (p.hasNext());
-        return all;
     }
 
     /** OVERDUE once past due and its grace (billing's own status), otherwise billing's status as it stands. */

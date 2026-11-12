@@ -1061,6 +1061,11 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    public List<tz.co.nlolo.lifeplatform.policy.api.HeldPolicy> policiesHeldBy(UUID policyholderPartyId) {
+        return policyRepository.findHeldBy(TenantContext.get(), policyholderPartyId);
+    }
+
+    @Override
     public Set<String> policyNumbersForAgentTeam(UUID callerPartyId) {
         List<UUID> team = distributionApi.resolveAgentTeam(callerPartyId);
         if (team.isEmpty()) {

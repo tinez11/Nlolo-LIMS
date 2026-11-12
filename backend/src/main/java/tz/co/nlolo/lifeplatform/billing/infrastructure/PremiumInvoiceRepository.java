@@ -30,6 +30,9 @@ public interface PremiumInvoiceRepository extends JpaRepository<PremiumInvoice, 
      * the page, never one per row. Callers must not pass an empty collection.
      */
     List<PremiumInvoice> findByTenantIdAndInvoiceIdIn(UUID tenantId, Collection<UUID> invoiceIds);
+
+    /** Many policies' invoices in one read (the client Premiums tab, 2026-11-12). */
+    List<PremiumInvoice> findByTenantIdAndPolicyNumberInOrderByDueDate(UUID tenantId, Collection<String> policyNumbers);
     List<PremiumInvoice> findByBillingScheduleIdAndTenantIdOrderByDueDateDesc(UUID billingScheduleId, UUID tenantId);
 
     /**

@@ -247,6 +247,16 @@ public class PaymentApiImpl implements PaymentApi {
 
     @Override
     @Transactional(readOnly = true)
+    public java.util.List<tz.co.nlolo.lifeplatform.payment.api.ReceiptView> receiptsForPolicies(
+            java.util.Collection<String> policyNumbers) {
+        if (policyNumbers == null || policyNumbers.isEmpty()) return java.util.List.of();
+        return paymentTransactionRepository
+            .findByTenantIdAndPolicyNumberInAndReceiptNumberIsNotNullOrderByCreatedAtDesc(TenantContext.get(), policyNumbers)
+            .stream().map(Receipts::view).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public java.util.Optional<tz.co.nlolo.lifeplatform.payment.api.ReceiptView> findReceipt(UUID receiptId) {
         return paymentTransactionRepository.findByPaymentTransactionIdAndTenantId(receiptId, TenantContext.get())
             .map(Receipts::view);

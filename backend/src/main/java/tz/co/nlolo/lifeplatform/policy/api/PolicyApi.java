@@ -683,6 +683,9 @@ public interface PolicyApi {
      */
     Set<String> policyNumbersForAgentTeam(UUID callerPartyId);
 
+    /** Every policy the client holds, as number, product and premium frequency only (the client Premiums tab). */
+    List<HeldPolicy> policiesHeldBy(UUID policyholderPartyId);
+
     CoverageStatusView getCoverageStatus(String policyNumber, LocalDate asOf);
     boolean isPolicyInForce(String policyNumber, LocalDate asOf);
 

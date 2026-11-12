@@ -67,6 +67,9 @@ public interface PaymentApi {
      */
     java.util.List<ReceiptView> receiptsForPolicy(String policyNumber);
 
+    /** The same for many policies in one read, newest first (the client Premiums tab, 2026-11-12). */
+    java.util.List<ReceiptView> receiptsForPolicies(java.util.Collection<String> policyNumbers);
+
     /**
      * Every payout made on a policy that reached its payee, newest first (2026-11-09, the payout advice): a claim, a
      * surrender, a withdrawal, an annuity or survival instalment -- everything that left through a disbursement.
