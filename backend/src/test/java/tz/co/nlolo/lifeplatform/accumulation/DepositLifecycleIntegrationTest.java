@@ -74,6 +74,9 @@ class DepositLifecycleIntegrationTest {
         wireMock.start();
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             DepositTestMigrations.ALL);
+        // The message a maturity redirect sends (finding 146) is recorded in communication's tables.
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            DepositTestMigrations.COMMUNICATION);
     }
 
     @AfterAll
@@ -421,6 +424,9 @@ class DepositLifecycleIntegrationTest {
         assertThat(deposit(policy).instruction().action()).isEqualTo(MaturityAction.PAY_OUT);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM accumulation.maturity_instruction WHERE policy_number = ?",
             Integer.class, policy)).isEqualTo(2);
+        // Finding 146 (2026-11-12): naming where the maturity is paid tells the client at once, on their number on record.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM communication.notification_dispatch WHERE policy_number = ?"
+            + " AND template_key = 'MATURITY_PAYOUT_REDIRECTED'", Integer.class, policy)).isEqualTo(1);
         assertThatThrownBy(() -> asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 9, (String) null, "s", key())))
             .hasMessageContaining("offers terms of [3, 6, 12] months");
     }
