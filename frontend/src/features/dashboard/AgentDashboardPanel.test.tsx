@@ -1,13 +1,18 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAgentDashboard } from '@/api/dashboard';
+import { getOwnAgent, getOwnTeam } from '@/api/distribution';
 import { listMyFollowUp } from '@/api/followUp';
 import { getNeedsAction } from '@/api/proposalAmendments';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useDistributionStore } from '@/store/distributionStore';
+import { idle } from '@/store/createResourceSlice';
 import { renderScreen } from '@/test/renderScreen';
 import { AgentDashboardPanel } from './AgentDashboardPanel';
 
 vi.mock('@/api/dashboard');
+vi.mock('@/api/distribution');
 vi.mock('@/api/followUp');
 vi.mock('@/api/proposalAmendments');
 
@@ -38,11 +43,26 @@ const VIEW = {
     { key: 'TERM_LIFE', amount: null, count: 300, percent: '72.8' },
     { key: 'FUNERAL', amount: null, count: 112, percent: '27.2' },
   ],
+  premiumSold: TZS('1200000.00'),
+  premiumSoldBefore: TZS('600000.00'),
+  premiumSoldChangePercent: '100.0',
+  singlePremiumsSold: TZS('500000.00'),
+  coverSold: TZS('2000000.00'),
+  savingsDepositsTaken: TZS('20000.00'),
+  customersPaid: {
+    from: '2026-11-01', to: '2026-11-12', due: 400000, paid: 300000, ratePercent: '75.0',
+    dueTodayCount: 0, dueTodayOwed: 0, overdueCount: 1, overdueOwed: 100000, currency: 'TZS',
+  },
 };
+
+const ME = { agentId: 'agent-me', partyId: 'party-me' };
 
 beforeEach(() => {
   useDashboardStore.setState({ agent: { status: 'idle', data: null, error: null, loadedAt: null } } as never);
+  useDistributionStore.setState({ ownAgent: idle(), ownTeam: idle() } as never);
   vi.mocked(getAgentDashboard).mockResolvedValue(VIEW);
+  vi.mocked(getOwnAgent).mockResolvedValue(ME as never);
+  vi.mocked(getOwnTeam).mockResolvedValue([ME] as never);
   vi.mocked(getNeedsAction).mockResolvedValue([]);
   vi.mocked(listMyFollowUp).mockResolvedValue({
     rows: [{
@@ -100,5 +120,38 @@ describe('AgentDashboardPanel', () => {
     expect(await screen.findByText('Applications in underwriting')).toBeInTheDocument();
     expect(screen.getByText('72.8%')).toBeInTheDocument();
     expect(screen.getByText('Term life')).toBeInTheDocument();
+  });
+
+  /** Plan 3: premium sold is a year of premium, in full; single premiums and savings deposits apart (D2, D3). */
+  it('shows the sales in money, with single premiums and savings deposits apart', async () => {
+    renderScreen(<AgentDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByText('TZS 1,200,000.00 a year')).toBeInTheDocument();
+    expect(screen.getByText('100.0% up', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('TZS 2,000,000.00')).toBeInTheDocument();
+    expect(screen.getByText('75.0%')).toBeInTheDocument();
+    expect(screen.getByText('TZS 500,000.00')).toBeInTheDocument();
+    expect(screen.getByText('TZS 20,000.00')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /My sales report/ })).toHaveAttribute('href', '/agents/sales');
+  });
+
+  it('shows no Me / My team switch to an agent with no team', async () => {
+    renderScreen(<AgentDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByRole('heading', { name: 'Your sales' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Whose sales' })).not.toBeInTheDocument();
+  });
+
+  /** A supervisor sees the team by default; "Me" asks the server for their own agent only. */
+  it("lets a supervisor narrow the team's sales to their own", async () => {
+    vi.mocked(getOwnTeam).mockResolvedValue([ME, { agentId: 'agent-2', partyId: 'party-2' }] as never);
+    renderScreen(<AgentDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByRole('heading', { name: 'Your team’s sales' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Me' }));
+
+    expect(await screen.findByRole('heading', { name: 'Your sales' })).toBeInTheDocument();
+    await waitFor(() => expect(getAgentDashboard).toHaveBeenLastCalledWith({ ...RANGE, agentId: 'agent-me' }));
+    expect(screen.getByRole('link', { name: /My sales report/ })).toHaveAttribute('href', '/agents/sales?show=me');
   });
 });

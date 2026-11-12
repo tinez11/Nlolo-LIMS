@@ -1,6 +1,8 @@
-import { BadgeCheck, Coins, FilePlus2, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, BadgeCheck, Coins, FilePlus2, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { cn } from '@/lib/cn';
+import { selectOwnAgent, selectOwnTeam, useDistributionStore } from '@/store/distributionStore';
 import { getNeedsAction } from '@/api/proposalAmendments';
 import { listMyFollowUp, type FollowUpPage } from '@/api/followUp';
 import { Legend } from '@/components/charts/ChartTip';
@@ -30,9 +32,24 @@ export function AgentDashboardPanel({ range }: PanelProps) {
   const load = useDashboardStore((s) => s.load);
   const { from, to } = range;
 
+  // Me / My team (2026-11-12, analytics plan 3): a supervisor sees their team's sales by default and can narrow to
+  // their own; an agent with no downline sees no switch. In the address (?show=me) so a reload keeps it.
+  const [params, setParams] = useSearchParams();
+  const own = useDistributionStore(selectOwnAgent);
+  const team = useDistributionStore(selectOwnTeam);
+  const loadOwnAgent = useDistributionStore((s) => s.loadOwnAgent);
+  const loadOwnTeam = useDistributionStore((s) => s.loadOwnTeam);
   useEffect(() => {
-    void load('agent', { from, to });
-  }, [load, from, to]);
+    void loadOwnAgent();
+    void loadOwnTeam();
+  }, [loadOwnAgent, loadOwnTeam]);
+  const hasTeam = (team.data?.length ?? 0) > 1;
+  const onlyMe = hasTeam && params.get('show') === 'me';
+  const agentId = onlyMe ? own.data?.agentId : undefined;
+
+  useEffect(() => {
+    void load('agent', { from, to, ...(agentId ? { agentId } : {}) });
+  }, [load, from, to, agentId]);
 
   const [needsAction, setNeedsAction] = useState<number | null>(null);
   useEffect(() => {
@@ -104,8 +121,94 @@ export function AgentDashboardPanel({ range }: PanelProps) {
     },
   ];
 
+  const paid = v.customersPaid;
+  const sales: { label: string; value: string | null; hint: string; change?: string | null }[] = [
+    {
+      label: 'Premium you sold',
+      // In full: an agent checks it against their own records to the shilling.
+      value: v.premiumSold ? `${formatMoney(v.premiumSold)} a year` : null,
+      hint: `a year of premium on the policies sold, ${span}`,
+      change: v.premiumSoldChangePercent,
+    },
+    { label: 'Cover sold', value: v.coverSold ? formatMoney(v.coverSold) : null, hint: `sum assured, ${span}` },
+    {
+      label: "Your customers' premiums paid",
+      value: paid?.ratePercent ? `${paid.ratePercent}%` : null,
+      hint: paid ? 'of premiums due this month' : 'could not be read',
+    },
+  ];
+
   return (
     <div className="space-y-5">
+      <Panel
+        title={onlyMe ? 'Your sales' : hasTeam ? 'Your team’s sales' : 'Your sales'}
+        subtitle={`Sold means cover started · ${span}`}
+        actions={
+          hasTeam && (
+            <div role="group" aria-label="Whose sales" className="inline-flex gap-0.5 rounded-lg bg-control p-0.5">
+              {[
+                { me: true, label: 'Me' },
+                { me: false, label: 'My team' },
+              ].map((o) => (
+                <button
+                  key={o.label}
+                  type="button"
+                  aria-pressed={onlyMe === o.me}
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    if (o.me) next.set('show', 'me');
+                    else next.delete('show');
+                    setParams(next, { replace: true });
+                  }}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3',
+                    onlyMe === o.me && 'bg-surface text-foreground shadow-raise',
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )
+        }
+      >
+        <div className="space-y-3 px-4 pb-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
+            {sales.map((s) => (
+              <div key={s.label} className="@container min-w-0 rounded-lg border border-border px-4 py-3">
+                <span className="block text-xs font-medium text-muted-foreground">{s.label}</span>
+                <span className={cn('mt-1 block whitespace-nowrap text-figure', s.value === null && 'text-subtle-foreground')}>
+                  {s.value ?? '—'}
+                </span>
+                {s.change && (
+                  // A sale growing is good news: green up, red down -- always with the arrow and the words.
+                  <span
+                    data-delta={s.change.startsWith('-') ? 'bad' : 'good'}
+                    className={cn('mt-0.5 flex items-center gap-1 text-xs',
+                      s.change.startsWith('-') ? 'text-status-danger-fg' : 'text-status-success-fg')}
+                  >
+                    {s.change.startsWith('-') ? <ArrowDown className="size-3" aria-hidden /> : <ArrowUp className="size-3" aria-hidden />}
+                    {s.change.startsWith('-') ? `${s.change.slice(1)}% down` : `${s.change}% up`} {versus(p)}
+                  </span>
+                )}
+                <span className="mt-0.5 block text-xs text-subtle-foreground">{s.hint}</span>
+              </div>
+            ))}
+          </div>
+          {/* Apart, never added into premium (D2, D3). */}
+          <p className="text-sm text-muted-foreground">
+            Single premiums: <span className="font-medium text-foreground">{formatMoney(v.singlePremiumsSold)}</span>
+            {' · '}Savings deposits taken: <span className="font-medium text-foreground">{formatMoney(v.savingsDepositsTaken)}</span>
+            {' '}(shown apart)
+          </p>
+          <Link
+            to={`/agents/sales${onlyMe ? '?show=me' : ''}`}
+            className="inline-block text-sm font-medium text-foreground underline-offset-2 hover:underline"
+          >
+            My sales report — any dates, by month, quarter or year
+          </Link>
+        </div>
+      </Panel>
       <StatRow stats={stats} />
       <Panel
         title="Your customers to follow up"

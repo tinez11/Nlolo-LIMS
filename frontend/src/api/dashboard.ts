@@ -35,7 +35,14 @@ export interface MonthRange {
   to?: string;
 }
 
-const params = (range?: MonthRange) => ({ params: { from: range?.from, to: range?.to } });
+/** The agent dashboard's range (2026-11-12): agentId is "Me", one agent inside the team, for the sales figures. */
+export interface AgentRange extends MonthRange {
+  agentId?: string;
+}
+
+const params = (range?: AgentRange) => ({
+  params: { from: range?.from, to: range?.to, ...(range?.agentId ? { agentId: range.agentId } : {}) },
+});
 
 export function getUnderwritingDashboard(range?: MonthRange): Promise<UnderwritingDashboard> {
   return get<UnderwritingDashboard>('/dashboards/underwriting', params(range));
@@ -49,6 +56,6 @@ export function getFinanceDashboard(range?: MonthRange): Promise<FinanceDashboar
   return get<FinanceDashboard>('/dashboards/finance', params(range));
 }
 
-export function getAgentDashboard(range?: MonthRange): Promise<AgentDashboard> {
+export function getAgentDashboard(range?: AgentRange): Promise<AgentDashboard> {
   return get<AgentDashboard>('/dashboards/agent', params(range));
 }
