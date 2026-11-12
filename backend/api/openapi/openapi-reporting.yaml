@@ -413,6 +413,12 @@ components:
         key: { type: string }
         label: { type: string }
         type: { $ref: '#/components/schemas/ColumnType' }
+        link:
+          description: >-
+            What a cell opens (drill-down, 2026-11-11). The id is the row's hidden "_<key>Id" value, or -- for POLICY
+            only -- the cell's own text. Null for a plain column.
+          type: [string, "null"]
+          enum: [POLICY, CLAIM, CLIENT, AGENT, null]
     ReportSection:
       type: object
       additionalProperties: false

@@ -208,13 +208,14 @@ public class CommissionsReport implements Report {
     }
 
     private static ReportSection agents(Map<UUID, Tally> byAgent, Labels labels) {
-        List<ReportColumn> columns = List.of(col("agent", "Agent", TEXT), col("firstYear", "First year", MONEY),
+        List<ReportColumn> columns = List.of(Sections.link("agent", "Agent", "AGENT"), col("firstYear", "First year", MONEY),
             col("renewal", "Renewal", MONEY), col("overrides", "Overrides", MONEY), col("clawbacks", "Clawed back", MONEY),
             col("booked", "Booked", MONEY), col("paid", "Paid", MONEY), col("unpaid", "Not yet paid", MONEY));
         List<Map<String, String>> rows = new ArrayList<>();
         byAgent.forEach((agentId, t) -> {
             Map<String, String> row = new LinkedHashMap<>();
             row.put("agent", agentId == null ? "No agent" : labels.dimension(GroupBy.AGENT, agentId.toString()));
+            if (agentId != null) row.put("_agentId", agentId.toString());
             row.put("firstYear", Figures.money(t.firstYear));
             row.put("renewal", Figures.money(t.renewal));
             row.put("overrides", Figures.money(t.overrides.add(t.bonuses)));

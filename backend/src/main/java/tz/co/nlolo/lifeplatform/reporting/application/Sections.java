@@ -20,6 +20,11 @@ final class Sections {
         return new ReportColumn(key, label, type);
     }
 
+    /** A text column whose cells open a record (drill-down, 2026-11-11): POLICY, CLAIM, CLIENT or AGENT. */
+    static ReportColumn link(String key, String label, String link) {
+        return new ReportColumn(key, label, ColumnType.TEXT, link);
+    }
+
     /**
      * The first section's total row as headline figures: each counted, money or percentage total, the first three on
      * the band and the next four as tiles. Nothing is added up here that the table did not already total; no total row

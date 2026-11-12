@@ -78,7 +78,7 @@ public class ClaimsNetOfReinsuranceReport implements Report {
         ClaimsReporting.Span before = ClaimsReporting.prior(f);
         List<ClaimFact> claims = queries.claimFacts(tenantId, now.to(), f);
 
-        List<ReportColumn> columns = List.of(col("policy", "Policy", TEXT), col("type", "Claim type", TEXT),
+        List<ReportColumn> columns = List.of(Sections.link("policy", "Policy", "POLICY"), col("type", "Claim type", TEXT),
             col("approvedOn", "Approved on", DATE), col("gross", "Approved (gross)", MONEY),
             col("recoverable", "Recoverable", MONEY), col("net", "Kept (net)", MONEY), col("share", "Recovered %", PERCENT));
         List<Map<String, String>> rows = new ArrayList<>();

@@ -83,7 +83,8 @@ public class GeneralLedgerReport implements Report {
             .findFirst().orElse(BigDecimal.ZERO);
 
         List<ReportColumn> columns = List.of(col("period", "Period", TEXT), col("entry", "Entry", TEXT),
-            col("description", "Description", TEXT), col("reference", "Reference", TEXT), col("policyNumber", "Policy", TEXT),
+            col("description", "Description", TEXT), col("reference", "Reference", TEXT),
+            Sections.link("policyNumber", "Policy", "POLICY"),
             col("currency", "Currency", TEXT), col("debit", "Debit", MONEY), col("credit", "Credit", MONEY),
             col("balance", "Balance", MONEY));
 

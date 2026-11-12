@@ -101,10 +101,11 @@ public class ProductsReport implements Report {
     }
 
     private static ReportSection register(List<PolicyListRow> found, ReportFilter f, Labels labels) {
-        List<ReportColumn> columns = List.of(col("policyNumber", "Policy", TEXT), col("product", "Product", TEXT),
-            col("client", "Client", TEXT), col("status", "Status", TEXT), col("activatedOn", "On cover from", DATE),
+        // Each policy, its client and its agent open their own record (2026-11-11, drill-down).
+        List<ReportColumn> columns = List.of(Sections.link("policyNumber", "Policy", "POLICY"), col("product", "Product", TEXT),
+            Sections.link("client", "Client", "CLIENT"), col("status", "Status", TEXT), col("activatedOn", "On cover from", DATE),
             col("sumAssured", "Sum assured", MONEY), col("premium", "Premium", MONEY),
-            col("frequency", "Frequency", TEXT), col("agent", "Agent", TEXT), col("branch", "Branch", TEXT),
+            col("frequency", "Frequency", TEXT), Sections.link("agent", "Agent", "AGENT"), col("branch", "Branch", TEXT),
             col("currency", "Currency", TEXT));
 
         List<Map<String, String>> rows = new ArrayList<>();
@@ -121,6 +122,8 @@ public class ProductsReport implements Report {
             row.put("agent", labels.agent(p.agentId() == null ? null : UUID.fromString(p.agentId())));
             row.put("branch", p.branch() == null ? "" : p.branch());
             row.put("currency", p.currency());
+            if (p.holderPartyId() != null) row.put("_clientId", p.holderPartyId().toString());
+            if (p.agentId() != null) row.put("_agentId", p.agentId());
             rows.add(row);
         }
         rows.sort(Comparator.comparing((Map<String, String> r) -> r.get("product")).thenComparing(r -> r.get("policyNumber")));

@@ -96,7 +96,7 @@ public class PremiumCollectionsReport implements Report {
             return row;
         }).toList();
 
-        List<ReportColumn> top = List.of(col("policyNumber", "Policy", TEXT), col("currency", "Currency", TEXT),
+        List<ReportColumn> top = List.of(Sections.link("policyNumber", "Policy", "POLICY"), col("currency", "Currency", TEXT),
             col("receipts", "Receipts", COUNT), col("amount", "Amount collected", MONEY));
         List<Map<String, String>> topRows = queries.topPolicies(tenantId, f.from(), f.to(), f, 10).stream().map(r -> {
             Map<String, String> row = new LinkedHashMap<>();
