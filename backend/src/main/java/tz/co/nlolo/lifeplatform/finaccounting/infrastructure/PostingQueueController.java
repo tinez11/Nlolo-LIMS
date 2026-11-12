@@ -56,4 +56,17 @@ public class PostingQueueController {
                                      @AuthenticationPrincipal Jwt jwt) {
         return api.dismissUnpostedEvent(id, body == null ? null : body.reason(), jwt.getSubject());
     }
+
+    /** The second person (findings 74 and 116, 2026-11-12): the ledger's approvers, as for a manual journal. */
+    @PostMapping("/finance/unposted-events/{id}/dismissal/confirmation")
+    @PreAuthorize("@access.can('ledger.approve')")
+    public UnpostedEventView confirmDismissal(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return api.confirmDismissal(id, jwt.getSubject());
+    }
+
+    @PostMapping("/finance/unposted-events/{id}/dismissal/refusal")
+    @PreAuthorize("@access.can('ledger.approve')")
+    public UnpostedEventView refuseDismissal(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return api.refuseDismissal(id, jwt.getSubject());
+    }
 }

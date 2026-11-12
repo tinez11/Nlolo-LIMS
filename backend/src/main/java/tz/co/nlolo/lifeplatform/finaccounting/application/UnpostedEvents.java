@@ -51,11 +51,48 @@ class UnpostedEvents {
             by, journalEntryId, tenantId, eventType, sourceRef);
     }
 
-    /** @return false when the row is not open (already resolved, or not this tenant's) */
-    boolean dismiss(UUID tenantId, UUID id, String reason, String by) {
+    /**
+     * One person asks to dismiss (2026-11-12, findings 74 and 116): the event stays open, and still blocks month-end,
+     * until a second person confirms.
+     *
+     * @return false when the row is not open or a dismissal is already asked for
+     */
+    boolean askDismissal(UUID tenantId, UUID id, String reason, String by) {
+        return jdbc.update("UPDATE finaccounting.unposted_event SET dismissal_requested_by = ?, dismissal_requested_at = now(),"
+                + " dismissal_reason = ? WHERE tenant_id = ? AND unposted_event_id = ? AND resolved_at IS NULL"
+                + " AND dismissal_requested_by IS NULL",
+            by, truncate(reason, 500), tenantId, id) == 1;
+    }
+
+    /** The second person confirms: the asked reason becomes the resolution's. @return false when not asked or not open */
+    boolean confirmDismissal(UUID tenantId, UUID id, String by, boolean alone) {
+        return jdbc.update("UPDATE finaccounting.unposted_event SET resolution = 'DISMISSED', resolution_reason = dismissal_reason,"
+                + " resolved_at = now(), resolved_by = ?, dismissed_alone = ? WHERE tenant_id = ? AND unposted_event_id = ?"
+                + " AND resolved_at IS NULL AND dismissal_requested_by IS NOT NULL",
+            by, alone, tenantId, id) == 1;
+    }
+
+    /** A refused dismissal: the request is cleared and the event waits to be posted. */
+    boolean refuseDismissal(UUID tenantId, UUID id) {
+        return jdbc.update("UPDATE finaccounting.unposted_event SET dismissal_requested_by = NULL, dismissal_requested_at = NULL,"
+                + " dismissal_reason = NULL WHERE tenant_id = ? AND unposted_event_id = ? AND resolved_at IS NULL"
+                + " AND dismissal_requested_by IS NOT NULL", tenantId, id) == 1;
+    }
+
+    /**
+     * A retry the rules in force post nothing for: closed at once, as a dismissal -- no amount leaves the books, since
+     * there is none to book, so no second person is asked.
+     */
+    boolean closeNothingToPost(UUID tenantId, UUID id, String reason, String by) {
         return jdbc.update("UPDATE finaccounting.unposted_event SET resolution = 'DISMISSED', resolution_reason = ?,"
                 + " resolved_at = now(), resolved_by = ? WHERE tenant_id = ? AND unposted_event_id = ? AND resolved_at IS NULL",
             truncate(reason, 500), by, tenantId, id) == 1;
+    }
+
+    /** Who asked to dismiss this open event, or null. */
+    String dismissalRequestedBy(UUID tenantId, UUID id) {
+        return jdbc.query("SELECT dismissal_requested_by FROM finaccounting.unposted_event WHERE tenant_id = ?"
+            + " AND unposted_event_id = ?", (rs, i) -> rs.getString(1), tenantId, id).stream().findFirst().orElse(null);
     }
 
     Optional<UnpostedEventView> find(UUID tenantId, UUID id) {
@@ -99,7 +136,9 @@ class UnpostedEvents {
             facts.amounts(), facts.attributes(), rs.getString("reason"), rs.getString("detail"),
             rs.getString("rule_version"), rs.getInt("attempts"), instant(rs, "created_at"),
             instant(rs, "last_attempt_at"), rs.getString("resolution"), rs.getString("resolution_reason"),
-            rs.getString("resolved_by"), instant(rs, "resolved_at"), rs.getObject("journal_entry_id", UUID.class));
+            rs.getString("resolved_by"), instant(rs, "resolved_at"), rs.getObject("journal_entry_id", UUID.class),
+            rs.getString("dismissal_requested_by"), instant(rs, "dismissal_requested_at"), rs.getString("dismissal_reason"),
+            rs.getBoolean("dismissed_alone"));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

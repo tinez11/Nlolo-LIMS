@@ -89,7 +89,7 @@ class PostingEngineIntegrationTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -227,12 +227,22 @@ class PostingEngineIntegrationTest {
         TenantContext.set(tenant);
         assertThatThrownBy(() -> queue.dismissUnpostedEvent(refused.id(), " ", "finance-one"))
             .isInstanceOf(FinaccountingValidationException.class);
-        UnpostedEventView dismissed = queue.dismissUnpostedEvent(refused.id(), "Billed in error; credited by hand",
+        // Two people (findings 74 and 116, 2026-11-12): asking leaves it open, and still blocking the lock.
+        UnpostedEventView asked = queue.dismissUnpostedEvent(refused.id(), "Billed in error; credited by hand",
             "finance-one");
-        assertThat(dismissed.resolution()).isEqualTo("DISMISSED");
-        assertThat(dismissed.resolutionReason()).isEqualTo("Billed in error; credited by hand");
+        assertThat(asked.resolution()).isNull();
+        assertThat(asked.dismissalRequestedBy()).isEqualTo("finance-one");
         assertThatThrownBy(() -> queue.dismissUnpostedEvent(refused.id(), "again", "finance-one"))
             .isInstanceOf(UnpostedEventResolvedException.class);
+        TenantContext.set(tenant);
+        assertThatThrownBy(() -> api.lockPeriod(THIS_MONTH, "finance-two")).isInstanceOf(PeriodStateException.class);
+
+        TenantContext.set(tenant);
+        UnpostedEventView dismissed = queue.confirmDismissal(refused.id(), "finance-two");
+        assertThat(dismissed.resolution()).isEqualTo("DISMISSED");
+        assertThat(dismissed.resolutionReason()).isEqualTo("Billed in error; credited by hand");
+        assertThat(dismissed.resolvedBy()).isEqualTo("finance-two");
+        assertThat(dismissed.dismissedAlone()).isFalse();
 
         assertThat(api.lockPeriod(THIS_MONTH, "finance-two").status().name()).isEqualTo("LOCKED");
     }

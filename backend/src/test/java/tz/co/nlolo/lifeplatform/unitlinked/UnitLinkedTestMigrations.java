@@ -20,7 +20,7 @@ public final class UnitLinkedTestMigrations {
         "db-migrations/product/V26__unit_linked_options.sql",
         "db-migrations/underwriting/V17__unit_linked_choice.sql",
         "db-migrations/unitlinked/V2__units.sql",
-        "db-migrations/finaccounting/V9__unit_linked_accounts.sql", "db-migrations/finaccounting/V19__acted_alone.sql",
+        "db-migrations/finaccounting/V9__unit_linked_accounts.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql",
         "db-migrations/payment/V13__unit_linked_purposes.sql",
         // A unit-linked surrender request carries no quoted value (plan R11): quoted_value_amount becomes nullable.
         "db-migrations/policy/V36__unit_linked_policy.sql", "db-migrations/policy/V45__acted_alone.sql",
