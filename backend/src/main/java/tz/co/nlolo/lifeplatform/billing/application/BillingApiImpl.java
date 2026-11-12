@@ -393,6 +393,31 @@ public class BillingApiImpl implements BillingApi {
             creditedByInvoice.getOrDefault(invoice.getInvoiceId(), BigDecimal.ZERO))).toList();
     }
 
+    /**
+     * Every invoice of many policies in three queries (the client Premiums tab, 2026-11-12): a client holding 176
+     * policies took 29 seconds through {@link #listInvoices}, one call per policy, each also running the arrears sweep.
+     * The sweep is not run here: one client's read is not the tenant's catch-up.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<InvoiceView> invoicesForPolicies(java.util.Collection<String> policyNumbers) {
+        if (policyNumbers == null || policyNumbers.isEmpty()) return List.of();
+        UUID tenantId = TenantContext.get();
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByTenantIdAndPolicyNumberInOrderByDueDate(tenantId,
+            policyNumbers);
+        if (invoices.isEmpty()) return List.of();
+        Map<UUID, Integer> dunningByInvoice = arrearsCaseRepository
+            .findByTenantIdAndInvoiceIdInAndResolvedAtIsNull(tenantId,
+                invoices.stream().map(PremiumInvoice::getInvoiceId).toList())
+            .stream()
+            .collect(Collectors.toMap(ArrearsCase::getInvoiceId, ArrearsCase::getDunningLevel, (a, b) -> a));
+        Map<UUID, BigDecimal> creditedByInvoice = premiumCreditRepository
+            .findByTenantIdAndPolicyNumberIn(tenantId, policyNumbers).stream()
+            .collect(Collectors.toMap(PremiumCredit::getOriginalInvoiceId, PremiumCredit::getAmount, BigDecimal::add));
+        return invoices.stream().map(invoice -> toView(invoice, dunningByInvoice.get(invoice.getInvoiceId()),
+            creditedByInvoice.getOrDefault(invoice.getInvoiceId(), BigDecimal.ZERO))).toList();
+    }
+
     @Override
     public InvoiceView getInvoice(UUID invoiceId) {
         UUID tenantId = TenantContext.get();

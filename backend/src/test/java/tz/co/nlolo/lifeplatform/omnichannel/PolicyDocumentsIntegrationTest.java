@@ -173,6 +173,31 @@ class PolicyDocumentsIntegrationTest {
     }
 
     /** The policy schedule and its receipts (2026-10-08, the customer portal step 3; numbered, receipts step 1). */
+    /** The client Premiums tab (2026-11-12): finance reads a client's premiums across policies; an underwriter may not. */
+    @Test
+    void financeReadsAClientsPremiumsAndTheirFileAndAnUnderwriterIsRefused() throws Exception {
+        String policyNumber = paidSavingsPlan("MM-DOC-PREM");
+        UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
+        var finance = jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+            .jwt(b -> b.claim("tenant_id", TENANT.toString()));
+
+        mockMvc.perform(get("/parties/" + holder + "/premiums").param("window", "ALL").with(finance))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.window").value("ALL"))
+            .andExpect(jsonPath("$.rows[0].policyNumber").value(policyNumber))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        mockMvc.perform(get("/parties/" + holder + "/premiums/xlsx").with(finance))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("premiums-")));
+        mockMvc.perform(get("/parties/" + holder + "/premiums").param("window", "7").with(finance))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/parties/" + holder + "/premiums").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                .jwt(b -> b.claim("tenant_id", TENANT.toString()))))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void thePolicyScheduleSaysWhatThePolicyIsAndEachPaymentHasAReceipt() throws Exception {
         String policyNumber = receivedSavingsPlan("MM-DOC-4");

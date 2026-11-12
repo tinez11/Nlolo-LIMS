@@ -1,4 +1,5 @@
 import { can } from '@/auth/access';
+import { ClientPremiumsTab } from './ClientPremiumsTab';
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { cameFrom, type Crumb } from '@/lib/cameFrom';
@@ -447,6 +448,12 @@ function clientTabs({
       </>
     ),
   });
+
+  // What the client owes across every policy, and their last receipt (2026-11-12): so finance checks a payment once,
+  // not policy by policy. Collections' own permission, as the server asks.
+  if (isStaff && can('collections.view')) {
+    tabs.push({ value: 'premiums', label: 'Premiums', content: <ClientPremiumsTab partyId={partyId} /> });
+  }
 
   tabs.push({
     value: 'claims',

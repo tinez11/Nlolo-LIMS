@@ -102,6 +102,12 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
                                          @Param("issuedTo") LocalDate issuedTo,
                                          @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds);
 
+    /** Every policy a client holds, light (the client Premiums tab, 2026-11-12). */
+    @Query("SELECT new tz.co.nlolo.lifeplatform.policy.api.HeldPolicy(p.policyNumber, p.productId, p.premiumFrequency) "
+        + "FROM Policy p WHERE p.tenantId = :tenantId AND p.policyholderPartyId = :partyId ORDER BY p.policyNumber")
+    List<tz.co.nlolo.lifeplatform.policy.api.HeldPolicy> findHeldBy(@Param("tenantId") UUID tenantId,
+                                                                    @Param("partyId") UUID partyId);
+
     /** Backs {@code claims}' product filter: claims carries no product of its own, so it filters
      *  on the numbers of the policies sold under that product or category. */
     @Query("SELECT p.policyNumber FROM Policy p WHERE p.tenantId = :tenantId "

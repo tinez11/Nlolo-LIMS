@@ -5,7 +5,8 @@ import * as accumulationApi from '@/api/accumulation';
 import * as policiesApi from '@/api/policies';
 import * as unitLinkedApi from '@/api/unitlinked';
 import type { AccountView, InvoiceView } from '@/api/types';
-import { grantAccess, grantRoles } from '@/test/access';
+import * as receiptsApi from '@/api/receipts';
+import { BUILT_IN_ROLES, grantAccess, grantRoles } from '@/test/access';
 import { renderScreen } from '@/test/renderScreen';
 import { useReceiptStore } from '@/store/receiptStore';
 import { idle } from '@/store/createResourceSlice';
@@ -217,5 +218,42 @@ describe('Deposit page', () => {
     expect(accumulationApi.requestTopUp).toHaveBeenCalledWith(
       'POL-1', { amount: '30000.00', payerRef: '+255700000002' }, expect.anything(),
     );
+  });
+});
+
+/** 2026-11-12, the user: a company with one finance officer records and confirms in one step. */
+describe('Record and confirm', () => {
+  async function fillCashPremium(user: ReturnType<typeof userEvent.setup>) {
+    await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CASH');
+    await user.type(screen.getByLabelText('Cash receipt number'), 'RC-200');
+    await user.type(screen.getByLabelText(/^Amount/), '15000');
+  }
+
+  it('records the deposit and confirms it for someone who may confirm their own', async () => {
+    grantAccess(...BUILT_IN_ROLES.FINANCE_OFFICER!, 'collections.approve-own');
+    vi.mocked(receiptsApi.recordReceipt).mockResolvedValue({ receiptId: 'rc-1' } as never);
+    vi.mocked(receiptsApi.approveReceipt).mockResolvedValue({ receiptId: 'rc-1', status: 'CONFIRMED' } as never);
+    const user = userEvent.setup();
+    renderPage('policy=POL-1');
+    await screen.findByText(/what the premium due 2026-11-01 still owes/);
+    await fillCashPremium(user);
+    await user.click(screen.getByRole('button', { name: 'Record and confirm' }));
+
+    await vi.waitFor(() => expect(receiptsApi.approveReceipt).toHaveBeenCalledWith('rc-1'));
+    expect(receiptsApi.recordReceipt).toHaveBeenCalledTimes(1);
+  });
+
+  it('only records, for someone who may not confirm their own', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(receiptsApi.recordReceipt).mockResolvedValue({ receiptId: 'rc-2' } as never);
+    const user = userEvent.setup();
+    renderPage('policy=POL-1');
+    await screen.findByText(/what the premium due 2026-11-01 still owes/);
+    expect(screen.queryByRole('button', { name: 'Record and confirm' })).not.toBeInTheDocument();
+    await fillCashPremium(user);
+    await user.click(screen.getByRole('button', { name: 'Record deposit' }));
+
+    await vi.waitFor(() => expect(receiptsApi.recordReceipt).toHaveBeenCalledTimes(1));
+    expect(receiptsApi.approveReceipt).not.toHaveBeenCalled();
   });
 });

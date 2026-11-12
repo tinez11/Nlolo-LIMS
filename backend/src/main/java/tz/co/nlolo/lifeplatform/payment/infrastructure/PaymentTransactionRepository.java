@@ -25,6 +25,10 @@ public interface PaymentTransactionRepository
     java.util.List<PaymentTransaction> findByTenantIdAndPolicyNumberAndReceiptNumberIsNotNullOrderByCreatedAtDesc(
         UUID tenantId, String policyNumber);
 
+    /** Many policies' receipts in one read, newest first (the client Premiums tab, 2026-11-12). */
+    java.util.List<PaymentTransaction> findByTenantIdAndPolicyNumberInAndReceiptNumberIsNotNullOrderByCreatedAtDesc(
+        UUID tenantId, java.util.Collection<String> policyNumbers);
+
     /**
      * The number the database gave a payment as it was confirmed (payment V26). Read back after a flush: the trigger
      * sets it in the row, and the entity's own copy is only read when the row is next loaded.

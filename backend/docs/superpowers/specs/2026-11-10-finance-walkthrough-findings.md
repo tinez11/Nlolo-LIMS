@@ -48,6 +48,25 @@ readability and convenience.
 | 101 / D11 | Commission withholding and premium levy are silently absent on a new company. |
 | 126, 170, 190 | A fund (and its charge), a treaty and a commission plan each go live on one person's say. |
 
+## The user's answers and the severe-only scope (2026-11-12)
+
+The user: "i want to fix only those thing with severe impacts the others with little impact i dont want". Only the
+"Fix first" items are in scope; everything else in this document stays as recorded, not planned.
+
+Answers ("d8 yes d14 i dont know 55 i dont know the accounting d13 only a demo 166 okay d16 not having yet 99 finance but
+can add role acuary 37 keep it"):
+
+| # | Answer | What follows |
+|---|---|---|
+| D8 | Yes | Correct the CLive Savings plan rate and reverse the two TZS 10M accruals (with 187/44). Whether savings pay commission at all, and on what base, is not answered — the corrected rate stays on the deposit until it is. |
+| D14 | Not known | The lock is not changed to require an engine run. Offered instead: a warning (not a block) when a month with GMM/VFA business locks without one. |
+| 55, 56 | Not known (accounting) | Not changed; needs the accountant. |
+| D13 | The unit-linked funds are only a demo | 122 and 128 are not worked on. |
+| 166 | Okay | Reinsurance cedes the sum at risk and its risk premium, not the savings part (165's placeholder still awaits sign-off). |
+| D16 | No TIRA templates yet | 179 only: the page and the file say "placeholder, not for filing". 182 waits. |
+| 99, 66 | Finance signs off; an Actuary role may be added | A setup sign-off by finance before the first policy; a built-in Actuary role that can co-sign. |
+| D2 / 37 | Keep approve-own on `staff.finance` | The payout two-person e2e changes, not the permission. |
+
 ## Already fixed during the walkthrough
 
 - Closed savings account facts wrapped mid-number; reason shown as a code ("DEATH") — merged 68cbbcfd.

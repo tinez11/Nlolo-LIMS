@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState, type FocusEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAccount, recordReceivedTopUp, requestTopUp } from '@/api/accumulation';
@@ -26,6 +26,7 @@ import { startMutation } from '@/lib/idempotency';
 import { compareAmounts, formatMoney } from '@/lib/money';
 import { keepsAccountValue } from '@/features/policies/policyValue';
 import { useReceiptStore } from '@/store/receiptStore';
+import { mayActAlone } from '@/lib/ownWork';
 import {
   blankReceiptForm,
   methodOf,
@@ -90,6 +91,14 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const record = useReceiptStore((s) => s.record);
+  const approve = useReceiptStore((s) => s.approve);
+  // Record and confirm in one step (2026-11-12, the user: a company with one finance officer): only for someone who
+  // may confirm receipts AND confirm their own. The confirmation is the same act as on the receipt's page, recorded
+  // against their name ("Approved alone" in the event journal).
+  const mayConfirmOwn = can('collections.approve') && mayActAlone('receipts');
+  const [confirmToo, setConfirmToo] = useState(false);
+  // Read at submit time: the submit handler was made before the click, so it must not read the state.
+  const confirmTooRef = useRef(false);
   const recording = useReceiptStore((s) => s.recording);
   const send = useReceiptStore((s) => s.send);
   const sending = useReceiptStore((s) => s.sending);
@@ -289,6 +298,8 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
     if (values.method !== 'MOBILE_MONEY' && !isTopUp(values.paysFor)) {
       const saved = await record(toApiRequest(values, currency));
+      // A confirmation the server refuses leaves the receipt recorded and waiting: its page says so and offers it again.
+      if (saved && confirmTooRef.current && mayConfirmOwn) await approve(saved.receiptId);
       if (saved) navigate(`/staff/receipts/${saved.receiptId}${from ? `?from=${encodeURIComponent(from)}` : ''}`);
       return;
     }
@@ -504,8 +515,15 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           {error && <InlineError lead={mobile ? 'Could not send the request' : 'Could not record the deposit'} error={error} />}
 
           <div className="flex gap-2">
-            <Button type="submit" variant="primary" pending={busy}
-              disabled={paysFor === 'PREMIUM' && mobile && !oldestOpen}>
+            {!mobile && !isTopUp(paysFor) && mayConfirmOwn && (
+              <Button type="submit" variant="primary" pending={busy && confirmToo} onClick={() => { confirmTooRef.current = true; setConfirmToo(true); }}>
+                Record and confirm
+              </Button>
+            )}
+            <Button type="submit" variant={!mobile && !isTopUp(paysFor) && mayConfirmOwn ? 'outline' : 'primary'}
+              pending={busy && !confirmToo}
+              disabled={paysFor === 'PREMIUM' && mobile && !oldestOpen}
+              onClick={() => { confirmTooRef.current = false; setConfirmToo(false); }}>
               {mobile ? 'Send request' : 'Record deposit'}
             </Button>
             <Button asChild variant="ghost">
