@@ -520,6 +520,16 @@ Layout (DESIGN.md "The Lit Figure", the agent panel's 2026-11-12 shape):
 
 ---
 
+## As built (2026-11-12)
+
+- `overview.view` sits in its own area, Overview: `PermissionCatalogueTest` requires exactly one "see" permission per
+  area. Management holds every "see" permission except Administration's (only administrators see who holds access).
+- "Waiting for a decision" = proposals open or in review + claims registered, under assessment or reopened. Approvals
+  (journals and the rest) are left out: no existing api counts them all.
+- "Open claims" comes from the new Claims in progress report; a reopened claim is its own stage, "Reopened".
+- Dev: `iam/V5` and `reporting/V5` applied by psql; Keycloak role `MANAGEMENT` and user `staff.management`
+  (devpassword) created with kcadm; a reporting rebuild filled the first-assessment day of 10 of 21 claims.
+
 ## Self-review (2026-11-12)
 
 - Spec coverage: management role (Task 1), overview dashboard (Tasks 4–5), policy movement (already built — D4,

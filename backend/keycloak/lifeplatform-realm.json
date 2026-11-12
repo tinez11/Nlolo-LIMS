@@ -363,6 +363,33 @@
       ]
     },
     {
+      "username": "staff.management",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.management@example.tz",
+      "firstName": "Baraka",
+      "lastName": "Director",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ],
+        "home_branch": [
+          "DSM"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "MANAGEMENT",
+        "staff"
+      ]
+    },
+    {
       "username": "staff.finance",
       "enabled": true,
       "emailVerified": true,
@@ -673,6 +700,10 @@
       },
       {
         "name": "ADMIN"
+      },
+      {
+        "name": "MANAGEMENT",
+        "description": "Sees every area, the reports and the management overview; changes nothing (2026-11-12, analytics plan 5)."
       },
       {
         "name": "TIRA_READ_ONLY"
