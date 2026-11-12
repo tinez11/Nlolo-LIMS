@@ -107,7 +107,7 @@ test.describe('a payout passes two people', () => {
   // own browser context. None of that is the behaviour under test; it is the cost of reaching it.
   test.setTimeout(240_000);
 
-  test('reviewed by one, approved by another, and the reviewer is refused', async ({
+  test('reviewed by one and approved by another; a reviewer who may act alone is told so', async ({
     page,
     browser,
   }) => {
@@ -124,12 +124,11 @@ test.describe('a payout passes two people', () => {
       .selectOption('IN_PERSON');
     await page.getByRole('button', { name: 'Review', exact: true }).click();
 
-    // The SAME person cannot approve what they reviewed. The gate says so -- to them, as "you", not as their
-    // id (2026-10-27) -- and the button is disabled, rather than letting them meet a 422.
-    await expect(page.getByText('You reviewed this payout, so someone else must approve it.')).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+    // Dev `staff.finance` holds "approve payouts they reviewed" (D2, the user 2026-11-12: "keep it" -- a company with
+    // one finance officer). The gate says the approval would be theirs alone and recorded against their name; a
+    // reviewer without the permission is refused, which the unit tests of the gate cover.
+    await expect(page.getByText('This is your own; you may approve it alone, and it is recorded against your name.'))
+      .toBeVisible({ timeout: 15_000 });
 
     // A second person releases it.
     await asAdmin(browser, async (adminPage) => {
