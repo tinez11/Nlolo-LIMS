@@ -56,6 +56,7 @@ public final class ReportingTestMigrations {
             Arrays.stream(DepositTestMigrations.ALL),
             Arrays.stream(FINACCOUNTING),
             Stream.of("db-migrations/reporting/V1__create_reporting_schema.sql", "db-migrations/reporting/V2__claims.sql",
-                "db-migrations/reporting/V3__solvency_factor_set.sql", "db-migrations/reporting/V4__collection_payment_method.sql"))
+                "db-migrations/reporting/V3__solvency_factor_set.sql", "db-migrations/reporting/V4__collection_payment_method.sql",
+                "db-migrations/reporting/V5__claim_assessed.sql"))
         .flatMap(s -> s).toArray(String[]::new);
 }

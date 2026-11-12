@@ -547,7 +547,7 @@ class ReportQueriesIntegrationTest {
                 "premium-collections", "clients",
                 "trial-balance", "general-ledger", "balance-sheet", "income-statement",
                 "claims-incurred", "loss-ratio", "claim-outcomes", "claims-approved-vs-paid", "claims-turnaround",
-                "early-claims", "claims-outstanding", "claims-net-of-reinsurance",
+                "early-claims", "claims-outstanding", "claims-in-progress", "claims-net-of-reinsurance",
                 "capital-adequacy", "stress-tests", "solvency-forecast", "reinsurance", "commissions");
     }
 
@@ -585,6 +585,62 @@ class ReportQueriesIntegrationTest {
         assertThat((java.math.BigDecimal) row.get("payable_amount")).isEqualByComparingTo("4800000.00");
         assertThat((java.math.BigDecimal) row.get("paid_amount")).isEqualByComparingTo("4800000.00");
         assertThat(row.get("settled_on").toString()).isEqualTo("2026-03-15");
+    }
+
+    /** Plan 5: turnaround shows registration to assessment, and assessment to a decision. */
+    @Test
+    void turnaroundShowsTheStepsToADecision() {
+        events.sell(tenant, Sale.of("P-ST", product, d("2025-01-05")));
+        UUID claim = events.claimRegistered(tenant, "P-ST", "DEATH", d("2026-09-30"), d("2026-10-01"));
+        events.claimAssessed(tenant, claim, d("2026-10-04"));
+        events.claimApproved(tenant, claim, "P-ST", "DEATH", d("2026-09-30"), "1000.00", d("2026-10-10"));
+
+        ReportResult r = run("claims-turnaround", october());
+        var rows = r.sections().get(0).rows();
+        assertThat(rows.get(0)).containsEntry("line", "Average days from registration to assessment").containsEntry("now", "3.0");
+        assertThat(rows.get(1)).containsEntry("line", "Average days from assessment to a decision").containsEntry("now", "6.0");
+    }
+
+    /** Plan 5: each open claim once, in the furthest stage it reached; paid and declined claims are not open. */
+    @Test
+    void claimsInProgressCountsEachOpenClaimInItsStage() {
+        events.sell(tenant, Sale.of("P-IP", product, d("2025-01-05")));
+        events.claimRegistered(tenant, "P-IP", "DEATH", d("2026-09-30"), d("2026-10-01"));           // not assessed
+        UUID assessed = events.claimRegistered(tenant, "P-IP", "DEATH", d("2026-09-30"), d("2026-10-01"));
+        events.claimAssessed(tenant, assessed, d("2026-10-03"));                                      // assessed
+        UUID approved = events.claimRegistered(tenant, "P-IP", "DEATH", d("2026-09-01"), d("2026-09-02"));
+        events.claimApproved(tenant, approved, "P-IP", "DEATH", d("2026-09-01"), "1000.00", d("2026-09-05"));
+        UUID asked = events.claimRegistered(tenant, "P-IP", "DEATH", d("2026-09-01"), d("2026-09-02"));
+        events.claimApproved(tenant, asked, "P-IP", "DEATH", d("2026-09-01"), "1000.00", d("2026-09-05"));
+        events.claimSettlementRequested(tenant, asked, "P-IP", "1000.00", d("2026-09-06"));         // payment asked
+        UUID paid = events.claimRegistered(tenant, "P-IP", "DEATH", d("2026-09-01"), d("2026-09-02"));
+        events.claimApproved(tenant, paid, "P-IP", "DEATH", d("2026-09-01"), "1000.00", d("2026-09-05"));
+        events.claimSettled(tenant, paid, "P-IP", "1000.00", "1000.00", d("2026-09-09"));           // closed
+
+        ReportResult r = run("claims-in-progress", ReportFilter.asOf(d("2026-10-31")));
+        assertThat(figure(r, "open")).isEqualTo("4");
+        assertThat(figure(r, "notAssessed")).isEqualTo("1");
+        assertThat(figure(r, "awaitingPayment")).isEqualTo("2");
+        var rows = r.sections().get(0).rows();
+        assertThat(rows).extracting(m -> m.get("stage") + "=" + m.get("claims")).containsExactly(
+            "Waiting for assessment=1", "Assessed, waiting for a decision=1", "Approved, payment not yet asked for=1",
+            "Payment asked for, not yet paid=1", "Reopened=0");
+        assertThat(rows.get(0)).containsEntry("oldestDays", "30");
+    }
+
+    /** Plan 5: the day of the first assessment is kept -- a second assessment does not move it. */
+    @Test
+    void aClaimKeepsTheDayItWasFirstAssessed() {
+        events.sell(tenant, Sale.of("P-AS", product, d("2025-01-05")));
+        UUID claim = events.claimRegistered(tenant, "P-AS", "DEATH", d("2026-10-01"), d("2026-10-02"));
+        events.claimAssessed(tenant, claim, d("2026-10-05"));
+        events.claimAssessed(tenant, claim, d("2026-10-09"));
+        events.claimSettlementRequested(tenant, claim, "P-AS", "100.00", d("2026-10-12"));
+
+        var fact = reportQueries.claimFacts(tenant, d("2026-10-31"), ReportFilter.none()).stream()
+            .filter(c -> claim.equals(c.claimId())).findFirst().orElseThrow();
+        assertThat(fact.assessedOn()).isEqualTo(d("2026-10-05"));
+        assertThat(fact.settlementRequestedOn()).isEqualTo(d("2026-10-12"));
     }
 
     /**
