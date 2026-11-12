@@ -1,4 +1,6 @@
+import { Link } from 'react-router-dom';
 import type { ReportSection } from '@/api/reporting';
+import { linkFor, type LinkKind } from './reportLinks';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Panel } from '@/components/Panel';
 import { cn } from '@/lib/cn';
@@ -49,7 +51,15 @@ export function ReportSectionTable({ section }: { section: ReportSection }) {
     nowrap: c.type === 'DATE' || (i === 0 && firstIsShort),
     ...(i === 0 && !firstIsShort ? { className: 'min-w-64' } : {}),
     render: (line) => {
-      const text = <span className={cn(line.total && 'font-semibold')}>{formatCell(c.type, line.cells[c.key])}</span>;
+      // A policy, client or agent opens its own record (2026-11-11, drill-down); a total row opens nothing.
+      const path = line.total ? null : linkFor(c.link as LinkKind | null | undefined, c.key, line.cells);
+      const text = path ? (
+        <Link to={path} className="font-medium underline-offset-2 hover:underline">
+          {formatCell(c.type, line.cells[c.key])}
+        </Link>
+      ) : (
+        <span className={cn(line.total && 'font-semibold')}>{formatCell(c.type, line.cells[c.key])}</span>
+      );
       if (c.key !== bar || line.total || largest === 0) return text;
       const share = Math.abs(Number(line.cells[c.key] ?? 0)) / largest;
       return (
