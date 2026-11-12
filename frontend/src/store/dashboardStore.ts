@@ -7,7 +7,7 @@ import {
   type AgentDashboard,
   type ClaimsDashboard,
   type FinanceDashboard,
-  type MonthRange,
+  type AgentRange,
   type UnderwritingDashboard,
 } from '@/api/dashboard';
 import { idle, track, type Resource } from './createResourceSlice';
@@ -26,7 +26,7 @@ interface DashboardState {
   claims: Resource<ClaimsDashboard>;
   finance: Resource<FinanceDashboard>;
   agent: Resource<AgentDashboard>;
-  load: (kind: DashboardKind, range?: MonthRange) => Promise<void>;
+  load: (kind: DashboardKind, range?: AgentRange) => Promise<void>;
 }
 
 export const useDashboardStore = create<DashboardState>((set, getState) => ({

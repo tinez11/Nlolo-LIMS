@@ -55,11 +55,14 @@ public class ReportingApiImpl implements ReportingApi {
     private final SolvencyFactorSets solvencyFactorSets;
     /** Premiums to follow up and the collection figures (2026-11-11). */
     private final FollowUpQueue followUpQueue;
+    /** An agent's sales in money (2026-11-12, plan 3). */
+    private final AgentSales agentSales;
 
     public ReportingApiImpl(List<Report> beans, LabelsFactory labelsFactory, RebuildService rebuildService,
                             ReportingClock clock, ReportQueries queries, SolvencyFactorSets solvencyFactorSets,
-                            FollowUpQueue followUpQueue) {
+                            FollowUpQueue followUpQueue, AgentSales agentSales) {
         this.followUpQueue = followUpQueue;
+        this.agentSales = agentSales;
         beans.stream().sorted(Comparator.comparingInt(r -> {
             int i = ORDER.indexOf(r.definition().key());
             return i < 0 ? Integer.MAX_VALUE : i;
@@ -170,5 +173,29 @@ public class ReportingApiImpl implements ReportingApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.reporting.api.FigureGroup> figureGroups() {
         return List.of(CollectionsFigureDefinitions.GROUP);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.reporting.api.SalesTotals> salesByPeriod(UUID agentPartyId, UUID onlyAgentId,
+                                                                                  LocalDate from, LocalDate to, String by) {
+        return agentSales.byPeriod(agentPartyId, onlyAgentId, from, to, by);
+    }
+
+    @Override
+    public ReportResult agentSalesReport(UUID agentPartyId, UUID onlyAgentId, LocalDate from, LocalDate to, String by,
+                                         tz.co.nlolo.lifeplatform.reporting.api.CompareWith compareWith) {
+        return agentSales.report(agentPartyId, onlyAgentId, from, to, by, compareWith);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.reporting.api.PolicySold> policiesSold(UUID agentPartyId, UUID onlyAgentId,
+                                                                                LocalDate from, LocalDate to) {
+        return agentSales.policies(agentPartyId, onlyAgentId, from, to);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reporting.api.CollectionFigures agentCollectionFigures(UUID agentPartyId,
+            LocalDate from, LocalDate to, LocalDate today) {
+        return followUpQueue.figures(from, to, today, agentPartyId);
     }
 }

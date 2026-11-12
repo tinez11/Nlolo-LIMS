@@ -30,7 +30,8 @@ public interface ReportingApi {
     List<CategoryAmount> premiumCollectionsByCategory(YearMonth from, YearMonth to);
 
     /**
-     * Policies issued per month, {@code from} through {@code to}. A month with none is absent. {@code agentIds} null
+     * Policies sold per month, {@code from} through {@code to}, counted on the day cover started (2026-11-12, D1: an
+     * offer never paid is not a sale). A month with none is absent. {@code agentIds} null
      * means every policy in the tenant; an EMPTY set means none -- an agent with no team sees nothing, never everything.
      */
     List<MonthlyCount> policiesIssuedByMonth(YearMonth from, YearMonth to, Set<UUID> agentIds);
@@ -80,4 +81,20 @@ public interface ReportingApi {
 
     /** Figures explained that belong to no single report -- the Collections figures (2026-11-11, decision K1). */
     List<FigureGroup> figureGroups();
+
+    // ---- an agent's sales in money (2026-11-12, analytics plan 3) -------------------------------------------------
+    // Scope is the agent's team from their party; onlyAgentId ("Me") must be inside it, null for the whole team.
+
+    /** Sales per month, quarter or year ("MONTH", "QUARTER", "YEAR"), counted on the day cover started. */
+    List<SalesTotals> salesByPeriod(UUID agentPartyId, UUID onlyAgentId, LocalDate from, LocalDate to, String by);
+
+    /** "My sales" as a report: the buckets, their totals, the money figures compared, the trend. */
+    ReportResult agentSalesReport(UUID agentPartyId, UUID onlyAgentId, LocalDate from, LocalDate to, String by,
+                                  CompareWith compareWith);
+
+    /** The policies behind a sales figure, newest first. */
+    List<PolicySold> policiesSold(UUID agentPartyId, UUID onlyAgentId, LocalDate from, LocalDate to);
+
+    /** The collection figures for the agent's customers only (D4). */
+    CollectionFigures agentCollectionFigures(UUID agentPartyId, LocalDate from, LocalDate to, LocalDate today);
 }

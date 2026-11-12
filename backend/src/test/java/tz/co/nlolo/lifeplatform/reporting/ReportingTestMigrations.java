@@ -39,6 +39,19 @@ public final class ReportingTestMigrations {
         "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql",
     };
 
+    /** The agent tables, for tests that reach an agent's team (2026-11-12, analytics plan 3: My sales). */
+    public static final String[] DISTRIBUTION = {
+        "db-migrations/distribution/V1__create_distribution_schema.sql",
+        "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+        "db-migrations/distribution/V3__rls_fail_closed.sql", "db-migrations/distribution/V4__partial_reversals.sql",
+        "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
+        "db-migrations/distribution/V6__commission_withholding.sql",
+        "db-migrations/distribution/V7__projection_policyholder.sql", "db-migrations/distribution/V8__agent_login.sql",
+        "db-migrations/distribution/V9__credit_life_pending_commission.sql",
+        "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+        "db-migrations/distribution/V11__commission_payout_approval.sql",
+    };
+
     public static final String[] ALL = Stream.of(
             Arrays.stream(DepositTestMigrations.ALL),
             Arrays.stream(FINACCOUNTING),

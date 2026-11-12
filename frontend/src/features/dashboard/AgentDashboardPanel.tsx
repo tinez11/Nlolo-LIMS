@@ -1,6 +1,8 @@
-import { BadgeCheck, Coins, FilePlus2, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { ArrowDown, ArrowUp, BadgeCheck, Coins, Users } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { cn } from '@/lib/cn';
+import { selectOwnAgent, selectOwnTeam, useDistributionStore } from '@/store/distributionStore';
 import { getNeedsAction } from '@/api/proposalAmendments';
 import { listMyFollowUp, type FollowUpPage } from '@/api/followUp';
 import { Legend } from '@/components/charts/ChartTip';
@@ -30,9 +32,24 @@ export function AgentDashboardPanel({ range }: PanelProps) {
   const load = useDashboardStore((s) => s.load);
   const { from, to } = range;
 
+  // Me / My team (2026-11-12, analytics plan 3): a supervisor sees their team's sales by default and can narrow to
+  // their own; an agent with no downline sees no switch. In the address (?show=me) so a reload keeps it.
+  const [params, setParams] = useSearchParams();
+  const own = useDistributionStore(selectOwnAgent);
+  const team = useDistributionStore(selectOwnTeam);
+  const loadOwnAgent = useDistributionStore((s) => s.loadOwnAgent);
+  const loadOwnTeam = useDistributionStore((s) => s.loadOwnTeam);
   useEffect(() => {
-    void load('agent', { from, to });
-  }, [load, from, to]);
+    void loadOwnAgent();
+    void loadOwnTeam();
+  }, [loadOwnAgent, loadOwnTeam]);
+  const hasTeam = (team.data?.length ?? 0) > 1;
+  const onlyMe = hasTeam && params.get('show') === 'me';
+  const agentId = onlyMe ? own.data?.agentId : undefined;
+
+  useEffect(() => {
+    void load('agent', { from, to, ...(agentId ? { agentId } : {}) });
+  }, [load, from, to, agentId]);
 
   const [needsAction, setNeedsAction] = useState<number | null>(null);
   useEffect(() => {
@@ -77,16 +94,6 @@ export function AgentDashboardPanel({ range }: PanelProps) {
       to: '/agents/commission',
     },
     {
-      label: 'Policies sold',
-      icon: FilePlus2,
-      color: 'chart-2',
-      value: countValue(v.sold),
-      change: v.soldChangePercent,
-      versus: versus(p),
-      hint: span,
-      trend: v.soldSeries.map((c) => c.count),
-    },
-    {
       label: 'Policies in my book',
       icon: Users,
       color: 'chart-4',
@@ -104,14 +111,91 @@ export function AgentDashboardPanel({ range }: PanelProps) {
     },
   ];
 
+  const paid = v.customersPaid;
+  // The lit figure (2026-11-12, the user: "too much explanation and info"): three figures, each said once, the
+  // span said once in the subtitle. In full: an agent checks them against their own records to the shilling.
+  const change = v.premiumSoldChangePercent;
+  const sales: { label: string; value: string; note?: ReactNode }[] = [
+    {
+      label: 'Premium a year',
+      value: v.premiumSold ? formatMoney(v.premiumSold) : '—',
+      note: change && (
+        <span data-delta={change.startsWith('-') ? 'bad' : 'good'} className="flex items-center gap-1">
+          {change.startsWith('-') ? <ArrowDown className="size-3" aria-hidden /> : <ArrowUp className="size-3" aria-hidden />}
+          {change.startsWith('-') ? `${change.slice(1)}% down` : `${change}% up`} {versus(p)}
+        </span>
+      ),
+    },
+    { label: 'Cover sold', value: v.coverSold ? formatMoney(v.coverSold) : '—' },
+    { label: 'Policies sold', value: countValue(v.sold) ?? '—' },
+  ];
+  // Apart, never added into premium (D2, D3) -- and only when there is any.
+  const apart = [
+    Number(v.singlePremiumsSold?.amount ?? 0) > 0 && `Single premiums ${formatMoney(v.singlePremiumsSold)}`,
+    Number(v.savingsDepositsTaken?.amount ?? 0) > 0 && `Savings deposits ${formatMoney(v.savingsDepositsTaken)}`,
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className="space-y-5">
+      <Panel
+        title={onlyMe ? 'Your sales' : hasTeam ? 'Your team’s sales' : 'Your sales'}
+        subtitle={span}
+        actions={
+          <div className="flex items-center gap-3">
+            <Link
+              to={`/agents/sales${onlyMe ? '?show=me' : ''}`}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Sales report
+            </Link>
+          {hasTeam && (
+            <div role="group" aria-label="Whose sales" className="inline-flex gap-0.5 rounded-lg bg-control p-0.5">
+              {[
+                { me: true, label: 'Me' },
+                { me: false, label: 'My team' },
+              ].map((o) => (
+                <button
+                  key={o.label}
+                  type="button"
+                  aria-pressed={onlyMe === o.me}
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    if (o.me) next.set('show', 'me');
+                    else next.delete('show');
+                    setParams(next, { replace: true });
+                  }}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3',
+                    onlyMe === o.me && 'bg-surface text-foreground shadow-raise',
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          </div>
+        }
+      >
+        <div className="space-y-2 px-4 pb-4">
+          <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl bg-hero p-5 sm:grid-cols-3">
+            {sales.map((s) => (
+              <div key={s.label} className="flex min-w-0 flex-col gap-1">
+                <dt className="text-sm text-muted-foreground">{s.label}</dt>
+                <dd className="min-w-0 whitespace-nowrap text-display">{s.value}</dd>
+                {s.note && <dd className="text-xs text-subtle-foreground">{s.note}</dd>}
+              </div>
+            ))}
+          </dl>
+          {apart && <p className="text-xs text-muted-foreground">{apart}</p>}
+        </div>
+      </Panel>
       <StatRow stats={stats} />
       <Panel
         title="Your customers to follow up"
         subtitle={
           followUp && followUp !== 'error'
-            ? `${countValue(followUp.overdue)} overdue, ${countValue(followUp.dueToday)} due today — the most overdue first`
+            ? `${paid?.ratePercent ? `${paid.ratePercent}% of this month’s premiums paid · ` : ''}${countValue(followUp.overdue)} overdue, ${countValue(followUp.dueToday)} due today`
             : 'The most overdue first'
         }
         actions={<Link to="/agents/follow-up" className="text-xs text-muted-foreground hover:text-foreground hover:underline">See them all</Link>}

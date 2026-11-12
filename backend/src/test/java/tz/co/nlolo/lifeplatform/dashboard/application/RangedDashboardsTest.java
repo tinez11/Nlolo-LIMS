@@ -24,6 +24,7 @@ import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
+import tz.co.nlolo.lifeplatform.reporting.api.SalesTotals;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
@@ -243,8 +244,14 @@ class RangedDashboardsTest {
             agentId, "2026-07", new BigDecimal("1000.00"), "TZS", StatementStatus.PAID, Instant.now(), Instant.now())));
         when(distribution.listStatements(agentId, "2026-09")).thenReturn(List.of(new CommissionStatementView(UUID.randomUUID(),
             agentId, "2026-09", new BigDecimal("400.00"), "TZS", StatementStatus.CLOSED, Instant.now(), null)));
-        when(reporting.policiesIssuedByMonth(ym(2025, 7), ym(2026, 9), Set.of(agentId))).thenReturn(List.of(
-            new MonthlyCount(ym(2026, 7), 2), new MonthlyCount(ym(2026, 9), 1), new MonthlyCount(ym(2025, 9), 1)));
+        // Sold on the day cover started, count and money from one read (2026-11-12, plan 3).
+        when(reporting.salesByPeriod(party, null, ym(2025, 7).atDay(1), ym(2026, 9).atEndOfMonth(), "MONTH")).thenReturn(List.of(
+            new SalesTotals("2026-07", "TZS", 2, new BigDecimal("2400000.00"), new BigDecimal("500000.00"),
+                new BigDecimal("30000000.00"), new BigDecimal("20000.00")),
+            new SalesTotals("2026-09", "TZS", 1, new BigDecimal("600000.00"), BigDecimal.ZERO,
+                new BigDecimal("10000000.00"), BigDecimal.ZERO),
+            new SalesTotals("2025-09", "TZS", 1, new BigDecimal("1500000.00"), BigDecimal.ZERO,
+                new BigDecimal("5000000.00"), BigDecimal.ZERO)));
         when(reporting.policiesInForceByCategory(TODAY, Set.of(agentId))).thenReturn(List.of(
             new CategoryCount("TERM_LIFE", 3), new CategoryCount("FUNERAL", 1)));
         AgentDashboard dashboard = new AgentDashboard(parties, policies, distribution, underwriting, reporting);
@@ -257,6 +264,13 @@ class RangedDashboardsTest {
         assertThat(view.sold()).isEqualTo(3L);
         assertThat(view.soldBefore()).isEqualTo(1L);
         assertThat(view.soldChangePercent()).isEqualTo("200.0");
+        // What they sold in money: a year of premium, against the same months a year earlier; the rest apart.
+        assertThat(view.premiumSold().amount()).isEqualTo("3000000.00");
+        assertThat(view.premiumSoldBefore().amount()).isEqualTo("1500000.00");
+        assertThat(view.premiumSoldChangePercent()).isEqualTo("100.0");
+        assertThat(view.singlePremiumsSold().amount()).isEqualTo("500000.00");
+        assertThat(view.coverSold().amount()).isEqualTo("40000000.00");
+        assertThat(view.savingsDepositsTaken().amount()).isEqualTo("20000.00");
         assertThat(view.bookByProduct()).extracting(s -> s.key() + " " + s.percent()).containsExactly("TERM_LIFE 75.0", "FUNERAL 25.0");
     }
 }

@@ -89,10 +89,10 @@ export function StatTile({ stat }: { stat: Stat }) {
   );
 }
 
-/** Four across on a wide screen, two on a laptop beside the sidebar, one on a phone. */
+/** Four across on a wide screen (three when there are three), two on a laptop beside the sidebar, one on a phone. */
 export function StatRow({ stats }: { stats: Stat[] }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', stats.length === 3 ? 'lg:grid-cols-3' : 'xl:grid-cols-4')}>
       {stats.map((s) => <StatTile key={s.label} stat={s} />)}
     </div>
   );

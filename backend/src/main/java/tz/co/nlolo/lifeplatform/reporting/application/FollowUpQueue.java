@@ -148,12 +148,29 @@ public class FollowUpQueue {
      * <p>Explained in CollectionsFigureDefinitions -- change the words with the formula.
      */
     public CollectionFigures figures(LocalDate from, LocalDate to, LocalDate today) {
+        return figures(from, to, today, null);
+    }
+
+    /**
+     * The same figures for one agent's customers (2026-11-12, analytics plan 3, D4): the premiums on policies their team
+     * sold -- the scope the agent's follow-up list keeps. {@code agentPartyId} null for the whole company.
+     */
+    public CollectionFigures figures(LocalDate from, LocalDate to, LocalDate today, UUID agentPartyId) {
         if (from == null || to == null || to.isBefore(from)) {
             throw new ReportParameterException("from and to are required, and to cannot be before from");
         }
+        List<InvoiceDueView> fellDue = billing.invoicesDueBetween(from, to);
+        if (agentPartyId != null) {
+            Set<UUID> team = new HashSet<>(distribution.resolveAgentTeam(agentPartyId));
+            Set<String> teamPolicies = queries.followUpPolicies(TenantContext.get(), today,
+                    fellDue.stream().map(InvoiceDueView::policyNumber).collect(Collectors.toSet())).stream()
+                .filter(p -> p.agentId() != null && team.contains(p.agentId()))
+                .map(FollowUpPolicyRow::policyNumber).collect(Collectors.toSet());
+            fellDue = fellDue.stream().filter(i -> teamPolicies.contains(i.policyNumber())).toList();
+        }
         BigDecimal due = BigDecimal.ZERO;
         BigDecimal owed = BigDecimal.ZERO;
-        for (InvoiceDueView i : billing.invoicesDueBetween(from, to)) {
+        for (InvoiceDueView i : fellDue) {
             if (!"TZS".equals(i.currency())) continue;
             due = due.add(i.amount());
             owed = owed.add(i.owed());
@@ -168,7 +185,7 @@ public class FollowUpQueue {
         BigDecimal todayOwed = BigDecimal.ZERO;
         BigDecimal overdueOwed = BigDecimal.ZERO;
         for (FollowUpRow p : scoped(new FollowUpQuery("OVERDUE", SOON_DAYS.get(0), null, null, null, null, null, 0, 0),
-                null, today)) {
+                agentPartyId, today)) {
             if (!"TZS".equals(p.currency())) continue;
             if (p.dueDate().isEqual(today)) {
                 todayCount++;

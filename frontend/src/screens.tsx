@@ -26,6 +26,7 @@ import {
   TrendingDown,
   PhoneCall,
   TrendingUp,
+  ChartLine,
   UserCheck,
   UserPlus,
   Users,
@@ -98,6 +99,7 @@ import {
   AgentProfilePage,
   MyCommissionPage,
   MyCashPage,
+  MySalesPage,
   AgentsPage,
   OnboardAgentPage,
   ChartOfAccountsPage,
@@ -857,6 +859,12 @@ const AGENTS_SCREENS: Screen[] = [
     path: 'follow-up',
     element: <FollowUpPage audience="agent" />,
     reach: { group: 'my-business', label: 'Customers to follow up', icon: PhoneCall },
+  },
+  // What they sold, in money, over any dates (2026-11-12, analytics plan 3).
+  {
+    path: 'sales',
+    element: <MySalesPage />,
+    reach: { group: 'my-business', label: 'My sales', icon: ChartLine },
   },
   // Cash customers hand the agent (2026-11-11): record it, see what is still held, say where it was banked.
   {

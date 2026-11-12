@@ -241,18 +241,23 @@ class DashboardContractTest {
     void anAgentReadsTheirOwnDashboard() throws Exception {
         UUID party = UUID.randomUUID();
         when(agent.build(org.mockito.ArgumentMatchers.eq("agent-subject"), org.mockito.ArgumentMatchers.eq(party),
-            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, 5L, "2026-09",
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.isNull()))
+            .thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, 5L, "2026-09",
                 new Money("1284500.00", "TZS"), null,
                 List.of(new AgentDashboardView.ClientAwaitingKyc(UUID.randomUUID(), "Amina Hassan", "PENDING")),
                 new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("9800000.00", "TZS"),
                 List.of(new AgentDashboardView.CommissionPoint("2026-09", new Money("1284500.00", "TZS"),
                     new Money("0.00", "TZS"))),
                 38L, 30L, "26.7", List.of(new CountPoint("2026-09", 4)),
-                List.of(new Share("TERM_LIFE", null, 64L, "37.2"))));
+                List.of(new Share("TERM_LIFE", null, 64L, "37.2")),
+                new Money("18400000.00", "TZS"), new Money("15000000.00", "TZS"), "22.7",
+                new Money("500000.00", "TZS"), new Money("214000000.00", "TZS"), new Money("6000000.00", "TZS"),
+                null));
 
         mockMvc.perform(get("/dashboards/agent").with(agentToken(party.toString())))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.clients").value(309))
+            .andExpect(jsonPath("$.premiumSold.amount").value("18400000.00"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

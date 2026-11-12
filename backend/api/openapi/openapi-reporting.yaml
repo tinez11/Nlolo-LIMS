@@ -283,6 +283,80 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/sales:
+    get:
+      summary: The signed-in agent's sales in money, by month, quarter or year (sold on the day cover started)
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - $ref: '#/components/parameters/SalesFrom'
+        - $ref: '#/components/parameters/SalesTo'
+        - $ref: '#/components/parameters/SalesBy'
+        - $ref: '#/components/parameters/SalesAgent'
+      responses:
+        '200':
+          description: One entry per bucket
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SalesTotals' } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/sales/report:
+    get:
+      summary: My sales as a report -- the buckets, the money figures compared with an earlier period, the trend
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - $ref: '#/components/parameters/SalesFrom'
+        - $ref: '#/components/parameters/SalesTo'
+        - { name: by, in: query, required: false, schema: { type: string, enum: [MONTH, QUARTER, YEAR], default: QUARTER } }
+        - { name: compareWith, in: query, required: false, schema: { type: string, enum: [PRIOR_PERIOD, SAME_PERIOD_LAST_YEAR, NONE], default: PRIOR_PERIOD } }
+        - $ref: '#/components/parameters/SalesAgent'
+      responses:
+        '200':
+          description: The report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/sales/export:
+    get:
+      summary: My sales as a file (recorded as reporting.ListDownloaded)
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [xlsx, csv, pdf] } }
+        - $ref: '#/components/parameters/SalesFrom'
+        - $ref: '#/components/parameters/SalesTo'
+        - { name: by, in: query, required: false, schema: { type: string, enum: [MONTH, QUARTER, YEAR], default: QUARTER } }
+        - { name: compareWith, in: query, required: false, schema: { type: string, enum: [PRIOR_PERIOD, SAME_PERIOD_LAST_YEAR, NONE], default: PRIOR_PERIOD } }
+        - $ref: '#/components/parameters/SalesAgent'
+      responses:
+        '200': { $ref: '#/components/responses/ListFile' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /agents/me/sales/policies:
+    get:
+      summary: The policies behind a sales figure, newest first
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - $ref: '#/components/parameters/SalesFrom'
+        - $ref: '#/components/parameters/SalesTo'
+        - $ref: '#/components/parameters/SalesAgent'
+      responses:
+        '200':
+          description: The policies
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PolicySold' } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /collections/figures:
     get:
       summary: The collection figures -- of the premiums due in the period, how much is paid, and the rate
@@ -302,6 +376,15 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
 components:
   parameters:
+    SalesFrom: { name: from, in: query, required: true, schema: { type: string, format: date } }
+    SalesTo: { name: to, in: query, required: true, schema: { type: string, format: date } }
+    SalesBy: { name: by, in: query, required: false, schema: { type: string, enum: [MONTH, QUARTER, YEAR], default: MONTH } }
+    SalesAgent:
+      name: agentId
+      in: query
+      required: false
+      description: "Me: one agent inside the signed-in agent's team; absent for the whole team. Outside the team is 403."
+      schema: { type: string, format: uuid }
     FollowUpView:
       { name: view, in: query, required: false, schema: { type: string, enum: [DUE_TODAY, DUE_SOON, OVERDUE], default: OVERDUE } }
     SoonDays:
@@ -327,6 +410,34 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    SalesTotals:
+      type: object
+      additionalProperties: false
+      required: [bucket, currency, policies, premiumAYear, singlePremiums, cover, savingsDeposits]
+      properties:
+        bucket: { type: string, description: "2026-11 (month), 2026-Q4 (quarter) or 2026 (year)" }
+        currency: { type: string }
+        policies: { type: integer }
+        premiumAYear: { type: number, description: "Yearly premium of regular-premium policies sold; savings left out" }
+        singlePremiums: { type: number, description: "One-time premiums sold, savings left out" }
+        cover: { type: number }
+        savingsDeposits: { type: number, description: "The opening deposit of each savings or fixed-deposit policy sold" }
+    PolicySold:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, currency]
+      properties:
+        policyNumber: { type: string }
+        productName: { type: [string, "null"] }
+        clientName: { type: [string, "null"] }
+        onCoverFrom: { type: [string, "null"], format: date }
+        frequency: { type: [string, "null"] }
+        premium: { type: [number, "null"] }
+        premiumAYear: { type: [number, "null"] }
+        cover: { type: [number, "null"] }
+        savingsDeposit: { type: [number, "null"] }
+        currency: { type: string }
+        agentName: { type: [string, "null"] }
     FollowUpAction:
       type: object
       additionalProperties: false
