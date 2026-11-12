@@ -246,6 +246,47 @@ paths:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /parties/{partyId}/premiums:
+    get:
+      summary: What a client owes across all their policies, and their last receipt (collections.view)
+      description: >-
+        The client Premiums tab (2026-11-12): every open invoice on every policy the client holds -- overdue first, then
+        by due date -- up to the window asked for; the three figures summed from those rows; the newest receipt across
+        all their policies; and each policy with nothing raised ahead (paid once, or per enrolment file).
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: partyId, in: path, required: true, schema: { type: string, format: uuid } }
+        - name: window
+          in: query
+          required: false
+          description: The next 30 days (default), the next 90, or every invoice raised. Overdue is always included.
+          schema: { type: string, enum: ['30', '90', ALL], default: '30' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientPremiums' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /parties/{partyId}/premiums/{format}:
+    get:
+      summary: The client's premiums due as a PDF or Excel file (collections.view)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: partyId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: format, in: path, required: true, schema: { type: string, enum: [pdf, xlsx] } }
+        - { name: window, in: query, required: false, schema: { type: string, enum: ['30', '90', ALL], default: '30' } }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /policies/{policyNumber}/savings-statement:
     get:
       summary: A savings plan's account statement for a period
@@ -1191,6 +1232,61 @@ components:
               name: { type: [string, "null"] }
               dateOfBirth: { type: [string, "null"], format: date }
               student: { type: boolean }
+    ClientPremiums:
+      type: object
+      additionalProperties: false
+      description: >-
+        A client's premiums across all their policies (2026-11-12). Figures are in `currency` (TZS); a row in another
+        currency is listed but never added in.
+      required: [window, overdueCount, overdueOwed, nextDueOn, nextDueAmount, dueInWindowCount, dueInWindowOwed,
+                 currency, lastReceipt, rows, notInvoicedAhead]
+      properties:
+        window: { type: string, enum: ['30', '90', ALL] }
+        overdueCount: { type: integer, minimum: 0 }
+        overdueOwed: { type: number }
+        nextDueOn: { type: [string, 'null'], format: date, description: The soonest open invoice not yet overdue }
+        nextDueAmount: { type: [number, 'null'] }
+        dueInWindowCount: { type: integer, minimum: 0, description: Open and not overdue, due within the window }
+        dueInWindowOwed: { type: number }
+        currency: { type: string }
+        lastReceipt:
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/ClientLastReceipt'
+        rows: { type: array, items: { $ref: '#/components/schemas/ClientPremiumRow' } }
+        notInvoicedAhead: { type: array, items: { $ref: '#/components/schemas/ClientNotInvoiced' } }
+    ClientLastReceipt:
+      type: object
+      additionalProperties: false
+      required: [receiptId, receiptNumber, policyNumber, receivedOn, amount, currency]
+      properties:
+        receiptId: { type: string, format: uuid }
+        receiptNumber: { type: string }
+        policyNumber: { type: string }
+        receivedOn: { type: string, format: date }
+        amount: { type: number }
+        currency: { type: string }
+    ClientPremiumRow:
+      type: object
+      additionalProperties: false
+      required: [invoiceId, policyNumber, productName, dueDate, owed, currency, status]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        productName: { type: [string, 'null'] }
+        dueDate: { type: string, format: date }
+        owed: { type: number, description: What is still owed on the invoice }
+        currency: { type: string }
+        status: { type: string, enum: [OVERDUE, IN_GRACE, DUE, PARTIALLY_PAID] }
+    ClientNotInvoiced:
+      type: object
+      additionalProperties: false
+      description: A policy with nothing raised ahead, and how it is paid instead.
+      required: [policyNumber, productName, how]
+      properties:
+        policyNumber: { type: string }
+        productName: { type: [string, 'null'] }
+        how: { type: string, enum: [ONCE, PER_ENROLMENT_FILE] }
     ReceiptLine:
       type: object
       additionalProperties: false
