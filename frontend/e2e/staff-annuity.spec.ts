@@ -190,7 +190,7 @@ test.describe('an immediate annuity', () => {
       await finance.getByRole('link', { name: 'Open payout' }).first().click();
       await expect(finance).toHaveURL(/\/staff\/payouts\/[0-9a-f-]{36}$/);
       const payoutUrl = finance.url();
-      await finance.getByLabel('Payee reference').fill('+255700000777');
+      await finance.getByLabel('Mobile money number it is paid to').fill('+255700000777');
       await finance.getByLabel('How was the life assured confirmed alive?').selectOption('IN_PERSON');
       await finance.getByRole('button', { name: 'Review', exact: true }).click();
       await expect(finance.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled({ timeout: 15_000 });

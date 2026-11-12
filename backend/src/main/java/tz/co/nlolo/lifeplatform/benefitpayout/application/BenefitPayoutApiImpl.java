@@ -316,13 +316,29 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         return Views.of(i, proofOfLifeRequired(i));
     }
 
+    /**
+     * A payout here is paid by mobile money (no other route is offered for it), so its payee is a Tanzanian phone
+     * number, stored the one way the rail reads it (2026-11-12, finance finding 36: a pension lump sum was reviewed
+     * with payee "nothing" and paid). Everyday forms -- 0712 345 678, 255712345678 -- are accepted and converted.
+     */
+    static String mobileMoneyPayee(String written) {
+        if (written == null || written.isBlank()) {
+            throw new PayoutStateException("A payout needs the mobile money number it is paid to");
+        }
+        try {
+            return tz.co.nlolo.lifeplatform.party.api.PhoneNumbers.normalise(written);
+        } catch (IllegalArgumentException e) {
+            throw new PayoutStateException(e.getMessage());
+        }
+    }
+
     @Override
     @Transactional
     public PayoutInstalmentView review(UUID instalmentId, String payeeRef, ProofOfLifeMethod method,
                                        UUID documentId, String reviewer) {
         PayoutInstalment i = load(instalmentId);
         // A redirected annuity's beneficiaries owe no proof of life: the life it proved is over.
-        i.review(reviewer, payeeRef, method, documentId, proofOfLifeRequired(i));
+        i.review(reviewer, mobileMoneyPayee(payeeRef), method, documentId, proofOfLifeRequired(i));
         return view(instalments.save(i));
     }
 
@@ -545,6 +561,8 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public FreeLookCancellationView requestFreeLook(String policyNumber, String payeeRef,
                                                     List<FreeLookDeductionInput> deductionInputs,
                                                     String requestedBy) {
+        // A refund named to a number goes to a real one (finding 36); none named keeps what it did before.
+        if (payeeRef != null && !payeeRef.isBlank()) payeeRef = mobileMoneyPayee(payeeRef);
         PolicyView policy = policyApi.getPolicy(policyNumber);
         if (!INDIVIDUAL_CATEGORIES.contains(policy.productCategory())) {
             throw new PayoutStateException("Free-look applies to individual policies; a "
@@ -1107,7 +1125,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public void redirectAnnuityStream(String policyNumber, LocalDate fromDate, LocalDate untilDate, String payeeRef) {
         PayoutStream s = streams.findAnnuityStream(policyNumber)
             .orElseThrow(() -> new PayoutStateException("Policy " + policyNumber + " has no annuity stream"));
-        s.redirect(fromDate, untilDate, payeeRef);
+        s.redirect(fromDate, untilDate, mobileMoneyPayee(payeeRef));
         streams.save(s);
         for (PayoutInstalment i : instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId())) {
             if (i.getDueDate().isAfter(untilDate) && i.cancel("Nothing is owed after the guarantee ends on " + untilDate)) {

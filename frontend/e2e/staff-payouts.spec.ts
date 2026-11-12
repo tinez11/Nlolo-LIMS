@@ -118,7 +118,7 @@ test.describe('a payout passes two people', () => {
     // 10% of 2,000,000 on the fifth anniversary.
     await expect(page.getByText('TZS 200,000.00').first()).toBeVisible();
 
-    await page.getByLabel('Payee reference').fill('+255700000009');
+    await page.getByLabel('Mobile money number it is paid to').fill('+255700000009');
     await page
       .getByLabel('How was the life assured confirmed alive?')
       .selectOption('IN_PERSON');
