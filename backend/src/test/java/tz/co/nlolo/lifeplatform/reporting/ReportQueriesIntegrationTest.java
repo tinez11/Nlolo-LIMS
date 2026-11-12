@@ -38,6 +38,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 @Testcontainers
 @SpringBootTest(classes = Application.class)
@@ -463,6 +464,40 @@ class ReportQueriesIntegrationTest {
         assertThat(rows(result, 0)).singleElement()
             .satisfies(r -> assertThat(r.get("product")).isEqualTo(product.toString()));
         assertThat(rows(result, 1)).extracting(r -> r.get("policyNumber")).containsExactly("P-A");
+    }
+
+    /** Drill-down (2026-11-11, analytics plan 2): each policy, its client and its agent open their own record. */
+    @Test
+    void thePolicyRegisterLinksEachPolicyItsClientAndItsAgent() {
+        UUID person = UUID.randomUUID();
+        UUID agent = UUID.randomUUID();
+        events.client(tenant, person, "INDIVIDUAL", "VERIFIED", "Asha", d("2025-12-01"), d("1990-01-01"), "FEMALE");
+        events.sell(tenant, Sale.of("L-1", product, d("2026-01-05")).holder(person).agent(agent));
+
+        ReportResult result = run("products", ReportFilter.asOf(d("2026-03-31")).withProductId(product));
+
+        assertThat(result.sections().get(1).columns())
+            .extracting(ReportColumn::key, ReportColumn::link)
+            .contains(tuple("policyNumber", "POLICY"), tuple("client", "CLIENT"), tuple("agent", "AGENT"));
+        assertThat(rows(result, 1)).singleElement().satisfies(row -> {
+            assertThat(row.get("policyNumber")).isEqualTo("L-1");
+            assertThat(row.get("_clientId")).isEqualTo(person.toString());
+            assertThat(row.get("_agentId")).isEqualTo(agent.toString());
+        });
+    }
+
+    /**
+     * How fresh the figures are (2026-11-11, analytics plan 2): a report on the reports' copy says the newest change it
+     * took in; a ledger report reads live and says nothing of the copy; every report says what it reads.
+     */
+    @Test
+    void aReportOnTheCopySaysTheLastChangeItTookIn() {
+        events.sell(tenant, Sale.of("F-1", product, d("2026-01-05")));
+
+        assertThat(run("policies-in-force", ReportFilter.asOf(d("2026-01-31"))).dataUpTo())
+            .isNotNull().isBeforeOrEqualTo(java.time.Instant.now());
+        assertThat(run("trial-balance", ReportFilter.month(YearMonth.of(2026, 9))).dataUpTo()).isNull();
+        assertThat(reportingApi.catalogue()).allSatisfy(d -> assertThat(d.sources()).as(d.key()).isNotEmpty());
     }
 
     @Test

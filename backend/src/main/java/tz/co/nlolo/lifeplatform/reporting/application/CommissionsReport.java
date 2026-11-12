@@ -58,7 +58,7 @@ public class CommissionsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("commissions", "Commissions",
         "Commission earned, clawed back and paid across every agent, by agent and by product against the premium"
             + " collected, and the statements not yet paid, by age.",
-        ReportCategory.COMMISSIONS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.COMMISSIONS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("DISTRIBUTION", "REPORTING_COPY");
 
     private final DistributionApi distribution;
     private final ReportQueries queries;
@@ -208,13 +208,14 @@ public class CommissionsReport implements Report {
     }
 
     private static ReportSection agents(Map<UUID, Tally> byAgent, Labels labels) {
-        List<ReportColumn> columns = List.of(col("agent", "Agent", TEXT), col("firstYear", "First year", MONEY),
+        List<ReportColumn> columns = List.of(Sections.link("agent", "Agent", "AGENT"), col("firstYear", "First year", MONEY),
             col("renewal", "Renewal", MONEY), col("overrides", "Overrides", MONEY), col("clawbacks", "Clawed back", MONEY),
             col("booked", "Booked", MONEY), col("paid", "Paid", MONEY), col("unpaid", "Not yet paid", MONEY));
         List<Map<String, String>> rows = new ArrayList<>();
         byAgent.forEach((agentId, t) -> {
             Map<String, String> row = new LinkedHashMap<>();
             row.put("agent", agentId == null ? "No agent" : labels.dimension(GroupBy.AGENT, agentId.toString()));
+            if (agentId != null) row.put("_agentId", agentId.toString());
             row.put("firstYear", Figures.money(t.firstYear));
             row.put("renewal", Figures.money(t.renewal));
             row.put("overrides", Figures.money(t.overrides.add(t.bonuses)));

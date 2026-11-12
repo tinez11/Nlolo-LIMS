@@ -35,7 +35,7 @@ public class OutstandingClaimsReport implements Report {
         "Open claims at the start, plus those registered and reopened, less those paid and declined, gives the open"
             + " claims at the end;"
             + " against the period before.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

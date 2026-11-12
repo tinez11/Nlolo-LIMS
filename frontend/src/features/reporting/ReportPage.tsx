@@ -19,6 +19,7 @@ import { ReportTrend } from './ReportTrend';
 import { reportAreas } from './reportAreas';
 import { BridgeChart } from '@/components/charts/BridgeChart';
 import { stateFromSearch, toParams, validateFilters } from './reportParams';
+import { freshnessLine } from './freshness';
 
 /**
  * One page for every report. The filters live in the address bar, so a report can be bookmarked or sent to
@@ -82,6 +83,10 @@ export function ReportPage() {
         title={definition.title}
         breadcrumb={[{ label: 'Reports', to: '/staff/reports' }]}
         description={current ? [current.filterSummary, current.comparisonLabel].filter(Boolean).join(' · ') : definition.description}
+        // How fresh the figures are (2026-11-11, analytics plan 2): a fact about the screen, in its byline.
+        {...(current && freshnessLine(definition.sources, current.dataUpTo)
+          ? { count: <span className="text-subtle-foreground">{freshnessLine(definition.sources, current.dataUpTo)}</span> }
+          : {})}
         actions={
           <div className="flex flex-wrap gap-2">
             {catalogue.data && <ReportSwitcher areas={reportAreas(catalogue.data)} currentKey={reportKey} />}

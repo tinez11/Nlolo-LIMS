@@ -34,7 +34,7 @@ public class ClientsReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("clients", "Clients",
         "Clients by type and KYC status, individuals by age band and sex, and every group or corporate scheme with "
             + "its lives covered, joiners and leavers.",
-        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 
@@ -140,7 +140,7 @@ public class ClientsReport implements Report {
     }
 
     private ReportSection schemes(UUID tenantId, ReportFilter f) {
-        List<ReportColumn> columns = List.of(col("policyNumber", "Scheme", TEXT), col("holder", "Holder", TEXT),
+        List<ReportColumn> columns = List.of(Sections.link("policyNumber", "Scheme", "POLICY"), col("holder", "Holder", TEXT),
             col("productCategory", "Product category", TEXT), col("status", "Status", TEXT),
             col("livesCovered", "Lives covered", COUNT), col("joined", "Joined in period", COUNT),
             col("exited", "Left in period", COUNT), col("currency", "Currency", TEXT), col("sumAssured", "Total cover", MONEY),

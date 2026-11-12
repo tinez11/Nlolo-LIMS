@@ -45,4 +45,21 @@ describe('the underwriting queue', () => {
     await userEvent.click(within(screen.getByRole('group', { name: 'Source' })).getByRole('button', { name: 'Call back' }));
     expect(underwritingApi.listCases).toHaveBeenLastCalledWith({ source: 'CALL_BACK', page: 0, pageSize: 20 });
   });
+
+  /** A dashboard card's dates arrive and stay (2026-11-11, analytics plan 2): they used to be dropped on the floor. */
+  it('lists only the cases decided in the dashboard card months, and can clear them', async () => {
+    render(
+      <MemoryRouter initialEntries={['/staff/underwriting?decidedFrom=2026-07-01&decidedTo=2026-09-30&outcome=DECLINED']}>
+        <Routes><Route path="/staff/underwriting" element={<UnderwritingQueuePage />} /></Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('table', { name: 'Underwriting cases' });
+    expect(underwritingApi.listCases).toHaveBeenCalledWith({
+      decidedFrom: '2026-07-01', decidedTo: '2026-09-30', outcome: 'DECLINED', page: 0, pageSize: 20,
+    });
+    expect(screen.getByText('Decided Jul 1, 2026 to Sep 30, 2026 · Declined')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the decided dates' }));
+    expect(underwritingApi.listCases).toHaveBeenLastCalledWith({ page: 0, pageSize: 20 });
+  });
 });

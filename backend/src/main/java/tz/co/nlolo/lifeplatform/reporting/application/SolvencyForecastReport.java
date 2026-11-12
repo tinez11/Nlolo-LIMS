@@ -46,7 +46,7 @@ public class SolvencyForecastReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("solvency-forecast", "Forecast",
         "Premium, claims, the result and the capital adequacy ratio for the next 12 months: a trend from the last 24"
             + " months of the ledger, with a low-to-high range.",
-        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), false);
+        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), false).from("LEDGER");
 
     static final int HISTORY = 24;
     static final int AHEAD = 12;

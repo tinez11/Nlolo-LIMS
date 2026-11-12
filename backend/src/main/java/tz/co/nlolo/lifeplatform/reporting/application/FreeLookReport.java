@@ -47,7 +47,7 @@ public class FreeLookReport implements Report {
         "Free-look and not taken up",
         "Policies cancelled in the free-look period and offers that closed unpaid, by product, agent, channel or branch,"
             + " against the period before.",
-        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods();
+        ReportCategory.MANAGEMENT, DateFilterKind.PERIOD, List.of(GroupBy.values()), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

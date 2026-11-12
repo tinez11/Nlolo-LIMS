@@ -37,7 +37,7 @@ public class ClaimsIncurredReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claims-incurred", "Claims incurred variance",
         "Claims approved in the period against the period before: how many, how big, by product and claim type, with"
             + " large claims shown apart.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private static final String UP_IS_BAD = "DOWN";
 

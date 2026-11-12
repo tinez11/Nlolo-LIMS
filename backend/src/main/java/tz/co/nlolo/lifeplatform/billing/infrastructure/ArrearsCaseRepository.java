@@ -68,7 +68,7 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
      * <p>Outstanding is charged, less paid, less credited back -- PremiumInvoice.balanceDue -- and a premium that owes
      * nothing is left out. Native: the bucketing is a CASE over date arithmetic.
      *
-     * <p>One row per currency, band and POLICY: [currency, bucket, cases, outstanding, policy_number]. Per policy so the
+     * <p>One row per currency, band and POLICY: [currency, bucket, cases, outstanding, policy_number, has_paid]. Per policy so the
      * caller can leave out an offer -- a policy still PROPOSED, whose first premium is the offer's, not owed -- which
      * billing cannot tell from its own tables (2026-11-11: 14 offers' premiums were TZS 3.29M of the figure on dev).
      *
@@ -86,7 +86,12 @@ public interface ArrearsCaseRepository extends JpaRepository<ArrearsCase, UUID> 
                     ELSE 'OVER_90' END AS bucket,
                COUNT(*) AS cases,
                SUM(i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0)) AS outstanding,
-               i.policy_number AS policy_number
+               i.policy_number AS policy_number,
+               -- A policy with any premium paid is not an offer (the first premium starts cover), so the caller
+               -- need not ask policy about it.
+               bool_or(EXISTS (SELECT 1 FROM billing.premium_invoice p
+                                WHERE p.tenant_id = i.tenant_id AND p.policy_number = i.policy_number
+                                  AND p.status = 'PAID')) AS has_paid
           FROM billing.premium_invoice i
           LEFT JOIN (SELECT original_invoice_id, SUM(amount) AS credited
                        FROM billing.premium_credit WHERE tenant_id = :tenantId GROUP BY original_invoice_id) c

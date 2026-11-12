@@ -103,8 +103,13 @@ public class ReportingApiImpl implements ReportingApi {
         ReportFilters.validate(report.definition(), filter);
         Labels labels = labelsFactory.create();
         ReportBody body = report.body(TenantContext.get(), filter, labels);
+        // How fresh the figures are (2026-11-11, analytics plan 2): the newest change the reports' copy has taken in,
+        // read only for a report that reads the copy -- a ledger report reads live, and says so instead.
+        Instant dataUpTo = report.definition().sources().contains("REPORTING_COPY")
+            ? queries.lastAppliedAt(TenantContext.get()) : null;
         return new ReportResult(key, report.definition().title(), FilterSummary.describe(report.definition(), filter, labels),
-            Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel(), body.notices());
+            Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel(), body.notices(),
+            dataUpTo);
     }
 
     @Override
@@ -160,5 +165,10 @@ public class ReportingApiImpl implements ReportingApi {
     @Override
     public void listDownloaded(String list, String format, int rows, String by) {
         followUpQueue.downloaded(list, format, rows, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.reporting.api.FigureGroup> figureGroups() {
+        return List.of(CollectionsFigureDefinitions.GROUP);
     }
 }

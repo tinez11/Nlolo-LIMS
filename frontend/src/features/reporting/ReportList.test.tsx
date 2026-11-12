@@ -9,7 +9,7 @@ import { reportAreas } from './reportAreas';
 
 const report = (key: string, title: string, category: ReportDefinition['category']): ReportDefinition => ({
   key, title, description: `${title} description`, category, dateFilterKind: 'MONTH', groupByOptions: [],
-  comparable: false, requiresAccount: false, comparesPeriods: category === 'ACCOUNTING',
+  comparable: false, requiresAccount: false, comparesPeriods: category === 'ACCOUNTING', sources: [], figures: [],
 });
 
 const CATALOGUE = [

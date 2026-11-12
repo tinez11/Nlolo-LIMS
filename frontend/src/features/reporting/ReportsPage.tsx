@@ -5,6 +5,7 @@ import { can } from '@/auth/access';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorPanel, TableSkeleton } from '@/components/states';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReportingStore } from '@/store/reportingStore';
 import { RebuildPanel } from './RebuildPanel';
@@ -35,7 +36,15 @@ export function ReportsPage() {
   const areas = searchAreas(reportAreas(catalogue.data), query);
   return (
     <>
-      <PageHeader title="Reports" description="Every figure compares with the period before and opens to show how it was worked out." />
+      <PageHeader
+        title="Reports"
+        description="Every figure compares with the period before and opens to show how it was worked out."
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link to="/staff/reports/what-the-figures-mean">What the figures mean</Link>
+          </Button>
+        }
+      />
       <div className="space-y-6 px-6 pb-8">
         <label className="relative block max-w-md">
           <span className="sr-only">Search reports</span>

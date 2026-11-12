@@ -150,6 +150,7 @@ public class BillingApiImpl implements BillingApi {
         return cases.map(c -> toView(c, invoicesById.get(c.getInvoiceId())));
     }
 
+    /** "Owed today", explained in reporting's CollectionsFigureDefinitions -- change the words with the formula. */
     @Override
     public List<ReceivablesAging> receivablesAging(java.time.LocalDate asOf) {
         // The query returns only the bands that have rows; the view promises every band, in order,
@@ -161,7 +162,9 @@ public class BillingApiImpl implements BillingApi {
         Map<String, Map<String, BigDecimal>> sums = new java.util.LinkedHashMap<>();
         for (Object[] row : arrearsCaseRepository.receivablesAging(TenantContext.get(), asOf)) {
             String policy = (String) row[4];
-            if (offer.computeIfAbsent(policy, this::isOffer)) continue;
+            // Only a policy with nothing paid can still be an offer; ask policy about those alone (2026-11-12).
+            boolean hasPaid = Boolean.TRUE.equals(row[5]);
+            if (!hasPaid && offer.computeIfAbsent(policy, this::isOffer)) continue;
             String currency = ((String) row[0]).trim();
             counts.computeIfAbsent(currency, c -> new HashMap<>())
                 .computeIfAbsent((String) row[1], b -> new long[1])[0] += ((Number) row[2]).longValue();
@@ -509,6 +512,7 @@ public class BillingApiImpl implements BillingApi {
         return collectionActions.sendReminder(invoiceId, by);
     }
 
+    /** "Premiums due" and "paid", explained in reporting's CollectionsFigureDefinitions -- change the words with the formula. */
     @Override
     @Transactional(readOnly = true)
     public List<InvoiceDueView> invoicesDueBetween(java.time.LocalDate from, java.time.LocalDate to) {
@@ -887,10 +891,21 @@ public class BillingApiImpl implements BillingApi {
     @Override
     @Transactional(readOnly = true)
     public boolean isSavingsType(String policyNumber) {
+        // Remembered per tenant and policy (2026-11-12): a policy's product version is pinned at issue, so the answer
+        // never changes -- and the collection figures ask it for every policy with a premium in the period (178 for
+        // the year to date on dev, two module reads each), which made the finance dashboard take seconds.
+        String key = TenantContext.get() + "|" + policyNumber;
+        Boolean known = savingsType.get(key);
+        if (known != null) return known;
         PolicyView policy = policyApi.getPolicy(policyNumber);
-        return policy.productVersionId() != null
+        boolean savings = policy.productVersionId() != null
             && productApi.resolveAccumulationPlan(policy.productVersionId()).basis() == tz.co.nlolo.lifeplatform.product.api.ValueBasis.ACCOUNT;
+        savingsType.put(key, savings);
+        return savings;
     }
+
+    /** isSavingsType's answers: never stale, since a policy's product version never changes after issue. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> savingsType = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     @Transactional

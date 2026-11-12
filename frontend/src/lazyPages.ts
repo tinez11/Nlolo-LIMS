@@ -131,6 +131,9 @@ export const RegulatoryReturnsPage = lazy(() =>
 export const SolvencyFactorsPage = lazy(() =>
   import('@/features/reporting/SolvencyFactorsPage').then((m) => ({ default: m.SolvencyFactorsPage })),
 );
+export const FiguresGuidePage = lazy(() =>
+  import('@/features/reporting/FiguresGuidePage').then((m) => ({ default: m.FiguresGuidePage })),
+);
 export const ReportsPage = lazy(() =>
   import('@/features/reporting/ReportsPage').then((m) => ({ default: m.ReportsPage })),
 );

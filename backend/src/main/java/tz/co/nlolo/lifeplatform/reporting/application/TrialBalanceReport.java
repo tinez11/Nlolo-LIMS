@@ -40,7 +40,7 @@ public class TrialBalanceReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("trial-balance", "Trial balance",
         "Every posted account's opening balance, the month's debits and credits, and its closing balance; and whether"
             + " the ledger balances.",
-        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), false);
+        ReportCategory.ACCOUNTING, DateFilterKind.MONTH, List.of(), false).from("LEDGER");
 
     private final FinaccountingApi finaccounting;
 

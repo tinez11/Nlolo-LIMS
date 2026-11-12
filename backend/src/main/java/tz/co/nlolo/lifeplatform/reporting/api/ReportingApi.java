@@ -77,4 +77,7 @@ public interface ReportingApi {
 
     /** Records that a list was downloaded, by whom (reporting.ListDownloaded, kept by audit). */
     void listDownloaded(String list, String format, int rows, String by);
+
+    /** Figures explained that belong to no single report -- the Collections figures (2026-11-11, decision K1). */
+    List<FigureGroup> figureGroups();
 }

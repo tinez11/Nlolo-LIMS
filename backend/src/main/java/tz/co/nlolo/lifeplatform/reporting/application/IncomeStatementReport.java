@@ -44,7 +44,7 @@ public class IncomeStatementReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("income-statement", "Income statement",
         "Revenue and expenses across a span of periods, with the insurance service result and the profit, against the"
             + " period it is compared with.",
-        ReportCategory.ACCOUNTING, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.ACCOUNTING, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("LEDGER");
 
     static final List<Statement.Line> LINES = List.of(
         Statement.Line.accounts("revenue", "Insurance revenue", "UP", "4000"),

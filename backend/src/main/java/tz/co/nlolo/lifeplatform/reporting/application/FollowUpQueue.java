@@ -144,6 +144,8 @@ public class FollowUpQueue {
      * Of the premiums due {@code from} to {@code to}: how much was asked, how much is paid, the rate; and, on
      * {@code today}, what is due today and what is overdue. In TZS, the currency every premium is billed in today --
      * the same scope billing's own owed-by-policy figure keeps.
+     *
+     * <p>Explained in CollectionsFigureDefinitions -- change the words with the formula.
      */
     public CollectionFigures figures(LocalDate from, LocalDate to, LocalDate today) {
         if (from == null || to == null || to.isBefore(from)) {

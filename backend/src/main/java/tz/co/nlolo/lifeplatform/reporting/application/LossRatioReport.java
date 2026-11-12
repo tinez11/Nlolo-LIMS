@@ -37,7 +37,7 @@ public class LossRatioReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("loss-ratio", "Loss ratio variance",
         "Claims incurred as a share of premium collected, by product, against the period before.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

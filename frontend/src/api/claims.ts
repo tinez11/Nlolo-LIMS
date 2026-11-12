@@ -28,6 +28,9 @@ export interface ClaimSearchParams {
   /** Only claims on policies sold under this product, or under a product of this category (2026-10-26). */
   productId?: string;
   productCategory?: string;
+  /** Registered between these days, inclusive (YYYY-MM-DD) -- what a dashboard card opens (2026-11-11). */
+  registeredFrom?: string;
+  registeredTo?: string;
   page?: number;
   pageSize?: number;
 }
@@ -47,6 +50,8 @@ export async function searchClaims(params: ClaimSearchParams = {}): Promise<Page
       ...(params.q ? { q: params.q } : {}),
       ...(params.productId ? { productId: params.productId } : {}),
       ...(params.productCategory ? { productCategory: params.productCategory } : {}),
+      ...(params.registeredFrom ? { registeredFrom: params.registeredFrom } : {}),
+      ...(params.registeredTo ? { registeredTo: params.registeredTo } : {}),
       page,
       pageSize,
     },

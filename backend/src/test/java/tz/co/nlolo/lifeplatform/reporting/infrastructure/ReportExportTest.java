@@ -68,7 +68,8 @@ class ReportExportTest {
         return new ReportResult("policies-in-force", "Policies in force", "As of 2026-10-11 · Grouped by Product",
             Instant.parse("2026-10-11T08:00:00Z"), sections,
             List.of(new ReportFigure("policies", "Policies in force", "1200", "1000", "200", "20.0", "UP", true, "COUNT")),
-            null, "compared with 2026-09-11", List.of("Placeholder risk charges, not TIRA's."));
+            null, "compared with 2026-09-11", List.of("Placeholder risk charges, not TIRA's."),
+            Instant.parse("2026-10-11T07:45:00Z"));
     }
 
     @Test
@@ -81,6 +82,7 @@ class ReportExportTest {
             StringBuilder text = new StringBuilder();
             summary.forEach(r -> r.forEach(c -> text.append(c.toString()).append('\n')));
             assertThat(text).contains("Bima Bora", "Policies in force", "Prepared by Asha Admin on 11 Oct 2026, 11:00",
+                "Last change taken in 11 Oct 2026, 10:45",
                 "Placeholder risk charges, not TIRA's.", "1,200", "up 20.0% from 1,000");
             assertThat(wb.getNumberOfSheets()).isEqualTo(3);
 
@@ -122,9 +124,11 @@ class ReportExportTest {
         try (PDDocument doc = Loader.loadPDF(export.bytes())) {
             String text = new PDFTextStripper().getText(doc);
             assertThat(text).contains("Bima Bora", "TIRA reg. TIRA/LI/021", "Policies in force", "As of 2026-10-11",
-                "Prepared by Asha Admin on 11 Oct 2026, 11:00", "Placeholder risk charges, not TIRA's.",
-                "36,000,000.00", "(1,500.50)", "12.5%", "1,200", "up 20.0% from 1,000",
+                "Prepared by Asha Admin on 11 Oct 2026, 11:00",
+                "Placeholder risk charges, not TIRA's.", "36,000,000.00", "(1,500.50)", "12.5%", "1,200", "up 20.0% from 1,000",
                 "Confidential: board pack.", "Page 1 of");
+            // How fresh the figures are (2026-11-11): the subtitle line wraps, so read it with its spaces evened out.
+            assertThat(text.replaceAll("\\s+", " ")).contains("Last change taken in 11 Oct 2026, 10:45");
             // Long text wraps rather than being cut off.
             assertThat(text).contains("second line").doesNotContain("~");
         }

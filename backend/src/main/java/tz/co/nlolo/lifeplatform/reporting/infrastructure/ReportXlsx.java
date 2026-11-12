@@ -87,6 +87,9 @@ final class ReportXlsx {
         if (present(result.comparisonLabel())) cell(sheet.createRow(r++), 0, result.comparisonLabel(), st.muted);
         cell(sheet.createRow(r++), 0, "Prepared" + (present(preparedBy) ? " by " + preparedBy : "") + " on "
             + ReportFormat.stamp(result.generatedAt()), st.muted);
+        if (result.dataUpTo() != null) {
+            cell(sheet.createRow(r++), 0, "Last change taken in " + ReportFormat.stamp(result.dataUpTo()), st.muted);
+        }
         r++;
         for (String notice : result.notices()) cell(sheet.createRow(r++), 0, notice, st.notice);
         if (!result.notices().isEmpty()) r++;

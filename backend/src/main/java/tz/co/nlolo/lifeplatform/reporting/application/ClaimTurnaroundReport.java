@@ -38,7 +38,7 @@ public class ClaimTurnaroundReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("claims-turnaround", "Claims turnaround",
         "Average days to decide and to pay the claims settled in the period, against the period before, and the claims"
             + " paid later than " + ClaimsReporting.TARGET_DAYS + " days from registration.",
-        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods();
+        ReportCategory.CLAIMS, DateFilterKind.MONTH_RANGE, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
 

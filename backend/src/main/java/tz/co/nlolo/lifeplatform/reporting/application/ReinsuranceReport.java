@@ -41,7 +41,7 @@ public class ReinsuranceReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("reinsurance", "Reinsurance",
         "What each treaty holds today, and for the quarters in these months: premium ceded, commission, recoveries and"
             + " profit commission per statement, and what is still owed either way.",
-        ReportCategory.REINSURANCE, DateFilterKind.MONTH_RANGE, List.of(), false);
+        ReportCategory.REINSURANCE, DateFilterKind.MONTH_RANGE, List.of(), false).from("REINSURANCE");
 
     private final ReinsuranceApi reinsurance;
 

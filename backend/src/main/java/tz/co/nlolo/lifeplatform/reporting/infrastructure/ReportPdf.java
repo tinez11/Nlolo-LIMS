@@ -37,6 +37,8 @@ final class ReportPdf {
         if (present(result.comparisonLabel())) subtitle.add(result.comparisonLabel());
         subtitle.add("Prepared" + (present(preparedBy) ? " by " + preparedBy : "") + " on "
             + ReportFormat.stamp(result.generatedAt()));
+        // How fresh the figures are (2026-11-11, analytics plan 2), on paper as on screen.
+        if (result.dataUpTo() != null) subtitle.add("Last change taken in " + ReportFormat.stamp(result.dataUpTo()));
 
         List<BrandedDocument.Figure> figures = result.figures().stream()
             .map(f -> new BrandedDocument.Figure(f.label(), ReportFormat.figure(f), ReportFormat.caption(f))).toList();

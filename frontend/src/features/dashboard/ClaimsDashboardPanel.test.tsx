@@ -71,6 +71,16 @@ describe('ClaimsDashboardPanel', () => {
     expect(getClaimsDashboard).toHaveBeenCalledWith(RANGE);
   });
 
+  /** The card opens the claims it counted, for the same months (2026-11-11, analytics plan 2). */
+  it('opens the claims registered in the range', async () => {
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
+
+    // "Registered" also names a status chip, so the card is found by where it goes.
+    const links = await screen.findAllByRole('link', { name: /Registered/ });
+    expect(links.map((l) => l.getAttribute('href')))
+      .toContain('/staff/claims?registeredFrom=2026-07-01&registeredTo=2026-09-30');
+  });
+
   it("shows what was paid over the range, and the server's days to settle", async () => {
     renderScreen(<ClaimsDashboardPanel range={RANGE} />);
 

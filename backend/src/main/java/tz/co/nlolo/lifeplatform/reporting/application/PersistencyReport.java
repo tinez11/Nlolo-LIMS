@@ -49,7 +49,7 @@ public class PersistencyReport implements Report {
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("persistency", "Persistency",
         "Share of a cohort of new policies still in force at months 13, 25, 37 and 61, by count and by premium. "
             + "A month appears once every policy in the cohort has reached it.",
-        ReportCategory.MANAGEMENT, DateFilterKind.COHORT, List.of(GroupBy.values()), false);
+        ReportCategory.MANAGEMENT, DateFilterKind.COHORT, List.of(GroupBy.values()), false).from("REPORTING_COPY");
 
     private final ReportQueries queries;
     private final Clock clock;

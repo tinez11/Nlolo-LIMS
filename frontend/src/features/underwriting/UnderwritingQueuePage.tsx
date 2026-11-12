@@ -1,5 +1,6 @@
 import { can } from '@/auth/access';
-import { Plus } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
+import { formatDate } from '@/lib/dates';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { UNDERWRITING_CASE_STATUSES, type UnderwritingCaseStatus, type UnderwritingCaseView } from '@/api/types';
@@ -23,6 +24,14 @@ import { CASE_SOURCE_HINT, CASE_SOURCE_LABEL, CASE_SOURCES, isCaseSource } from 
 import { CaseSourceBadge } from './CaseSourceBadge';
 
 const DEFAULT_PAGE_SIZE = 20;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** The decision outcomes, as the dashboard and a person say them. */
+const OUTCOME_WORDS: Record<string, string> = {
+  ACCEPT: 'Accepted',
+  LOADED: 'Accepted with a loading',
+  DECLINED: 'Declined',
+  POSTPONED: 'Postponed',
+};
 
 /**
  * `GET /underwriting/cases` -- staff console only for now (see AppShell.tsx's
@@ -46,13 +55,44 @@ export function UnderwritingQueuePage() {
   const view: 'arrivals' | 'returned' | null = viewParam === 'arrivals' || viewParam === 'returned' ? viewParam : null;
   const [arrivalsTotal, setArrivalsTotal] = useState<number | null>(null);
 
+  // What a dashboard card opens (2026-11-11, analytics plan 2): cases decided in its months, of one outcome. The server
+  // took these all along; the page never read them, so the card's dates were lost on arrival.
+  const decidedFrom = ISO_DAY.test(params.get('decidedFrom') ?? '') ? params.get('decidedFrom')! : undefined;
+  const decidedTo = ISO_DAY.test(params.get('decidedTo') ?? '') ? params.get('decidedTo')! : undefined;
+  const outcomeParam = params.get('outcome') ?? '';
+  const outcome = outcomeParam in OUTCOME_WORDS ? outcomeParam : undefined;
+  const decided = Boolean(decidedFrom || decidedTo || outcome);
+
   const list = useUnderwritingStore((s) => s.list);
   const loadList = useUnderwritingStore((s) => s.loadList);
+  const listParams = {
+    ...(status ? { status } : {}),
+    ...(source ? { source } : {}),
+    ...(decidedFrom ? { decidedFrom } : {}),
+    ...(decidedTo ? { decidedTo } : {}),
+    ...(outcome ? { outcome } : {}),
+    page,
+    pageSize: DEFAULT_PAGE_SIZE,
+  };
 
   useEffect(() => {
     if (view) return;
-    void loadList({ ...(status ? { status } : {}), ...(source ? { source } : {}), page, pageSize: DEFAULT_PAGE_SIZE });
-  }, [loadList, status, source, page, view]);
+    void loadList({
+      ...(status ? { status } : {}),
+      ...(source ? { source } : {}),
+      ...(decidedFrom ? { decidedFrom } : {}),
+      ...(decidedTo ? { decidedTo } : {}),
+      ...(outcome ? { outcome } : {}),
+      page,
+      pageSize: DEFAULT_PAGE_SIZE,
+    });
+  }, [loadList, status, source, decidedFrom, decidedTo, outcome, page, view]);
+
+  function clearDecided() {
+    const merged = new URLSearchParams(params);
+    for (const key of ['decidedFrom', 'decidedTo', 'outcome', 'page']) merged.delete(key);
+    setParams(merged);
+  }
 
   function update(next: {
     status?: UnderwritingCaseStatus | undefined;
@@ -218,7 +258,7 @@ export function UnderwritingQueuePage() {
       return (
         <ErrorPanel
           error={list.error}
-          onRetry={() => void loadList({ ...(status ? { status } : {}), ...(source ? { source } : {}), page, pageSize: DEFAULT_PAGE_SIZE })}
+          onRetry={() => void loadList(listParams)}
         />
       );
     }
@@ -290,6 +330,18 @@ export function UnderwritingQueuePage() {
 
       <div className="px-6 pb-6">
         <div className="rounded-xl border border-border bg-surface shadow-card">
+          {decided && !view && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-sm">
+              <span>
+                Decided
+                {decidedFrom || decidedTo ? ` ${formatDate(decidedFrom ?? null)} to ${formatDate(decidedTo ?? null)}` : ''}
+                {outcome ? ` · ${OUTCOME_WORDS[outcome]}` : ''}
+              </span>
+              <Button size="sm" variant="ghost" onClick={clearDecided} aria-label="Clear the decided dates">
+                <X />
+              </Button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             {/* What is waiting, newest arrival first -- a resubmission arrives again -- and what came back from agents. */}
             <FilterChip label="Awaiting decision" active={view === 'arrivals'} onClick={() => update({ view: 'arrivals' })} />

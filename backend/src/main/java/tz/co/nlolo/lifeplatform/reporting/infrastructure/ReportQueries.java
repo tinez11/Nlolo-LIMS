@@ -69,7 +69,8 @@ public class ReportQueries {
     public record ProductRow(String productId, String productCategory, String currency, long written, long inForce,
                              long lapsed, long regularInForce, BigDecimal sumAssured, BigDecimal annualised) {}
 
-    public record PolicyListRow(String policyNumber, String productId, String holder, String status,
+    /** @param holderPartyId the holder's party, so a register row can open the client (2026-11-11, drill-down) */
+    public record PolicyListRow(String policyNumber, String productId, String holder, UUID holderPartyId, String status,
                                 LocalDate activatedOn, BigDecimal sumAssured, BigDecimal premium, String frequency,
                                 String agentId, String branch, String currency) {}
 
@@ -116,6 +117,16 @@ public class ReportQueries {
 
     /** The same policies one row each, with the status each held on asOf. Unbounded on purpose: the export
      * carries every row, and the console decides how many to draw. */
+    /**
+     * The newest change the reports' own copy has taken in for this tenant (2026-11-11, analytics plan 2): the latest
+     * applied event. Null when it has taken in nothing yet.
+     */
+    public Instant lastAppliedAt(UUID tenantId) {
+        java.sql.Timestamp at = jdbc.queryForObject(
+            "SELECT max(applied_at) FROM reporting.applied_event WHERE tenant_id = ?", java.sql.Timestamp.class, tenantId);
+        return at == null ? null : at.toInstant();
+    }
+
     /** What the follow-up list needs to know of a policy: its product, holder, agent, branch and status today. */
     public record FollowUpPolicyRow(String policyNumber, UUID productId, UUID holderPartyId, UUID agentId,
                                     String branchCode, String status) {}
@@ -139,14 +150,16 @@ public class ReportQueries {
     public List<PolicyListRow> policyList(UUID tenantId, LocalDate asOf, ReportFilter f) {
         List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf));
         StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT p.policy_number,"
-            + " p.product_id::text AS product_id, c.display_name, l.to_status, p.activated_on, " + COVER + " AS sum_assured,"
+            + " p.product_id::text AS product_id, c.display_name, p.holder_party_id, l.to_status, p.activated_on, "
+            + COVER + " AS sum_assured,"
             + " p.premium, p.premium_frequency, p.agent_id::text AS agent_id, p.branch_code, p.currency"
             + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
             + " WHERE p.tenant_id = ? AND p.activated_on <= ?");
         appendFilters(sql, args, f);
         sql.append(" ORDER BY p.policy_number");
         return jdbc.query(sql.toString(), (rs, i) -> new PolicyListRow(rs.getString("policy_number"),
-            rs.getString("product_id"), rs.getString("display_name"), rs.getString("to_status"),
+            rs.getString("product_id"), rs.getString("display_name"), rs.getObject("holder_party_id", UUID.class),
+            rs.getString("to_status"),
             rs.getObject("activated_on", LocalDate.class), rs.getBigDecimal("sum_assured"), rs.getBigDecimal("premium"),
             rs.getString("premium_frequency"), rs.getString("agent_id"), rs.getString("branch_code"),
             rs.getString("currency").trim()), args.toArray());

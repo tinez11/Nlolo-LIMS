@@ -26,6 +26,19 @@ paths:
                 items: { $ref: '#/components/schemas/ReportDefinition' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /reports/figure-definitions:
+    get:
+      summary: Figures explained that belong to no single report -- the Collections figures (read-only, from the code)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The groups of definitions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/FigureGroup' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /reports/{reportKey}:
     get:
       summary: Run a report
@@ -394,8 +407,19 @@ components:
     ReportDefinition:
       type: object
       additionalProperties: false
-      required: [key, title, description, category, dateFilterKind, groupByOptions, comparable, requiresAccount, comparesPeriods]
+      required: [key, title, description, category, dateFilterKind, groupByOptions, comparable, requiresAccount, comparesPeriods,
+                 sources, figures]
       properties:
+        sources:
+          type: array
+          description: >-
+            What the report reads (2026-11-11): REPORTING_COPY (the reports' own copy, updated as things happen),
+            LEDGER, BILLING, DISTRIBUTION, REINSURANCE.
+          items: { type: string, enum: [REPORTING_COPY, LEDGER, BILLING, DISTRIBUTION, REINSURANCE] }
+        figures:
+          type: array
+          description: "The report's figures explained, read-only from the code (decision K1); empty until written"
+          items: { $ref: '#/components/schemas/FigureDefinition' }
         key: { type: string }
         title: { type: string }
         description: { type: string }
@@ -413,6 +437,12 @@ components:
         key: { type: string }
         label: { type: string }
         type: { $ref: '#/components/schemas/ColumnType' }
+        link:
+          description: >-
+            What a cell opens (drill-down, 2026-11-11). The id is the row's hidden "_<key>Id" value, or -- for POLICY
+            only -- the cell's own text. Null for a plain column.
+          type: [string, "null"]
+          enum: [POLICY, CLAIM, CLIENT, AGENT, null]
     ReportSection:
       type: object
       additionalProperties: false
@@ -446,6 +476,31 @@ components:
           type: array
           description: "What a reader must know before trusting the figures, such as placeholder solvency factors (2026-11-09)"
           items: { type: string }
+        dataUpTo:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            The newest change the reports' own copy had taken in when the report ran (2026-11-11); null when the report
+            reads live and not from the copy.
+    FigureDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, name, meaning, counts, leavesOut, comesFrom, dateBasis]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        meaning: { type: string }
+        counts: { type: string }
+        leavesOut: { type: string }
+        comesFrom: { type: string }
+        dateBasis: { type: string }
+    FigureGroup:
+      type: object
+      additionalProperties: false
+      required: [title, figures]
+      properties:
+        title: { type: string }
+        figures: { type: array, items: { $ref: '#/components/schemas/FigureDefinition' } }
     ReportFigure:
       type: object
       additionalProperties: false

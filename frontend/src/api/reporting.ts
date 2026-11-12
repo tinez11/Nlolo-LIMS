@@ -15,6 +15,14 @@ export type ReportFigure = components['schemas']['ReportFigure'];
 export type ReportChart = components['schemas']['ReportChart'];
 export type ReportParts = components['schemas']['ReportParts'];
 export type ReportParams = Record<string, string>;
+/** One figure explained, read-only from the code (2026-11-11, decision K1). */
+export type FigureDefinition = components['schemas']['FigureDefinition'];
+export type FigureGroup = components['schemas']['FigureGroup'];
+
+/** Figures explained that belong to no single report -- the Collections figures. */
+export function getFigureDefinitions(): Promise<FigureGroup[]> {
+  return get<FigureGroup[]>('/reports/figure-definitions');
+}
 
 /**
  * What one line of a report is made of -- the computation tree (2026-11-09). The same filters as the report; `page`
