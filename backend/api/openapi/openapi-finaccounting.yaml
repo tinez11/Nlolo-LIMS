@@ -272,7 +272,8 @@ paths:
       description: >
         Sets status to INACTIVE. The ledger then refuses any new leg naming this account, while
         every posting already booked to it stays resolvable. This -- not DELETE -- is how an
-        account that has been used is taken out of service.
+        account that has been used is taken out of service. Refused (409 ACCOUNT_IN_USE) while it holds money
+        or the posting rules book to it (2026-11-12, finding 57).
       security:
         - staffAuth: []
       parameters:
@@ -286,6 +287,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
   /finance/periods:
     get:
       summary: The accounting periods that have left OPEN at least once, newest first
@@ -1580,7 +1582,7 @@ components:
     MonthEndView:
       type: object
       additionalProperties: false
-      required: [period, status, current, steps, blockers]
+      required: [period, status, current, steps, blockers, warnings]
       description: >-
         A month's close as the finance guide's eight steps, each read from the records it leaves. `current` is the first
         step not done (9 once the month is locked); `blockers` are why it cannot lock now, in the lock's own words.
@@ -1593,6 +1595,10 @@ components:
           items: { $ref: '#/components/schemas/MonthEndStep' }
         blockers:
           type: array
+          items: { type: string }
+        warnings:
+          type: array
+          description: "To read before locking, never stopping it (2026-11-12, D14): a month with GMM/VFA policies and no posted engine run"
           items: { type: string }
     MonthEndStep:
       type: object

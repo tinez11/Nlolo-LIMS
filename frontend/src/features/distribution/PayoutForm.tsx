@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
+import { TaxRatesNotice } from '@/features/finance/TaxRatesNotice';
 import { selectRequestingPayout, useDistributionStore } from '@/store/distributionStore';
 import {
   blankRequestPayoutForm,
@@ -103,6 +104,8 @@ export function PayoutForm({
       className="mt-2 space-y-2 border-t border-border pt-2"
       onSubmit={(e) => void handleSubmit(setPending)(e)}
     >
+      {/* Finding 101 (2026-11-12): no withholding rate set means commission is paid in full -- said here, not silently. */}
+      <TaxRatesNotice only="COMMISSION_WITHHOLDING_RATE" />
       <div className="flex items-start gap-2">
         <div className="flex-1">
           <Input

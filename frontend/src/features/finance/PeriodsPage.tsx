@@ -15,7 +15,12 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { approveReopenGates } from '@/gates/ledgerControlGates';
-import { formatInstant } from '@/lib/dates';
+import { formatInstant, todayIso } from '@/lib/dates';
+
+/** "2026-10" has ended once today is in a later month -- the business's date, as the server judges it. */
+function monthHasEnded(period: string): boolean {
+  return period < todayIso().slice(0, 7);
+}
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import { reopenSchema, type ReopenValues } from './registerForms';
@@ -142,7 +147,11 @@ function PeriodRow({ view, viewerSubject }: { view: AccountingPeriodView; viewer
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
 
-      {view.status === 'OPEN' &&
+      {/* Only a month that has ended starts closing (2026-11-12, finding 90): the server refuses this month and later. */}
+      {view.status === 'OPEN' && !monthHasEnded(view.period) && (
+        <p className="text-xs text-muted-foreground">Can be closed from the 1st of next month.</p>
+      )}
+      {view.status === 'OPEN' && monthHasEnded(view.period) &&
         (confirming === 'closing' ? (
           <ConfirmAct
             heading={`Start closing ${view.period}?`}

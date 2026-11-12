@@ -174,7 +174,28 @@ public class MonthEnd {
             p.lockedBy(), p.lockedAt()));
 
         int current = steps.stream().filter(s -> !DONE.equals(s.state())).mapToInt(Step::number).findFirst().orElse(9);
-        return new MonthEndView(period, p.status(), current, steps, blockers);
+        return new MonthEndView(period, p.status(), current, steps, blockers, warnings(tenantId, period, p.status()));
+    }
+
+    /**
+     * What does not stop the lock but should be read before it (2026-11-12, the user's D14: the lock is not made to
+     * need an engine run -- "i dont know" who runs it, or when -- so it is said instead). A month the company holds
+     * GMM or VFA policies in, with no posted engine run, has had their liability and revenue left unmeasured: premiums
+     * sit in the liability for remaining coverage and the month shows a loss that is not real.
+     */
+    private List<String> warnings(UUID tenantId, String period, PeriodStatus status) {
+        if (status == PeriodStatus.LOCKED) return List.of();
+        Integer posted = jdbc.queryForObject("SELECT count(*) FROM finaccounting.engine_run WHERE tenant_id = ?"
+            + " AND period = ? AND status = 'POSTED'", Integer.class, tenantId, period);
+        if (posted != null && posted > 0) return List.of();
+        Integer measured = jdbc.queryForObject("SELECT count(DISTINCT policy_number) FROM finaccounting.policy_classification"
+            + " WHERE tenant_id = ? AND measurement_model IN ('GMM','VFA') AND effective_from <= ?::date",
+            Integer.class, tenantId, java.time.YearMonth.parse(period).atEndOfMonth().toString());
+        if (measured == null || measured == 0) return List.of();
+        return List.of("No IFRS 17 engine run is posted for " + period + ", and " + measured
+            + (measured == 1 ? " policy is" : " policies are") + " measured under GMM or VFA. Their premiums stay in the"
+            + " liability and are not earned, so the month's result understates revenue. Post the engine's run first,"
+            + " or lock knowing this.");
     }
 
     private static String count(long n, String one, String many) {

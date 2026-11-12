@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { StatusBadge } from '@/components/StatusBadge';
+import { PlaceholderReturnNotice } from './PlaceholderReturnNotice';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
@@ -49,7 +50,12 @@ export function RegulatoryReturnDrawer({
             <ErrorPanel error={detail.error} {...(returnId ? { onRetry: () => void loadDetail(returnId) } : {})} />
           )}
 
-          {view && <ReturnLinesList lines={view.lines} />}
+          {view && (
+            <div className="space-y-3">
+              <PlaceholderReturnNotice />
+              <ReturnLinesList lines={view.lines} />
+            </div>
+          )}
         </SheetBody>
 
         {returnId && (

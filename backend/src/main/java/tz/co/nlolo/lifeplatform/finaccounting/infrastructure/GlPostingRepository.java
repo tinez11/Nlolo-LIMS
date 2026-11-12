@@ -27,6 +27,11 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
      *  (finaccounting/V3) exactly -- not scoped to a period, unlike the finder above. */
     boolean existsByTenantIdAndAccountCode(UUID tenantId, String accountCode);
 
+    /** What the account holds, debits less credits (2026-11-12, finding 57: an account holding money was retired). */
+    @Query(value = "SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amount ELSE -amount END), 0)"
+        + " FROM finaccounting.gl_posting WHERE tenant_id = :tenantId AND account_code = :accountCode", nativeQuery = true)
+    java.math.BigDecimal balanceOf(@Param("tenantId") UUID tenantId, @Param("accountCode") String accountCode);
+
     /** One page of the postings to these accounts across a span of periods, oldest first (the reports' tree). */
     @Query("""
         select p from GlPosting p

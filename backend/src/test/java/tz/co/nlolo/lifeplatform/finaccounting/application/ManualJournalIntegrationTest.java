@@ -326,7 +326,7 @@ class ManualJournalIntegrationTest {
 
         ledger.startClosing(lastMonth, "finance-one");
         ledger.lockPeriod(lastMonth, "finance-one");
-        ledger.startClosing(THIS_MONTH, "finance-one");
+        ClosingThisMonth.start(jdbc, tenant, THIS_MONTH, "finance-one"); // the API closes only an ended month (finding 90)
         ledger.lockPeriod(THIS_MONTH, "finance-one");
         autoReversals.drain(firstOfThis);
 
@@ -394,7 +394,7 @@ class ManualJournalIntegrationTest {
         ManualJournalView draft = journals.create(payroll(null), "finance-one");
         journals.attachDocument(draft.id(), "doc-1", "finance-one");
         journals.submit(draft.id(), "finance-one");
-        ledger.startClosing(THIS_MONTH, "finance-one");
+        ClosingThisMonth.start(jdbc, tenant, THIS_MONTH, "finance-one"); // the API closes only an ended month (finding 90)
         ledger.lockPeriod(THIS_MONTH, "finance-one");
 
         assertThatThrownBy(() -> journals.approve(draft.id(), "finance-approver"))

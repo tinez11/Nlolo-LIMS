@@ -19,6 +19,7 @@ const closing: MonthEndView = {
   status: 'CLOSING',
   current: 4,
   blockers: ['Expense allocation awaiting a decision; approve or reject it'],
+  warnings: ['No IFRS 17 engine run is posted for 2026-09, and 12 policies are measured under GMM or VFA.'],
   steps: [
     step(1, 'queue', 'Clear unposted events', 'DONE', 'No event is waiting to be posted.'),
     step(2, 'journals', 'Enter and approve manual journals', 'DONE', '2 journals approved.'),
@@ -63,6 +64,8 @@ describe('MonthEndPage', () => {
     expect(within(screen.getByRole('list', { name: 'What stops the lock' })).getByText(
       'Expense allocation awaiting a decision; approve or reject it')).toBeInTheDocument();
     expect(finApi.getMonthEnd).toHaveBeenCalledWith('2026-09');
+    // D14 (2026-11-12): a month with GMM/VFA policies and no engine run is warned about, not blocked.
+    expect(screen.getByRole('note', { name: 'Before you lock' })).toHaveTextContent('No IFRS 17 engine run is posted');
   });
 
   it('steps to the month before', async () => {

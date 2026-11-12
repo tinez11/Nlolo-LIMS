@@ -4,6 +4,7 @@ import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { StatusBadge } from '@/components/StatusBadge';
+import { PlaceholderReturnNotice } from './PlaceholderReturnNotice';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -66,6 +67,7 @@ export function RegulatoryReturnDetailPage() {
       {view && (
         <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
+            <PlaceholderReturnNotice />
             <Panel title="Lines">
               <div className="p-3">
                 <ReturnLinesList lines={view.lines} />

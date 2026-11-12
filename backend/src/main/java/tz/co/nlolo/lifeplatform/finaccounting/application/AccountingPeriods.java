@@ -60,6 +60,14 @@ class AccountingPeriods {
 
     @Transactional
     AccountingPeriodView startClosing(String period, String by) {
+        // Only a month that has ended (2026-11-12, finance finding 90): closing November on 10 November refused every
+        // automatic posting for the rest of the month into Unposted events, and a retry could not help -- it posts in
+        // today's month, still closing. The business's own date, not UTC.
+        java.time.YearMonth current = java.time.YearMonth.now(LedgerEventListener.CIVIL);
+        if (period != null && PERIOD.matcher(period).matches() && !java.time.YearMonth.parse(period).isBefore(current)) {
+            throw new PeriodStateException(period + " has not ended yet; a month can be closed from its next month ("
+                + java.time.YearMonth.parse(period).plusMonths(1) + ")");
+        }
         AccountingPeriod p = load(period);
         p.startClosing(by, Instant.now());
         return toView(periods.save(p));
