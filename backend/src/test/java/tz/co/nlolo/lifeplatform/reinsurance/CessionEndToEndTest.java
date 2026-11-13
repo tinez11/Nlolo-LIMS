@@ -202,7 +202,7 @@ class CessionEndToEndTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql", "db-migrations/reinsurance/V14__risk_charge.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -555,6 +555,63 @@ class CessionEndToEndTest {
         assertThat(projection.getPortfolioCode()).isEqualTo("DEP");
         assertThat(projection.isInvestmentContract()).isTrue();
     }
+
+    /**
+     * Finding 166 (2026-11-12): a treaty takes the risk, never the savings part. An annuity and an endowment are not
+     * ceded; a unit-linked policy's risk is ceded with no premium, its premium being each month's cost of insurance.
+     */
+    @Test
+    void onlyTheRiskIsCededAnnuitiesAndEndowmentsNotAtAllUnitLinkedOnItsCostOfInsurance() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-166");
+        createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("50.00"));
+        eventRecorder.clear();
+
+        String annuity = activate(tenantId, fixture, "ANNUITY", "IANN", "52610000", "SINGLE");
+        String endowment = activate(tenantId, fixture, "ENDOWMENT", "END", "5000", "MONTHLY");
+        String ulip = activate(tenantId, fixture, "UNIT_LINKED", "ULIP", "100000", "MONTHLY");
+
+        TenantContext.set(tenantId);
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, annuity)).isEmpty();
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, endowment)).isEmpty();
+        var ulipCessions = cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, ulip);
+        assertThat(ulipCessions).hasSize(1);
+        assertThat(ulipCessions.get(0).getCededAmount()).isEqualByComparingTo("1000000.00");
+        assertThat(ulipCessions.get(0).getCededPremiumAmount()).as("no premium share of what buys units").isNull();
+
+        // The month's cost of insurance is recorded once, whatever the redelivery.
+        Map<String, Object> charges = Map.of("policyNumber", ulip, "chargeDate", LocalDate.now().toString(),
+            "sourceRef", "CHARGE:" + ulip + ":" + LocalDate.now() + ":", "policyFee", "2000.00", "costOfInsurance", "1840.00",
+            "writtenOff", "0", "currencyCode", CURRENCY);
+        for (int i = 0; i < 2; i++) {
+            TenantContext.set(tenantId);
+            transactionTemplate().executeWithoutResult(status ->
+                eventPublisher.publishEvent(DomainEventEnvelope.of("unitlinked.ChargesTaken", tenantId, charges)));
+        }
+        TenantContext.set(tenantId);
+        assertThat(jdbcTemplate.queryForObject("SELECT SUM(amount) FROM reinsurance.risk_charge WHERE tenant_id = ?"
+            + " AND policy_number = ?", BigDecimal.class, tenantId, ulip)).isEqualByComparingTo("1840.00");
+    }
+
+    private String activate(UUID tenantId, Fixture fixture, String category, String portfolio, String premium,
+                            String frequency) {
+        String policyNumber = "POL-" + category.charAt(0) + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        Map<String, Object> payload = Map.of(
+            "policyNumber", policyNumber,
+            "productId", fixture.productId(),
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", category.equals("ANNUITY") ? premium : "2000000", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", premium, "currencyCode", CURRENCY),
+            "premiumFrequency", frequency,
+            "productCategory", category,
+            "portfolioCode", portfolio);
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status ->
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload)));
+        return policyNumber;
+    }
+
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     // ---- What has been ceded TO a treaty ------------------------------------------------------
 

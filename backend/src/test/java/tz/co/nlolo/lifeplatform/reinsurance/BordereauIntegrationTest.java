@@ -88,7 +88,7 @@ class BordereauIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql", "db-migrations/reinsurance/V14__risk_charge.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -222,7 +222,7 @@ class BordereauIntegrationTest {
     void aQuarterlyPremiumIsChargedMonthlyAndStopsAfterPaidUp() {
         UUID tenantId = UUID.randomUUID();
         TreatyView treaty = quotaShare(tenantId, "50.00", "0");
-        String policy = activate(tenantId, "ENDOWMENT", "QUARTERLY", "300000.00", LocalDate.of(2026, 1, 20));
+        String policy = activate(tenantId, "TERM_LIFE", "QUARTERLY", "300000.00", LocalDate.of(2026, 1, 20));
         publish(tenantId, "policy.PolicyMadePaidUp", Map.of("policyNumber", policy, "madePaidUpAt", "2026-02-20T10:00:00Z"));
 
         bordereauJob.drain(LocalDate.of(2026, 4, 1));
@@ -313,7 +313,7 @@ class BordereauIntegrationTest {
     void aSinglePremiumIsChargedOnceInTheMonthCoverBegan() {
         UUID tenantId = UUID.randomUUID();
         TreatyView treaty = quotaShare(tenantId, "40.00", "10.00");
-        activate(tenantId, "WHOLE_LIFE", "SINGLE", "1000000.00", LocalDate.of(2026, 2, 10));
+        activate(tenantId, "TERM_LIFE", "SINGLE", "1000000.00", LocalDate.of(2026, 2, 10));
 
         bordereauJob.drain(LocalDate.of(2026, 4, 1));
 

@@ -77,7 +77,8 @@ export function BordereauPage() {
       secondary: true,
       render: (l) => (l.premiumShare ? `${(Number(l.premiumShare) * 100).toFixed(2)}%` : '—'),
     },
-    { key: 'policyPremium', header: 'Policy premium', align: 'right', secondary: true, render: (l) => money(l.policyPremium) },
+    // Finding 166: what the share is taken of -- a protection policy's premium, a unit-linked policy's cost of insurance.
+    { key: 'policyPremium', header: 'Risk premium', align: 'right', secondary: true, render: (l) => money(l.policyPremium) },
     { key: 'premium', header: 'Ceded premium', align: 'right', render: (l) => signed(l, money(l.premium)) },
     { key: 'commission', header: 'Commission', align: 'right', render: (l) => signed(l, money(l.commission)) },
     { key: 'recovery', header: 'Recovery', align: 'right', render: (l) => money(l.recovery) },

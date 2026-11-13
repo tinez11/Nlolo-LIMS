@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.reinsurance.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.Cession;
+import tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.CessionCalculator;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.PolicyProjection;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceTreaty;
@@ -64,6 +65,7 @@ public class PolicyEventListener {
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
     private final CoverPeriods coverPeriods;
+    private final RiskCharges riskCharges;
 
     private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
 
@@ -72,7 +74,9 @@ public class PolicyEventListener {
                                 ApplicationEventPublisher eventPublisher,
                                 MeterRegistry meterRegistry,
                                 PlatformTransactionManager transactionManager,
-                                CoverPeriods coverPeriods) {
+                                CoverPeriods coverPeriods,
+                                RiskCharges riskCharges) {
+        this.riskCharges = riskCharges;
         this.coverPeriods = coverPeriods;
         this.policyProjectionRepository = policyProjectionRepository;
         this.reinsuranceApiImpl = reinsuranceApiImpl;
@@ -101,6 +105,8 @@ public class PolicyEventListener {
             case "policy.PolicyMadePaidUp" -> withTenant(envelope, p -> endPremiums(p, "madePaidUpAt"));
             case "policy.PremiumsEnded" -> withTenant(envelope, p -> endPremiums(p, "after"));
             case "policy.PremiumRestated" -> withTenant(envelope, this::restatePremium);
+            // Finding 166: a unit-linked policy's risk premium -- the cost of insurance taken from its units.
+            case "unitlinked.ChargesTaken" -> withTenant(envelope, riskCharges::record);
             default -> { /* not reinsurance-relevant */ }
         }
     }
@@ -272,6 +278,15 @@ public class PolicyEventListener {
             return;
         }
 
+        // Finding 166 (2026-11-12): only the risk is ceded -- never an annuity or a savings policy, and a unit-linked
+        // policy's premium is its monthly cost of insurance, charged on each bordereau, not the premium that buys units.
+        CessionBasis basis = CessionBasis.of(productCategory);
+        if (basis == CessionBasis.NOT_CEDED) {
+            log.info("Policy {} is {} -- savings or an annuity, with no risk part the platform can measure, so it is "
+                + "NOT ceded", policyNumber, productCategory);
+            return;
+        }
+
         Optional<ReinsuranceTreaty> maybeTreaty = reinsuranceApiImpl.selectApplicableTreaty(tenantId, issueDate);
         if (maybeTreaty.isEmpty()) {
             log.info("Policy {} issued with no ACTIVE reinsurance treaty covering {} -- nothing ceded",
@@ -280,8 +295,11 @@ public class PolicyEventListener {
         }
         ReinsuranceTreaty treaty = maybeTreaty.get();
 
+        // A unit-linked cession records the risk and its share, and no premium: what the treaty is paid is its share of
+        // each month's cost of insurance (RiskCharges), not of the premium.
         Optional<CessionCalculator.CededAmounts> maybeAmounts = CessionCalculator.calculate(
-            treaty, sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency);
+            treaty, sumAssuredAmount, sumAssuredCurrency,
+            basis == CessionBasis.COST_OF_INSURANCE ? BigDecimal.ZERO : premiumAmount, premiumCurrency);
         if (maybeAmounts.isEmpty()) {
             log.info("Treaty {} ({}) cedes nothing for policy {} -- an XOL treaty, a sum assured within "
                 + "retention, or a currency mismatch", treaty.getTreatyId(), treaty.getTreatyType(), policyNumber);
