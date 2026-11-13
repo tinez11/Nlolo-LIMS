@@ -33,6 +33,11 @@ public class Fund {
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "closed_by") private String closedBy;
     @Column(name = "closed_at") private Instant closedAt;
+    /* 2026-11-12, finance finding 126: a second person decides a new fund. */
+    @Column(name = "decided_by") private String decidedBy;
+    @Column(name = "decided_at") private Instant decidedAt;
+    @Column(name = "decision_reason") private String decisionReason;
+    @Column(name = "acted_alone", nullable = false) private boolean actedAlone;
     @Version @Column(name = "version", nullable = false) private long version;
 
     protected Fund() {}
@@ -47,10 +52,48 @@ public class Fund {
         this.assetClass = assetClass;
         this.annualManagementChargePercent = annualManagementChargePercent;
         this.cutOffTime = cutOffTime;
-        this.status = "OPEN";
+        // Proposed: no money, no price, until a second person approves it (finding 126).
+        this.status = "PROPOSED";
         this.createdBy = createdBy;
         this.createdAt = now;
     }
+
+    /** A second person opens it; its proposer only when they may act alone, which the row records. */
+    public void approve(String by, boolean mayActAlone, Instant now) {
+        requireProposed();
+        boolean alone = by.equals(createdBy);
+        if (alone && !mayActAlone) {
+            throw new UnitLinkedStateException("You proposed fund " + code + "; a second person must approve it");
+        }
+        this.status = "OPEN";
+        this.decidedBy = by;
+        this.decidedAt = now;
+        this.actedAlone = alone;
+    }
+
+    /** Rejected with its reason, or withdrawn by its proposer: it never takes money. */
+    public void reject(String by, String reason, Instant now) {
+        requireProposed();
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Say why the fund is rejected");
+        }
+        this.status = "REJECTED";
+        this.decidedBy = by;
+        this.decidedAt = now;
+        this.decisionReason = reason.trim();
+    }
+
+    private void requireProposed() {
+        if (!isProposed()) {
+            throw new UnitLinkedStateException("Fund " + code + " is " + status.toLowerCase() + ", not waiting for approval");
+        }
+    }
+
+    public boolean isProposed() { return "PROPOSED".equals(status); }
+    public boolean isActedAlone() { return actedAlone; }
+    public String getDecidedBy() { return decidedBy; }
+    public Instant getDecidedAt() { return decidedAt; }
+    public String getDecisionReason() { return decisionReason; }
 
     public void close(String by, Instant now) {
         if (!isOpen()) {

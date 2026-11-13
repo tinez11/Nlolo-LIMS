@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { askPhoneForPremium, confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
+import { approveFundsAsAdmin } from './funds';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase, assess } from './underwriting';
@@ -62,7 +63,15 @@ test.describe('unit-linked', () => {
         await add.getByRole('button', { name: 'Add fund' }).click();
         const card = finance.getByRole('listitem', { name: `Fund ${fund}` });
         await expect(card).toBeVisible({ timeout: 15_000 });
-
+        // Its proposer cannot open it (finding 126).
+        await expect(card.getByRole('button', { name: 'Approve fund' })).toBeDisabled();
+      }
+    });
+    await approveFundsAsAdmin(browser, [equity, cash]);
+    await asFinance(browser, async (finance) => {
+      await finance.goto('/staff/funds');
+      for (const fund of [equity, cash]) {
+        const card = finance.getByRole('listitem', { name: `Fund ${fund}` });
         await card.getByRole('button', { name: 'Prices' }).click();
         const propose = card.getByRole('form', { name: `Propose a price for ${fund}` });
         await propose.getByLabel('Valuation date').fill(dmy(yesterday));

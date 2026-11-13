@@ -17,6 +17,7 @@ import { formatMoney } from '@/lib/money';
 import { formatPeriod } from './formatPeriod';
 import { treatyCedes, treatyTypeLabel } from './treatyTerms';
 import { EndTreaty } from './EndTreaty';
+import { TreatyDecision } from './TreatyDecision';
 import { can } from '@/auth/access';
 import { idle, isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -129,6 +130,12 @@ export function TreatyDetailPage() {
               {/* 2026-11-08: a treaty can be ended early, so the next one can start -- only one is in force at a time. */}
               {can('reinsurance.manage') && treaty.status === 'ACTIVE' && treaty.standing !== 'ENDED' && (
                 <EndTreaty treaty={treaty} onEnded={() => void loadDetail(treatyId)} />
+              )}
+              {treaty.status === 'PROPOSED' && (
+                <TreatyDecision treaty={treaty} onDecided={() => void loadDetail(treatyId)} />
+              )}
+              {treaty.status === 'REJECTED' && treaty.decisionReason && (
+                <p className="px-4 pb-3 text-xs text-muted-foreground">Rejected: {treaty.decisionReason}</p>
               )}
             </Panel>
           }

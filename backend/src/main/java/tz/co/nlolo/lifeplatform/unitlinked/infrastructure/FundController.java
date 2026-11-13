@@ -66,6 +66,22 @@ public class FundController {
         return api.getFund(code);
     }
 
+    public record RejectFundRequest(String reason) {}
+
+    /** 2026-11-12, finance finding 126: a new fund opens only once a second person approves it. */
+    @PostMapping("/funds/{code}/approval")
+    @PreAuthorize("@access.can('funds.approve')")
+    public FundView approve(@PathVariable String code, @AuthenticationPrincipal Jwt jwt) {
+        return api.approveFund(code, jwt.getSubject());
+    }
+
+    /** Rejected with its reason, or withdrawn by its proposer. */
+    @PostMapping("/funds/{code}/rejection")
+    @PreAuthorize("@access.can('funds.approve')")
+    public FundView reject(@PathVariable String code, @RequestBody RejectFundRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return api.rejectFund(code, r.reason(), jwt.getSubject());
+    }
+
     @PostMapping("/funds/{code}/closure")
     @PreAuthorize("@access.can('funds.manage')")
     public FundView close(@PathVariable String code, @AuthenticationPrincipal Jwt jwt) {

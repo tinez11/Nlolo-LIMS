@@ -10,7 +10,7 @@ import { humanizeStatus } from '@/lib/status';
 export type TreatyStanding = TreatyView['standing'];
 
 /** Chip order: what staff look for first. */
-export const TREATY_STANDINGS: readonly TreatyStanding[] = ['IN_FORCE', 'NOT_STARTED', 'ENDED'];
+export const TREATY_STANDINGS: readonly TreatyStanding[] = ['IN_FORCE', 'AWAITING_APPROVAL', 'NOT_STARTED', 'ENDED', 'REJECTED'];
 
 /** `QUOTA_SHARE` → `Quota share`, `XOL` stays `XOL`. */
 export function treatyTypeLabel(type: TreatyView['treatyType']): string {

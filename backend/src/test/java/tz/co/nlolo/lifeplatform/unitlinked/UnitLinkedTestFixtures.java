@@ -132,8 +132,11 @@ public class UnitLinkedTestFixtures {
     }
 
     public FundView fund(UUID tenant, String code, LocalTime cutOff) {
-        return asTenant(tenant, () -> api.createFund(new CreateFund(code, code + " fund", "TZS", "EQUITY",
-            new BigDecimal("1.5000"), cutOff), ADMIN));
+        // Proposed by an admin, opened by finance: two people, as every new fund is (finding 126).
+        return asTenant(tenant, () -> {
+            api.createFund(new CreateFund(code, code + " fund", "TZS", "EQUITY", new BigDecimal("1.5000"), cutOff), ADMIN);
+            return api.approveFund(code, FINANCE);
+        });
     }
 
     public FundView fund(UUID tenant, String code) {

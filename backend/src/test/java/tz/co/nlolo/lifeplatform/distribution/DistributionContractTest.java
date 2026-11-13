@@ -207,7 +207,7 @@ class DistributionContractTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
@@ -223,7 +223,7 @@ class DistributionContractTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -280,6 +280,13 @@ class DistributionContractTest {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
                                  new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
             .jwt(builder -> builder.subject("finance-officer").claim("tenant_id", tenantId.toString()));
+    }
+
+    /** A second finance officer: the second person on a plan approval. */
+    private static RequestPostProcessor secondFinanceStaffOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                                 new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+            .jwt(builder -> builder.subject("finance-officer-2").claim("tenant_id", tenantId.toString()));
     }
 
     /** Staff, but the WRONG fine-grained role -- proves the gate is on FINANCE_OFFICER/ADMIN and
@@ -340,9 +347,9 @@ class DistributionContractTest {
 
     private void createPlan(UUID tenantId, UUID productId) {
         TenantContext.set(tenantId);
-        distributionApi.createCommissionPlan(productId, List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId, List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.10"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
         TenantContext.clear();
     }
 
@@ -923,16 +930,27 @@ class DistributionContractTest {
         UUID productId = createActiveProduct(tenantId, "DIST-CT-RATE");
         Agent agent = onboardAgent(tenantId, "RATE-200", null);
 
-        mockMvc.perform(put("/agents/{agentId}/commission-rate", agent.agentId())
+        String body = mockMvc.perform(put("/agents/{agentId}/commission-rate", agent.agentId())
                 .with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productId\":\"" + productId + "\",\"ratePercent\":\"12.5\"}"))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PROPOSED"))
             .andExpect(jsonPath("$.rules[0].tierType").value("FIRST_YEAR"))
-            .andExpect(jsonPath("$.rules[0].rate").value("0.1250"));
+            .andExpect(jsonPath("$.rules[0].rate").value("0.1250"))
+            .andReturn().getResponse().getContentAsString();
 
-        // And it is the plan that now applies to this agent.
+        // Not this agent's until a second person approves it (finding 190).
+        mockMvc.perform(get("/agents/{agentId}/commission-plan", agent.agentId())
+                .queryParam("productId", productId.toString())
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound());
+        String planId = com.jayway.jsonpath.JsonPath.read(body, "$.planId");
+        mockMvc.perform(post("/commission-plans/{planId}/approval", planId).with(secondFinanceStaffOf(tenantId)))
+            .andExpect(status().isOk());
+
+        // And then it is the plan that applies to this agent.
         mockMvc.perform(get("/agents/{agentId}/commission-plan", agent.agentId())
                 .queryParam("productId", productId.toString())
                 .with(financeStaffOf(tenantId)))
@@ -993,7 +1011,63 @@ class DistributionContractTest {
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "CommissionPlanView"))
-            .andExpect(jsonPath("$.status").value("ACTIVE"));
+            .andExpect(jsonPath("$.status").value("PROPOSED"))
+            .andExpect(jsonPath("$.proposedBy").value("finance-officer"));
+    }
+
+    /** Finding 190 (2026-11-12): a plan earns nothing until a second person approves it. */
+    @Test
+    void aProposedPlanIsApprovedByASecondPersonNotItsProposer() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-APPROVE");
+        String planId = proposePlan(tenantId, productId);
+
+        mockMvc.perform(get("/commission-plans/proposed").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].planId").value(planId));
+
+        mockMvc.perform(post("/commission-plans/{planId}/approval", planId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict()) // its proposer, without commission.approve-own
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(post("/commission-plans/{planId}/approval", planId).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/commission-plans/{planId}/approval", planId).with(secondFinanceStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.decidedBy").value("finance-officer-2"));
+
+        mockMvc.perform(post("/commission-plans/{planId}/approval", planId).with(secondFinanceStaffOf(tenantId)))
+            .andExpect(status().isUnprocessableEntity()); // decided already
+    }
+
+    @Test
+    void aProposedPlanIsRejectedWithAReasonAndItsProposerMayWithdrawIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-REJECT");
+        String planId = proposePlan(tenantId, productId);
+
+        mockMvc.perform(post("/commission-plans/{planId}/rejection", planId).with(secondFinanceStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/commission-plans/{planId}/rejection", planId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Rate typed wrong\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REJECTED"))
+            .andExpect(jsonPath("$.decisionReason").value("Rate typed wrong"));
+    }
+
+    private String proposePlan(UUID tenantId, UUID productId) throws Exception {
+        String body = mockMvc.perform(post("/commission-plans").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productId":"%s","rules":[{"tierType":"FIRST_YEAR","rate":"0.10"}]}
+                    """.formatted(productId)))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return com.jayway.jsonpath.JsonPath.read(body, "$.planId");
     }
 
     @Test

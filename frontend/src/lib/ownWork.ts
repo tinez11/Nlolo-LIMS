@@ -18,6 +18,7 @@ export const OWN_WORK = {
   reinsurance: 'reinsurance.approve-own',
   funds: 'funds.approve-own',
   declarations: 'products.declare-approve-own',
+  commission: 'commission.approve-own',
 } as const;
 
 export type OwnWorkArea = keyof typeof OWN_WORK;

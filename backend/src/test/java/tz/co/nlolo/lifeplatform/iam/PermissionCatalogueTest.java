@@ -44,7 +44,18 @@ class PermissionCatalogueTest {
     void theBuiltInRolesInBadgeOrder() {
         assertThat(BuiltInRoles.ALL).extracting(BuiltInRoles.Definition::code).containsExactly(
             "ADMIN", "MANAGEMENT", "SENIOR_UNDERWRITER", "UNDERWRITER", "CLAIMS_MANAGER", "CLAIMS_ASSESSOR", "FINANCE_APPROVER",
-            "FINANCE_OFFICER", "CUSTOMER_SERVICE_REP");
+            "FINANCE_OFFICER", "ACTUARY", "CUSTOMER_SERVICE_REP");
+    }
+
+    /** Findings 99 and 66 (2026-11-12): finance signs the baseline off, an actuary co-signs, an administrator neither. */
+    @Test
+    void financeAndTheActuarySignTheBaselineOffAndAnAdministratorDoesNot() {
+        assertThat(BuiltInRoles.byCode("FINANCE_OFFICER").permissions()).contains(Permission.LEDGER_BASELINE_SIGN_OFF);
+        assertThat(BuiltInRoles.byCode("FINANCE_APPROVER").permissions()).contains(Permission.LEDGER_BASELINE_SIGN_OFF);
+        assertThat(BuiltInRoles.byCode("ACTUARY").permissions())
+            .contains(Permission.IFRS17_ACTUARY_SIGN_OFF).doesNotContain(Permission.LEDGER_BASELINE_SIGN_OFF);
+        assertThat(BuiltInRoles.byCode("ADMIN").permissions())
+            .doesNotContain(Permission.LEDGER_BASELINE_SIGN_OFF, Permission.IFRS17_ACTUARY_SIGN_OFF);
     }
 
     @Test

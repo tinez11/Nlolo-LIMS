@@ -198,7 +198,7 @@ class ReinsuranceContractTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -303,9 +303,9 @@ class ReinsuranceContractTest {
 
     private UUID createTreaty(UUID tenantId, TreatyType type, BigDecimal retention, BigDecimal cessionPercent) {
         TenantContext.set(tenantId);
-        UUID treatyId = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
+        UUID treatyId = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Africa Re", type, retention, CURRENCY, cessionPercent, LocalDate.now().minusMonths(1), null),
-            "finance-officer").treatyId();
+            "finance-officer").treatyId(), "treaty-approver").treatyId();
         TenantContext.clear();
         return treatyId;
     }
@@ -366,15 +366,51 @@ class ReinsuranceContractTest {
     void createTreatyReturns201ForAValidQuotaShare() throws Exception {
         UUID tenantId = UUID.randomUUID();
 
-        mockMvc.perform(post("/treaties").with(financeStaffOf(tenantId))
+        String body = mockMvc.perform(post("/treaties").with(financeStaffOf(tenantId))
                 .header("Idempotency-Key", "ct-treaty-" + UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(quotaShareTreatyBody("Africa Re", "30.00", LocalDate.now().minusMonths(1))))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "TreatyView"))
+            .andExpect(jsonPath("$.status").value("PROPOSED"))
+            .andExpect(jsonPath("$.standing").value("AWAITING_APPROVAL"))
+            .andExpect(jsonPath("$.createdBy").value("finance-officer"))
+            .andExpect(jsonPath("$.cessionPercent").value("30.00"))
+            .andReturn().getResponse().getContentAsString();
+        String treatyId = com.jayway.jsonpath.JsonPath.read(body, "$.treatyId");
+
+        // Finding 170 (2026-11-12): it cedes nothing until a second person approves it.
+        mockMvc.perform(post("/treaties/{treatyId}/approval", treatyId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden()); // reinsurance.approve is the finance approver's
+        mockMvc.perform(post("/treaties/{treatyId}/approval", treatyId).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.cessionPercent").value("30.00"));
+            .andExpect(jsonPath("$.standing").value("IN_FORCE"))
+            .andExpect(jsonPath("$.decidedBy").value("finance-approver"));
+    }
+
+    @Test
+    void aTreatyItsProposerMayNotApproveIsRejectedWithAReason() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String body = mockMvc.perform(post("/treaties").with(financeApproverOf(tenantId))
+                .header("Idempotency-Key", "ct-treaty-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(quotaShareTreatyBody("Swiss Re", "20.00", LocalDate.now().minusMonths(1))))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String treatyId = com.jayway.jsonpath.JsonPath.read(body, "$.treatyId");
+
+        mockMvc.perform(post("/treaties/{treatyId}/approval", treatyId).with(financeApproverOf(tenantId)))
+            .andExpect(status().isConflict()) // its proposer, without reinsurance.approve-own
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(post("/treaties/{treatyId}/rejection", treatyId).with(financeApproverOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Wrong reinsurer\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REJECTED"))
+            .andExpect(jsonPath("$.standing").value("REJECTED"))
+            .andExpect(jsonPath("$.decisionReason").value("Wrong reinsurer"));
     }
 
     @Test
@@ -539,9 +575,9 @@ class ReinsuranceContractTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
-        UUID treatyId = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
+        UUID treatyId = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Future Re", TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, new BigDecimal("30.00"),
-            today.plusDays(9), today.plusDays(16)), "finance-officer").treatyId();
+            today.plusDays(9), today.plusDays(16)), "finance-officer").treatyId(), "treaty-approver").treatyId();
         TenantContext.clear();
 
         mockMvc.perform(get("/treaties/{treatyId}", treatyId).with(financeStaffOf(tenantId)))
@@ -737,9 +773,9 @@ class ReinsuranceContractTest {
     void onlyAFinanceApproverApprovesAStatementAndItIsTheSpecs() throws Exception {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
-        UUID treatyId = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re",
+        UUID treatyId = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re",
             TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, new BigDecimal("50.00"), BigDecimal.ZERO, null,
-            LocalDate.of(2026, 1, 1), null), "finance-officer").treatyId();
+            LocalDate.of(2026, 1, 1), null), "finance-officer").treatyId(), "treaty-approver").treatyId();
         bordereauJob.drain(LocalDate.of(2026, 4, 1));
         TenantContext.set(tenantId);
         var draft = statements.prepare(treatyId, "2026-Q1", "finance-officer", LocalDate.of(2026, 4, 2));

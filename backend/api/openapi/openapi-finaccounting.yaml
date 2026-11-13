@@ -476,6 +476,47 @@ paths:
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/accounting-policies/baseline-sign-off:
+    get:
+      summary: Who has signed off the accounting-policy baseline (2026-11-12, finance findings 99 and 66)
+      description: The baseline is in force from the first posting; finance signs it off by name, and an actuary may co-sign.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Each signature, or null where none is given yet
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BaselineSignOffView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/accounting-policies/baseline-sign-off/{signer}:
+    post:
+      summary: Sign off the baseline as finance (ledger.baseline-sign-off) or as the actuary (ifrs17.actuary-sign-off)
+      description: Once per signer; never edited. The finance and actuary signatures are two different people.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: signer, in: path, required: true, schema: { type: string, enum: [finance, actuary] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference]
+              properties:
+                reference: { type: string, maxLength: 200, description: "What the sign-off rests on, e.g. a board minute" }
+      responses:
+        '200':
+          description: Both signatures as they now stand
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BaselineSignOffView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
   /finance/accounting-policies/{electionId}/approval:
     post:
       summary: A second person approves the election with its sign-off; it becomes the register's next version
@@ -1642,6 +1683,19 @@ components:
           format: date
           description: "Today or later. A past change is a restatement, made through journals."
         rationale: { type: string, nullable: true }
+    BaselineSignOffView:
+      type: object
+      required: [finance, actuary]
+      properties:
+        finance: { anyOf: [{ $ref: '#/components/schemas/BaselineSignature' }, { type: 'null' }] }
+        actuary: { anyOf: [{ $ref: '#/components/schemas/BaselineSignature' }, { type: 'null' }] }
+    BaselineSignature:
+      type: object
+      required: [signedBy, signedAt, reference]
+      properties:
+        signedBy: { type: string }
+        signedAt: { type: string, format: date-time }
+        reference: { type: string }
     PolicyElectionView:
       type: object
       required: [electionId, key, scope, value, effectiveFrom, status, proposedBy, proposedAt]

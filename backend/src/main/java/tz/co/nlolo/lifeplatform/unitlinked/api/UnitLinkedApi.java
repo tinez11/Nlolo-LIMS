@@ -14,6 +14,15 @@ public interface UnitLinkedApi {
 
     FundView closeFund(String code, String closedBy);
 
+    /** A new fund opens only once a second person approves it (2026-11-12, finance finding 126). */
+    FundView approveFund(String code, String by);
+
+    /** A proposed fund rejected with its reason, or withdrawn by its proposer. */
+    FundView rejectFund(String code, String reason, String by);
+
+    /** Funds waiting for a second person. */
+    List<FundView> proposedFunds();
+
     List<FundView> listFunds();
 
     FundView getFund(String code);

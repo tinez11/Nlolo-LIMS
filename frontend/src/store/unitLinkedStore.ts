@@ -4,6 +4,7 @@ import {
   approveWithdrawal,
   closeFund,
   createFund,
+  decideFund,
   fileStatement,
   getPolicyUnits,
   getSplitHistory,
@@ -98,6 +99,8 @@ interface UnitLinkedState {
   fileStatement: (policyNumber: string, from: string, to: string) => Promise<void>;
   createFund: (body: CreateFundRequest) => Promise<void>;
   closeFund: (code: string) => Promise<void>;
+  /** A second person approves (reason null) or rejects a proposed fund. */
+  decideFund: (code: string, rejectReason: string | null) => Promise<void>;
   proposePrice: (body: ProposePriceRequest) => Promise<void>;
   approvePrice: (price: FundPriceView) => Promise<void>;
   withdrawPrice: (price: FundPriceView) => Promise<void>;
@@ -184,6 +187,11 @@ export const useUnitLinkedStore = create<UnitLinkedState>((set, getState) => {
     closeFund: (code) =>
       act(`fund.${code}`, async () => {
         await closeFund(code);
+        await getState().loadFunds();
+      }),
+    decideFund: (code, rejectReason) =>
+      act(`fund.${code}`, async () => {
+        await decideFund(code, rejectReason);
         await getState().loadFunds();
       }),
     proposePrice: (body) =>

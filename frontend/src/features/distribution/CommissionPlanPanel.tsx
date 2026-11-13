@@ -2,7 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { type FieldErrors, useFieldArray, useForm } from 'react-hook-form';
-import type { ProductSummary } from '@/api/types';
+import { Link } from 'react-router-dom';
+import type { CommissionPlanView, ProductSummary } from '@/api/types';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import { ProductChooser } from '@/components/ProductChooser';
@@ -17,7 +18,6 @@ import {
   blankFlatRow,
   blankRateRow,
   createCommissionPlanFormSchema,
-  fractionToPercent,
   PLANNABLE_TIER_TYPES,
   toApiRequest,
   type CreateCommissionPlanFormValues,
@@ -26,6 +26,7 @@ import {
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { describeRules, ruleValue, tierLabel } from './commissionRules';
 
 /**
  * `GET /agents/{agentId}/commission-plan?productId=...` -- resolves the
@@ -51,10 +52,20 @@ export function CommissionPlanPanel({
   const [productId, setProductId] = useState('');
   const loadApplicablePlan = useDistributionStore((s) => s.loadApplicablePlan);
   const plan = useDistributionStore(selectApplicablePlan(agentId, productId));
+  const proposed = useDistributionStore((s) => s.proposedPlans);
+  const loadProposedPlans = useDistributionStore((s) => s.loadProposedPlans);
+  // A plan for this product, or this agent's own rate on it, still waiting for a second person (finding 190).
+  const waiting = (proposed.data ?? []).find(
+    (p) => p.productId === productId && (p.proposedForAgentId == null || p.proposedForAgentId === agentId),
+  );
 
   useEffect(() => {
     if (productId) void loadApplicablePlan(agentId, productId);
   }, [agentId, productId, loadApplicablePlan]);
+
+  useEffect(() => {
+    void loadProposedPlans();
+  }, [loadProposedPlans]);
 
   return (
     <div className="p-4">
@@ -64,7 +75,9 @@ export function CommissionPlanPanel({
 
       {productId && isInitialLoad(plan) && <LoadingBlock label="Resolving plan" />}
 
-      {productId && plan.status === 'error' && plan.error?.kind === 'notFound' && (
+      {productId && waiting && <WaitingPlan plan={waiting} />}
+
+      {productId && !waiting && plan.status === 'error' && plan.error?.kind === 'notFound' && (
         <div className="mt-3">
           <p className="mb-2 text-xs text-muted-foreground">
             No plan applies to this agent for this product yet.
@@ -87,17 +100,30 @@ export function CommissionPlanPanel({
           </div>
           <dl>
             {plan.data.rules.map((rule) => (
-              <Field
-                key={rule.commissionRuleId}
-                label={rule.tierType.replace(/_/g, ' ').toLowerCase()}
-                value={
-                  rule.flatAmount ? formatMoney(rule.flatAmount) : rule.rate == null ? '—' : `${fractionToPercent(rule.rate)}% of the premium`
-                }
-              />
+              <Field key={rule.commissionRuleId} label={tierLabel(rule.tierType)} value={ruleValue(rule)} />
             ))}
           </dl>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A proposed plan earns nothing yet: said once, with where it is approved. */
+function WaitingPlan({ plan }: { plan: CommissionPlanView }) {
+  return (
+    <div className="mt-3 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {plan.proposedForAgentId ? "This agent's own rate" : 'New plan'}
+        </span>
+        <StatusBadge kind="commissionPlan" value={plan.status} />
+      </div>
+      <p className="mt-1 text-sm">{describeRules(plan)}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Earns nothing until a second person approves it under{' '}
+        <Link to="/staff/commission-plans" className="underline underline-offset-2">Commission plans</Link>.
+      </p>
     </div>
   );
 }
@@ -144,7 +170,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
 
   return (
     <form className="space-y-3 rounded-md border border-border p-3" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <p className="text-xs font-medium text-muted-foreground">Create a plan for this product</p>
+      <p className="text-xs font-medium text-muted-foreground">Propose a plan for this product</p>
 
       <div className="space-y-2">
         {fields.map((field, index) => {
@@ -248,7 +274,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
       )}
 
       <Button type="submit" size="sm" variant="primary" pending={creating.status === 'loading'}>
-        Create plan
+        Propose plan
       </Button>
     </form>
   );

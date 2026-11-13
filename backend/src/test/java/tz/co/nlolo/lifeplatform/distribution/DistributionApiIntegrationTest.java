@@ -9,6 +9,7 @@ import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanNotFoundException
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException;
+import tz.co.nlolo.lifeplatform.distribution.api.InvalidAgentStateException;
 import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.SalesChannel;
@@ -137,7 +138,7 @@ class DistributionApiIntegrationTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql");
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -658,9 +659,9 @@ class DistributionApiIntegrationTest {
         AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
             party.partyId(), "LIC-FLAT-01", LocalDate.now().plusYears(1), null), "staff-1");
 
-        distributionApi.createCommissionPlan(productId, List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId, List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, null, new BigDecimal("25000.00"), "TZS")),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         CommissionPlanView plan = distributionApi.getApplicablePlan(agent.agentId(), productId);
         assertThat(plan.rules()).hasSize(1);
@@ -689,12 +690,12 @@ class DistributionApiIntegrationTest {
         AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
             party.partyId(), "LIC-TWOPLANS-01", LocalDate.now().plusYears(1), null), "staff-1");
 
-        distributionApi.createCommissionPlan(productId, List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId, List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.0500"), null, null)),
-            "actuary-old");
-        distributionApi.createCommissionPlan(productId, List.of(
+            "actuary-old").commissionPlanId(), "plan-approver");
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId, List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.0700"), null, null)),
-            "actuary-new");
+            "actuary-new").commissionPlanId(), "plan-approver");
 
         CommissionPlanView plan = distributionApi.getApplicablePlan(agent.agentId(), productId);
         assertThat(plan.rules()).hasSize(1);
@@ -763,9 +764,9 @@ class DistributionApiIntegrationTest {
         AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
             party.partyId(), "LIC-FALLBACK-01", LocalDate.now().plusYears(1), null), "staff-1");
 
-        CommissionPlanView createdPlan = distributionApi.createCommissionPlan(productId,
+        CommissionPlanView createdPlan = distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId,
             List.of(new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.05"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         CommissionPlanView resolved = distributionApi.getApplicablePlan(agent.agentId(), productId);
 
@@ -785,14 +786,14 @@ class DistributionApiIntegrationTest {
 
         // The tenant's ordinary ACTIVE plan for the product -- would be returned by the fallback
         // path alone.
-        distributionApi.createCommissionPlan(productId,
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId,
             List.of(new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.05"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         // A second, distinct plan assigned directly to this agent.
-        CommissionPlanView ownPlan = distributionApi.createCommissionPlan(productId,
+        CommissionPlanView ownPlan = distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(productId,
             List.of(new DistributionApi.CommissionRuleInput(TierType.RENEWAL, new BigDecimal("0.02"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         // DistributionApi has no method to assign a plan to an agent -- that wiring is out of this
         // task's scope -- so reach the otherwise-unreachable state directly via the repository,
@@ -810,6 +811,50 @@ class DistributionApiIntegrationTest {
         assertThat(resolved.commissionPlanId()).isEqualTo(ownPlan.commissionPlanId());
         assertThat(resolved.rules()).hasSize(1);
         assertThat(resolved.rules().get(0).tierType()).isEqualTo(TierType.RENEWAL);
+    }
+
+    /** Finding 190 (2026-11-12): a plan, or an agent's own rate, earns nothing until a second person approves it. */
+    @Test
+    void aProposedPlanAndAProposedAgentRateApplyOnlyOnceApproved() {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-IT-PROPOSED-01");
+        PartyView party = registerVerifiedParty(tenantId, "AGT-PROPOSED-01");
+        AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-PROPOSED-01", LocalDate.now().plusYears(1), null), "staff-1");
+
+        CommissionPlanView productPlan = distributionApi.createCommissionPlan(productId,
+            List.of(new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.05"), null, null)),
+            "actuary");
+        assertThat(productPlan.status()).isEqualTo(PlanStatus.PROPOSED);
+        assertThrows(CommissionPlanNotFoundException.class,
+            () -> distributionApi.getApplicablePlan(agent.agentId(), productId));
+        // No signed-in person holds commission.approve-own here: its proposer cannot approve it.
+        assertThrows(InvalidAgentStateException.class,
+            () -> distributionApi.approveCommissionPlan(productPlan.commissionPlanId(), "actuary"));
+
+        distributionApi.approveCommissionPlan(productPlan.commissionPlanId(), "plan-approver");
+        assertThat(distributionApi.getApplicablePlan(agent.agentId(), productId).commissionPlanId())
+            .isEqualTo(productPlan.commissionPlanId());
+
+        CommissionPlanView ownRate = distributionApi.setAgentCommissionRate(agent.agentId(), productId,
+            new BigDecimal("12.5"), "finance");
+        assertThat(distributionApi.proposedCommissionPlans()).extracting(CommissionPlanView::commissionPlanId)
+            .containsExactly(ownRate.commissionPlanId());
+        assertThat(distributionApi.getApplicablePlan(agent.agentId(), productId).commissionPlanId())
+            .as("the agent's rate is not theirs until approved").isEqualTo(productPlan.commissionPlanId());
+
+        distributionApi.approveCommissionPlan(ownRate.commissionPlanId(), "plan-approver");
+        assertThat(distributionApi.getApplicablePlan(agent.agentId(), productId).commissionPlanId())
+            .isEqualTo(ownRate.commissionPlanId());
+        assertThat(distributionApi.proposedCommissionPlans()).isEmpty();
+
+        CommissionPlanView rejected = distributionApi.createCommissionPlan(productId,
+            List.of(new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.50"), null, null)),
+            "actuary");
+        assertThat(distributionApi.rejectCommissionPlan(rejected.commissionPlanId(), "Rate typed wrong", "plan-approver")
+            .status()).isEqualTo(PlanStatus.REJECTED);
+        assertThrows(DistributionValidationException.class,
+            () -> distributionApi.approveCommissionPlan(rejected.commissionPlanId(), "plan-approver"));
     }
 
     @Test

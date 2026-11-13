@@ -91,12 +91,16 @@ public enum Permission {
     LEDGER_APPROVE("ledger.approve", Area.LEDGER, "Approve journals", "Approve or reject manual journals."),
     LEDGER_APPROVE_OWN("ledger.approve-own", Area.LEDGER, "Approve their own ledger changes",
         "Approve their own journals, period reopenings and accounting-policy choices without a second person. Recorded against their name."),
+    LEDGER_BASELINE_SIGN_OFF("ledger.baseline-sign-off", Area.LEDGER, "Sign off the accounting baseline",
+        "Sign off, as finance, the accounting policies the platform started from. Once, by name."),
 
     IFRS17_VIEW("ifrs17.view", Area.IFRS17, "See IFRS 17", "Extracts, engine runs, allocations and year-end close."),
     IFRS17_MANAGE("ifrs17.manage", Area.IFRS17, "Run IFRS 17", "Prepare extracts, engine runs, allocations and the year-end close."),
     IFRS17_APPROVE("ifrs17.approve", Area.IFRS17, "Approve IFRS 17", "Approve or reject engine runs, allocations and the close."),
     IFRS17_APPROVE_OWN("ifrs17.approve-own", Area.IFRS17, "Approve IFRS 17 work they prepared",
         "Approve their own engine runs, allocations and close without a second person. Recorded against their name."),
+    IFRS17_ACTUARY_SIGN_OFF("ifrs17.actuary-sign-off", Area.IFRS17, "Sign off as the actuary",
+        "Co-sign, as the actuary, the accounting policies the platform started from. Once, by name."),
 
     REINSURANCE_VIEW("reinsurance.view", Area.REINSURANCE, "See reinsurance", "Treaties, cessions, bordereaux and statements."),
     REINSURANCE_MANAGE("reinsurance.manage", Area.REINSURANCE, "Manage reinsurance", "Set up treaties and prepare statements."),
@@ -112,6 +116,11 @@ public enum Permission {
     AGENTS_MANAGE("agents.manage", Area.DISTRIBUTION, "Manage agents",
         "Onboard, place, suspend and reactivate agents; set commission rates and plans."),
     COMMISSION_PAY("commission.pay", Area.DISTRIBUTION, "Pay commission", "Pay out a commission statement."),
+    // Finance finding 190 (2026-11-12): a plan or an agent's rate moves money to agents, so a second person approves it.
+    COMMISSION_APPROVE("commission.approve", Area.DISTRIBUTION, "Approve commission plans",
+        "Approve or reject a commission plan or agent rate someone else proposed; only an approved one earns commission."),
+    COMMISSION_APPROVE_OWN("commission.approve-own", Area.DISTRIBUTION, "Approve commission plans they proposed",
+        "Approve their own commission plans and rates without a second person. Recorded against their name."),
 
     FUNDS_VIEW("funds.view", Area.FUNDS, "See funds", "Unit-linked funds and their prices."),
     FUNDS_MANAGE("funds.manage", Area.FUNDS, "Manage funds", "Open and close funds, post prices, settle price adjustments."),

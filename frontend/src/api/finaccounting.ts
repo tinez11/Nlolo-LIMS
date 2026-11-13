@@ -1,6 +1,7 @@
 import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 import type {
+  BaselineSignOffView,
   AccountingPeriodView,
   MonthEndView,
   AccountStatus,
@@ -200,6 +201,17 @@ export function approvePolicyElection(electionId: string, signOffRef: string): P
     `/finance/accounting-policies/${encodeURIComponent(electionId)}/approval`,
     { signOffRef },
   );
+}
+
+/** Who has signed off the baseline the register started from (2026-11-12, findings 99 and 66). */
+export function getBaselineSignOff(): Promise<BaselineSignOffView> {
+  return get<BaselineSignOffView>('/finance/accounting-policies/baseline-sign-off');
+}
+
+export function signOffBaseline(signerRole: 'FINANCE' | 'ACTUARY', reference: string): Promise<BaselineSignOffView> {
+  return post<BaselineSignOffView>(`/finance/accounting-policies/baseline-sign-off/${signerRole.toLowerCase()}`, {
+    reference,
+  });
 }
 
 export function rejectPolicyElection(electionId: string, reason: string): Promise<PolicyElectionView> {

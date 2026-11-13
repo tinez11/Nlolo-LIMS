@@ -175,7 +175,7 @@ class ClawbackIntegrationTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql");
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -210,9 +210,9 @@ class ClawbackIntegrationTest {
             null, ANY_FILING, "actuary");
         UUID productVersionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
-        distributionApi.createCommissionPlan(product.productId(), List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.10"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         PartyView agentParty = partyApi.registerIndividual("Clawback IT Agent " + tag, LocalDate.of(1985, 1, 1),
             "+25571" + String.format("%07d", Math.abs(tag.hashCode() % 10000000)), null, "test-agent");
@@ -548,7 +548,7 @@ class ClawbackIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql");
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql");
 
         assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).orElseThrow()
             .getPolicyholderPartyId()).isEqualTo(holder);

@@ -8,4 +8,6 @@ import java.util.UUID;
 
 public record FundView(UUID fundId, String code, String name, String currency, String assetClass,
                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal annualManagementChargePercent, LocalTime cutOffTime, String status,
-                       String createdBy, Instant createdAt, String closedBy, Instant closedAt) {}
+                       String createdBy, Instant createdAt, String closedBy, Instant closedAt,
+                       /* 2026-11-12, finding 126: who decided a proposed fund, and why it was rejected. */
+                       String decidedBy, String decisionReason) {}

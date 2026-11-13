@@ -363,8 +363,9 @@ paths:
     put:
       summary: Set the percentage of premium this agent earns (staff -- FINANCE_OFFICER or ADMIN)
       description: >
-        Creates a plan with one FIRST_YEAR rule at this rate and attaches it to the agent, so it
-        wins over any product-wide plan. For credit life, where the rate is agreed per lender.
+        Proposes a plan with one FIRST_YEAR rule at this rate for the agent; once a second person
+        approves it (POST /commission-plans/{planId}/approval) it is attached to the agent and wins
+        over any product-wide plan. For credit life, where the rate is agreed per lender.
         Replacing a rate creates a new plan; the old one stays readable. Forward only -- nothing
         already accrued is recalculated.
       security:
@@ -600,9 +601,68 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /commission-plans/proposed:
+    get:
+      summary: The commission plans and agent rates waiting for a second person (2026-11-12, finding 190)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommissionPlanView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /commission-plans/{planId}/approval:
+    post:
+      summary: Approve a proposed plan or agent rate (commission.approve; its proposer only with commission.approve-own)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The plan, ACTIVE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionPlanView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /commission-plans/{planId}/rejection:
+    post:
+      summary: Reject a proposed plan or agent rate, with a reason (commission.approve)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: The plan, REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionPlanView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /commission-plans:
     post:
-      summary: Author a commission plan for a product
+      summary: Author a commission plan for a product -- PROPOSED until a second person approves it
       description: >
         Staff/finance only. Exactly one of `rate` or `flatAmount` must be set on each rule.
         THRESHOLD_BONUS rules are rejected: the threshold_condition input format is specified
@@ -803,10 +863,17 @@ components:
       properties:
         planId: { type: string, format: uuid }
         productId: { type: string, format: uuid }
-        status: { type: string, enum: [ACTIVE, RETIRED] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, RETIRED, REJECTED] }
         rules:
           type: array
           items: { $ref: '#/components/schemas/CommissionRuleView' }
+        proposedBy: { type: [string, 'null'], description: "Who proposed it (2026-11-12, finding 190)" }
+        proposedForAgentId: { type: [string, 'null'], format: uuid, description: "The agent whose own rate it is" }
+        decidedBy: { type: [string, 'null'] }
+        decisionReason: { type: [string, 'null'] }
+        proposedAt: { type: [string, 'null'], format: date-time }
+        productName: { type: [string, 'null'], description: "Set while the plan waits for a second person" }
+        agentName: { type: [string, 'null'], description: "The agent whose own rate it is, while it waits" }
     CommissionRuleView:
       type: object
       required: [commissionRuleId, tierType]

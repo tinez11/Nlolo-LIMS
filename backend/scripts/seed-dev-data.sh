@@ -366,6 +366,10 @@ api "$STAFF_FINANCE_TOKEN" POST "/funds" \
   '{"code":"EQ-GROWTH","name":"Nlolo Equity Growth","currency":"TZS","assetClass":"EQUITY","annualManagementChargePercent":"1.5","cutOffTime":"16:00:00"}' >/dev/null
 api "$STAFF_FINANCE_TOKEN" POST "/funds" \
   '{"code":"MM-CASH","name":"Nlolo Money Market","currency":"TZS","assetClass":"MONEY_MARKET","annualManagementChargePercent":"0.5","cutOffTime":"16:00:00"}' >/dev/null
+# A new fund takes no price until a second person approves it (2026-11-12, finance finding 126).
+for fund in EQ-GROWTH MM-CASH; do
+  api "$STAFF_ADMIN_TOKEN" POST "/funds/$fund/approval" >/dev/null
+done
 UL_PRICE_DATE=$(date -d 'yesterday' +%F 2>/dev/null || date -v-1d +%F)
 for fund_price in EQ-GROWTH:1.000000 MM-CASH:1.000000; do
   IFS=: read -r fund price <<EOF

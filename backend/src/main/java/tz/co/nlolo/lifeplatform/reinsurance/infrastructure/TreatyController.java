@@ -63,6 +63,25 @@ public class TreatyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(TreatyResponseDto.from(view));
     }
 
+    /** 2026-11-12, finance finding 170: a new treaty cedes only once a second person approves it. */
+    @PostMapping("/treaties/{treatyId}/approval")
+    @PreAuthorize("@access.can('reinsurance.approve')")
+    public ResponseEntity<TreatyResponseDto> approveTreaty(@PathVariable UUID treatyId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(TreatyResponseDto.from(reinsuranceApi.approveTreaty(treatyId, jwt.getSubject())));
+    }
+
+    public record RejectTreatyRequestDto(String reason) {}
+
+    /** Rejected with its reason, or withdrawn by its proposer. */
+    @PostMapping("/treaties/{treatyId}/rejection")
+    @PreAuthorize("@access.can('reinsurance.approve')")
+    public ResponseEntity<TreatyResponseDto> rejectTreaty(@PathVariable UUID treatyId,
+                                                          @RequestBody RejectTreatyRequestDto request,
+                                                          @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(TreatyResponseDto.from(
+            reinsuranceApi.rejectTreaty(treatyId, request.reason(), jwt.getSubject())));
+    }
+
     /** The last day a treaty takes new policies (2026-11-08); those already ceded stay ceded. */
     public record EndTreatyRequestDto(java.time.LocalDate endsOn) {}
 

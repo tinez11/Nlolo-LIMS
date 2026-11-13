@@ -8,12 +8,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Commission-plan authoring. Staff/finance only -- agents never author a plan, they only read the
@@ -42,6 +45,28 @@ public class CommissionPlanController {
             .toList();
         CommissionPlanView view = distributionApi.createCommissionPlan(request.productId(), rules, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(CommissionPlanResponseDto.from(view));
+    }
+
+    /** The plans and agent rates waiting for a second person (2026-11-12, finance finding 190). */
+    @GetMapping("/commission-plans/proposed")
+    @PreAuthorize("@access.can('agents.view')")
+    public List<CommissionPlanResponseDto> proposed() {
+        return distributionApi.proposedCommissionPlans().stream().map(CommissionPlanResponseDto::from).toList();
+    }
+
+    @PostMapping("/commission-plans/{planId}/approval")
+    @PreAuthorize("@access.can('commission.approve')")
+    public CommissionPlanResponseDto approve(@PathVariable UUID planId, @AuthenticationPrincipal Jwt jwt) {
+        return CommissionPlanResponseDto.from(distributionApi.approveCommissionPlan(planId, jwt.getSubject()));
+    }
+
+    public record RejectPlanRequest(@jakarta.validation.constraints.NotBlank String reason) {}
+
+    @PostMapping("/commission-plans/{planId}/rejection")
+    @PreAuthorize("@access.can('commission.approve')")
+    public CommissionPlanResponseDto reject(@PathVariable UUID planId, @Valid @RequestBody RejectPlanRequest body,
+                                            @AuthenticationPrincipal Jwt jwt) {
+        return CommissionPlanResponseDto.from(distributionApi.rejectCommissionPlan(planId, body.reason(), jwt.getSubject()));
     }
 
     /** Both money-ish values arrive as decimal strings and are parsed with {@code new BigDecimal(String)},

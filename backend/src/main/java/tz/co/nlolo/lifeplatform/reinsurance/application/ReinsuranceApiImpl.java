@@ -53,6 +53,8 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private final BordereauJob bordereauJob;
     private final ReinsuranceStatements statements;
     private final StatementSettlements settlements;
+    /** A treaty approved by its proposer, for a company with one finance person (2026-11-12). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public ReinsuranceApiImpl(ReinsuranceTreatyRepository treatyRepository,
                                CessionRepository cessionRepository,
@@ -60,7 +62,9 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
                                Bordereaux bordereaux,
                                BordereauJob bordereauJob,
                                ReinsuranceStatements statements,
-                               StatementSettlements settlements) {
+                               StatementSettlements settlements,
+                               tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.treatyRepository = treatyRepository;
         this.cessionRepository = cessionRepository;
         this.claimRecoveryRepository = claimRecoveryRepository;
@@ -203,6 +207,53 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
             request.treatyType(), request.retentionLimitAmount(), request.retentionLimitCurrency(),
             request.cessionPercent(), request.commissionPercent(), request.xolAnnualPremium(),
             request.effectiveFrom(), request.effectiveTo(), createdBy);
+        treaty.markProposed();
+        treatyRepository.save(treaty);
+        return toTreatyView(treaty);
+    }
+
+    /**
+     * A proposed treaty put in force by a second person (2026-11-12, finance finding 170); its proposer only holding
+     * reinsurance.approve-own. The one-treaty-at-a-time rule is checked again: another may have started meanwhile.
+     */
+    @Override
+    @Transactional
+    public TreatyView approveTreaty(UUID treatyId, String by) {
+        UUID tenantId = TenantContext.get();
+        ReinsuranceTreaty treaty = treatyRepository.findByTreatyIdAndTenantId(treatyId, tenantId)
+            .orElseThrow(() -> new TreatyNotFoundException("Treaty " + treatyId + " not found"));
+        treatyRepository.findByTenantIdAndStatusOrderByEffectiveFromDesc(tenantId, TreatyStatus.ACTIVE).stream()
+            .filter(t -> t.overlaps(treaty.getEffectiveFrom(), treaty.getEffectiveTo()))
+            .findFirst()
+            .ifPresent(t -> {
+                throw new ReinsuranceValidationException("The treaty with " + t.getReinsurerName() + " is in force from "
+                    + t.getEffectiveFrom() + (t.getEffectiveTo() == null ? " with no end" : " to " + t.getEffectiveTo())
+                    + ". End that treaty first, or reject this one");
+            });
+        try {
+            treaty.approve(by, ownWork.mayActAlone("reinsurance.approve-own"));
+        } catch (IllegalStateException e) {
+            throw new tz.co.nlolo.lifeplatform.reinsurance.api.StatementStateException(e.getMessage());
+        }
+        treatyRepository.save(treaty);
+        if (treaty.isActedAlone()) ownWork.record("Treaty approved by its proposer", treatyId.toString(), null, by);
+        return toTreatyView(treaty);
+    }
+
+    /** Rejected with its reason, or withdrawn by its proposer: it never cedes. */
+    @Override
+    @Transactional
+    public TreatyView rejectTreaty(UUID treatyId, String reason, String by) {
+        UUID tenantId = TenantContext.get();
+        ReinsuranceTreaty treaty = treatyRepository.findByTreatyIdAndTenantId(treatyId, tenantId)
+            .orElseThrow(() -> new TreatyNotFoundException("Treaty " + treatyId + " not found"));
+        try {
+            treaty.reject(by, reason);
+        } catch (IllegalArgumentException e) {
+            throw new ReinsuranceValidationException(e.getMessage());
+        } catch (IllegalStateException e) {
+            throw new tz.co.nlolo.lifeplatform.reinsurance.api.StatementStateException(e.getMessage());
+        }
         treatyRepository.save(treaty);
         return toTreatyView(treaty);
     }
@@ -367,7 +418,7 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
             t.getRetentionLimitAmount(), t.getRetentionLimitCurrency(), t.getCessionPercent(),
             t.getEffectiveFrom(), t.getEffectiveTo(), t.getCommissionPercent(), t.getXolAnnualPremium(),
             // Read against today's civil date in Dar es Salaam, the same day cession selection uses.
-            t.standingOn(today), cededPolicies, takesNew);
+            t.standingOn(today), cededPolicies, takesNew, t.getCreatedBy(), t.getDecidedBy(), t.getDecisionReason());
     }
 
     private CessionView toCessionView(Cession c) {

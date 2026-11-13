@@ -61,7 +61,7 @@ class ReinsuranceApiIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -85,7 +85,7 @@ class ReinsuranceApiIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
 
-        TreatyView created = reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer");
+        TreatyView created = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer").treatyId(), "treaty-approver");
         assertThat(created.treatyId()).isNotNull();
         assertThat(created.reinsurerName()).isEqualTo("Africa Re");
         assertThat(created.status()).isEqualTo(TreatyStatus.ACTIVE);
@@ -108,7 +108,7 @@ class ReinsuranceApiIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
-        TreatyView first = reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer");
+        TreatyView first = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer").treatyId(), "treaty-approver");
 
         ReinsuranceValidationException refused = assertThrows(ReinsuranceValidationException.class,
             () -> reinsuranceApi.createTreaty(quotaShare(today.plusMonths(2), null), "finance-officer"));
@@ -117,7 +117,7 @@ class ReinsuranceApiIntegrationTest {
         // Ended, it takes no business after its last day, and the next may start the day after.
         TreatyView ended = reinsuranceApi.endTreaty(first.treatyId(), today.plusMonths(1), "finance-officer");
         assertThat(ended.effectiveTo()).isEqualTo(today.plusMonths(1));
-        TreatyView next = reinsuranceApi.createTreaty(quotaShare(today.plusMonths(1).plusDays(1), null), "finance-officer");
+        TreatyView next = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare(today.plusMonths(1).plusDays(1), null), "finance-officer").treatyId(), "treaty-approver");
 
         assertThat(reinsuranceApi.listTreaties(null)).extracting(TreatyView::treatyId, TreatyView::cededPolicies,
                 TreatyView::takesNewPolicies)
@@ -130,7 +130,7 @@ class ReinsuranceApiIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
-        TreatyView treaty = reinsuranceApi.createTreaty(quotaShare(today.minusMonths(1), today.plusMonths(6)), "finance-officer");
+        TreatyView treaty = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare(today.minusMonths(1), today.plusMonths(6)), "finance-officer").treatyId(), "treaty-approver");
 
         assertThrows(ReinsuranceValidationException.class,
             () -> reinsuranceApi.endTreaty(treaty.treatyId(), today.minusDays(1), "finance-officer"));
@@ -197,7 +197,7 @@ class ReinsuranceApiIntegrationTest {
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         TenantContext.set(tenantA);
-        TreatyView inA = reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer");
+        TreatyView inA = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer").treatyId(), "treaty-approver");
 
         TenantContext.set(tenantB);
         assertThrows(TreatyNotFoundException.class, () -> reinsuranceApi.getTreaty(inA.treatyId()));
@@ -208,7 +208,7 @@ class ReinsuranceApiIntegrationTest {
     void listTreatiesFiltersByStatus() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
-        reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer");
+        reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(quotaShare("30.00"), "finance-officer").treatyId(), "treaty-approver");
 
         TenantContext.set(tenantId);
         assertThat(reinsuranceApi.listTreaties(null)).hasSize(1);

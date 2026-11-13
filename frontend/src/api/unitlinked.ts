@@ -53,6 +53,13 @@ export function createFund(body: CreateFundRequest): Promise<FundView> {
   return post<FundView>('/funds', body);
 }
 
+/** Approve (reason null) or reject a proposed fund -- funds.approve (2026-11-12, finance finding 126). */
+export function decideFund(code: string, rejectReason: string | null): Promise<FundView> {
+  return rejectReason === null
+    ? post<FundView>(`/funds/${enc(code)}/approval`, {})
+    : post<FundView>(`/funds/${enc(code)}/rejection`, { reason: rejectReason });
+}
+
 export function closeFund(code: string): Promise<FundView> {
   return post<FundView>(`/funds/${enc(code)}/closure`);
 }

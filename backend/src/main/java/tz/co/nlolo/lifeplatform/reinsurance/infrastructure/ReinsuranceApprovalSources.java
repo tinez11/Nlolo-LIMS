@@ -27,6 +27,19 @@ class ReinsuranceApprovalSources {
                 .toList(), limit));
     }
 
+    /** A new treaty waiting for a second person before it cedes anything (2026-11-12, finance finding 170). */
+    @Bean
+    ApprovalSource treatyApprovals(ReinsuranceApi reinsurance) {
+        return ApprovalSource.of("treaty", "New treaties", "Approve", "reinsurance.approve",
+            limit -> ApprovalSource.Pending.of(reinsurance.listTreaties(
+                    tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStatus.PROPOSED).stream()
+                .map(t -> new ApprovalSource.Item(t.treatyId().toString(), null,
+                    t.reinsurerName() + ", " + t.treatyType().name().replace('_', ' ').toLowerCase() + " from "
+                        + ApprovalSource.day(t.effectiveFrom()),
+                    null, null, t.createdBy(), null))
+                .toList(), limit));
+    }
+
     /** A settlement of an approved statement waiting for a second finance person (2026-11-08). */
     @Bean
     ApprovalSource reinsuranceSettlementApprovals(tz.co.nlolo.lifeplatform.reinsurance.application.StatementSettlements settlements) {

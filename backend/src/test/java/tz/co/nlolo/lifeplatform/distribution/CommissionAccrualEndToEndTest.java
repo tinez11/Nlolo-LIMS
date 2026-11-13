@@ -187,7 +187,7 @@ class CommissionAccrualEndToEndTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql");
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -239,12 +239,12 @@ class CommissionAccrualEndToEndTest {
             null, ANY_FILING, "actuary");
         UUID productVersionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
-        distributionApi.createCommissionPlan(product.productId(), List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.10"), null, null),
             new DistributionApi.CommissionRuleInput(TierType.RENEWAL, new BigDecimal("0.03"), null, null),
             new DistributionApi.CommissionRuleInput(TierType.OVERRIDE, new BigDecimal("0.05"), null, null),
             new DistributionApi.CommissionRuleInput(TierType.SUPERVISOR_OVERRIDE, new BigDecimal("0.02"), null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         UUID grandparentId = onboardAgent(tenantId, tag + "-GP", null);
         UUID parentId = onboardAgent(tenantId, tag + "-P", grandparentId);

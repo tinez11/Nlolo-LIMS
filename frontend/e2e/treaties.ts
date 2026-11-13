@@ -91,5 +91,20 @@ export async function treatyForToday(http: APIRequestContext): Promise<Treaty> {
   });
   const body = await response.text();
   expect(response.ok(), `POST /treaties -> ${response.status()} ${body}`).toBeTruthy();
+  return approveTreatyAsSecondPerson(http, (JSON.parse(body) as Treaty).treatyId);
+}
+
+/**
+ * A new treaty cedes nothing until a second person approves it (2026-11-12, finance finding 170). Finance proposes in
+ * these specs, so the finance approver -- who holds reinsurance.approve, as an admin does not -- is the second person.
+ */
+export async function approveTreatyAsSecondPerson(http: APIRequestContext, treatyId: string): Promise<Treaty> {
+  const token = await staffToken(http, 'staff.finance-approver');
+  const response = await http.post(`${API}/treaties/${treatyId}/approval`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {},
+  });
+  const body = await response.text();
+  expect(response.ok(), `approving treaty ${treatyId} -> ${response.status()} ${body}`).toBeTruthy();
   return JSON.parse(body) as Treaty;
 }

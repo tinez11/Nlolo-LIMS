@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   createCommissionPlan,
   decideCommissionPayout,
+  decideCommissionPlan,
   getAgent,
   getApplicablePlan,
   getOwnAgent,
@@ -9,6 +10,7 @@ import {
   listAccruals,
   listAgents,
   listCommissionStatements,
+  listProposedCommissionPlans,
   onboardAgent,
   reactivateAgent,
   requestPayout,
@@ -69,6 +71,9 @@ interface DistributionState {
   // aggregate boundary) -- there is no existing agent-scoped slot to key
   // creation against.
   creatingPlan: Resource<CommissionPlanView>;
+  /** Plans and agent rates waiting for a second person (finding 190, 2026-11-12). */
+  proposedPlans: Resource<CommissionPlanView[]>;
+  decidingPlan: Keyed<true>;
   statements: Keyed<CommissionStatementView[]>;
   accruals: Keyed<CommissionAccrualView[]>;
   requestingPayout: Keyed<true>;
@@ -94,6 +99,9 @@ interface DistributionState {
     request: CreateCommissionPlanRequest,
   ) => Promise<void>;
   resetCreateCommissionPlan: () => void;
+  loadProposedPlans: () => Promise<void>;
+  /** Approve (reason null) or reject a proposed plan; the waiting list is read again. */
+  decidePlan: (planId: string, rejectReason: string | null) => Promise<void>;
   loadStatements: (agentId: string, period?: string) => Promise<void>;
   loadAccruals: (agentId: string, statementId: string) => Promise<void>;
   requestPayout: (
@@ -117,6 +125,8 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   ownTeam: idle(),
   plans: {},
   creatingPlan: idle(),
+  proposedPlans: idle(),
+  decidingPlan: {},
   statements: {},
   accruals: {},
   requestingPayout: {},
@@ -226,24 +236,43 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   // `agentId` is context for which plan-lookup slot to refresh, not part of
   // the request itself -- createCommissionPlan has no agentId in its path or
   // body (a plan hangs off a product, not an agent).
-  createCommissionPlan: (agentId, request) =>
+  createCommissionPlan: (_agentId, request) =>
     track(
       'distribution.createPlan',
       getState().creatingPlan,
       (next) => set({ creatingPlan: next }),
       async () => {
         const view = await createCommissionPlan(request);
-        // The response IS the newly-created plan, already exactly what
-        // loadApplicablePlan would return for this (agent, product) pair --
-        // write it straight in rather than firing a redundant GET.
-        set((s) => ({
-          plans: { ...s.plans, [planKey(agentId, request.productId)]: success(view) },
-        }));
+        // Finding 190: the new plan is PROPOSED and applies to nobody until a second person approves it, so this
+        // agent's applicable-plan slot is unchanged; the waiting list is what changed.
+        await getState().loadProposedPlans();
         return view;
       },
     ),
 
   resetCreateCommissionPlan: () => set({ creatingPlan: idle() }),
+
+  loadProposedPlans: () =>
+    track(
+      'distribution.proposedPlans',
+      getState().proposedPlans,
+      (next) => set({ proposedPlans: next }),
+      () => listProposedCommissionPlans(),
+    ),
+
+  decidePlan: (planId, rejectReason) =>
+    track(
+      `distribution.decidePlan.${planId}`,
+      getState().decidingPlan[planId] ?? idle<true>(),
+      (next) => set((s) => ({ decidingPlan: { ...s.decidingPlan, [planId]: next } })),
+      async (): Promise<true> => {
+        await decideCommissionPlan(planId, rejectReason);
+        // An approved plan may now be the one that applies: every resolved plan is read afresh on the next look.
+        set({ plans: {} });
+        await getState().loadProposedPlans();
+        return true;
+      },
+    ),
 
   // Keyed by agentId alone, NOT by period -- matching the slot it writes
   // into (`statements[agentId]`, not `statements[agentId][period]`).
