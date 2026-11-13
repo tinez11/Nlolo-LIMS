@@ -24,6 +24,39 @@ class PostingFactsExtractorTest {
         return Map.of("amount", amount, "currencyCode", "TZS");
     }
 
+    /** Finding 89 (2026-11-13): money received on 30 Sep but confirmed on 6 Oct is September's. */
+    @Test
+    void aReceiptIsDatedTheDayTheMoneyCameNotTheDayItWasConfirmed() {
+        Map<String, Object> deposit = new HashMap<>(Map.of("entryId", UUID.randomUUID(), "paymentId", UUID.randomUUID(),
+            "policyNumber", "POL-1", "amount", money("5000.00"), "receiptMethod", "CASH"));
+        assertThat(PostingFactsExtractor.extract("billing.DepositReceived", deposit, TODAY).get(0).eventDate())
+            .as("no business date: the day it posts, as before").isEqualTo(TODAY);
+
+        deposit.put("businessDate", "2026-09-30");
+        assertThat(PostingFactsExtractor.extract("billing.DepositReceived", deposit, TODAY).get(0).eventDate())
+            .isEqualTo(LocalDate.of(2026, 9, 30));
+
+        deposit.put("businessDate", "2026-10-09");
+        assertThat(PostingFactsExtractor.extract("billing.DepositReceived", deposit, TODAY).get(0).eventDate())
+            .as("never in the future").isEqualTo(TODAY);
+    }
+
+    @Test
+    void monthEndWorkIsDatedTheDayItWasFor() {
+        assertThat(PostingFactsExtractor.businessDate("unitlinked.ChargesTaken", Map.of("chargeDate", "2026-09-30"), TODAY))
+            .isEqualTo(LocalDate.of(2026, 9, 30));
+        assertThat(PostingFactsExtractor.businessDate("unitlinked.FundRevalued", Map.of("valuationDate", "2026-10-05"), TODAY))
+            .isEqualTo(LocalDate.of(2026, 10, 5));
+        Map<String, Object> monthEnd = Map.of("sourceType", "month-end", "entries", List.of(
+            Map.of("effectiveDate", "2026-09-30"), Map.of("effectiveDate", "2026-09-30")));
+        assertThat(PostingFactsExtractor.businessDate("accumulation.PostingRecorded", monthEnd, TODAY))
+            .isEqualTo(LocalDate.of(2026, 9, 30));
+        // A contribution keeps the day it posts: its entries' dates are when the premium was due, not when it came.
+        Map<String, Object> contribution = Map.of("sourceType", "invoice", "entries", List.of(
+            Map.of("effectiveDate", "2026-08-01")));
+        assertThat(PostingFactsExtractor.businessDate("accumulation.PostingRecorded", contribution, TODAY)).isEqualTo(TODAY);
+    }
+
     @Test
     void anInvoiceIsKeyedOnTheInvoiceAndCarriesItsCover() {
         UUID invoice = UUID.randomUUID();

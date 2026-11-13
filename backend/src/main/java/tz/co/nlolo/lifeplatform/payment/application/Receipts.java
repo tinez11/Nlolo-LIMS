@@ -262,6 +262,8 @@ public class Receipts {
         payload.put("gatewayReference", receipt.getGatewayReference());
         payload.put("amount", Map.of("amount", receipt.getAmount().toPlainString(), "currencyCode", receipt.getCurrency()));
         payload.put("confirmedAt", Instant.now().toString());
+        // The day the money actually came (finding 89): the ledger books its arrival on it, not on the day it was confirmed.
+        if (receipt.getReceivedOn() != null) payload.put("receivedOn", receipt.getReceivedOn().toString());
         payload.put("purpose", receipt.getPurpose());
         payload.put("payerRef", receipt.getPayerRef());
         payload.put("method", receipt.getMethod());

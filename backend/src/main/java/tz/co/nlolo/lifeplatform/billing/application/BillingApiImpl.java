@@ -738,6 +738,7 @@ public class BillingApiImpl implements BillingApi {
             // Which payment in full this is (money movement step 3b): 1 normally, n + 1 after a reversal reopened it n
             // times -- distribution keys the commission on it, so commission clawed back can be earned again.
             collected.put("collection", invoice.collectionNumber());
+            putBusinessDate(collected);
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
     }
@@ -753,6 +754,36 @@ public class BillingApiImpl implements BillingApi {
      * already posted by policyloan (E-03-SURPLUS), so it publishes nothing to the ledger here; every other deposit
      * publishes billing.DepositReceived, which posts DR the account it reached / CR 2128.
      */
+    /**
+     * The day a confirmed payment's money actually arrived, while it is being applied (2026-11-13, finance finding 89):
+     * a receipt recorded on 1 Nov for cash received on 31 Oct. The ledger posts the money's arrival on that day, so the
+     * month matches the bank statement. Set only around one confirmation, by {@link #receivedOn}; absent, the ledger
+     * uses the day it posts, as before -- right for mobile money, confirmed the moment it lands.
+     */
+    private static final ThreadLocal<LocalDate> RECEIVED_ON = new ThreadLocal<>();
+
+    /** Runs {@code work} -- the applying of one confirmed payment -- with the day its money arrived. */
+    void receivedOn(LocalDate day, Runnable work) {
+        if (day == null) {
+            work.run();
+            return;
+        }
+        RECEIVED_ON.set(day);
+        try {
+            work.run();
+        } finally {
+            RECEIVED_ON.remove();
+        }
+    }
+
+    /** The money's own day onto an event that posts its arrival, when one is known. */
+    private static void putBusinessDate(Map<String, Object> payload) {
+        LocalDate day = RECEIVED_ON.get();
+        if (day != null) {
+            payload.put("businessDate", day.toString());
+        }
+    }
+
     void deposit(UUID tenantId, String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
                  String reference, String payerRef, String source, String by, LocalDate payUpTo) {
         policyBalanceRepository.open(tenantId, policyNumber, currency);
@@ -767,10 +798,12 @@ public class BillingApiImpl implements BillingApi {
         BalanceEntry entry = balanceEntryRepository.save(BalanceEntry.deposit(tenantId, policyNumber, amount, currency,
             paymentId, method, reference, source, by));
         if (!BalanceEntry.FROM_LOAN_SURPLUS.equals(source)) {
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.DepositReceived", tenantId,
+            Map<String, Object> received = new java.util.HashMap<>(
                 Map.of("entryId", entry.getEntryId(), "paymentId", paymentId, "policyNumber", policyNumber,
                        "amount", Map.of("amount", amount.setScale(2).toPlainString(), "currencyCode", currency),
-                       "receiptMethod", method == null ? "MOBILE_MONEY" : method)));
+                       "receiptMethod", method == null ? "MOBILE_MONEY" : method));
+            putBusinessDate(received);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.DepositReceived", tenantId, received));
         }
         payFromBalance(tenantId, policyNumber, method, reference, payerRef, payUpTo);
     }
@@ -1050,13 +1083,15 @@ public class BillingApiImpl implements BillingApi {
             .map(i -> Map.<String, Object>of("invoiceId", i.getInvoiceId(),
                 "amount", Map.of("amount", i.getAmount().toPlainString(), "currencyCode", i.getCurrency())))
             .toList();
-        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.AgentCashBanked", tenantId, Map.of(
+        Map<String, Object> banked = new java.util.HashMap<>(Map.of(
             "paymentId", paymentId, "receiptId", fieldReceiptId, "policyNumber", receipt.getPolicyNumber(),
             "agentId", receipt.getAgentId(),
             "amount", Map.of("amount", receipt.getAmount().setScale(2).toPlainString(), "currencyCode", receipt.getCurrency()),
             "receiptMethod", method == null ? "CASH" : method,
             "bankedAt", Instant.now().toString(),
-            "premiumsPaid", paid)));
+            "premiumsPaid", paid));
+        putBusinessDate(banked);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.AgentCashBanked", tenantId, banked));
         reconcileFieldReceipt(fieldReceiptId, by);
     }
 
