@@ -73,10 +73,28 @@ export async function createRealActiveProduct(page: Page): Promise<{ productId: 
  *  create-commission-plan form -- no need to touch `useFieldArray` at all for
  *  a minimal one-rule plan. Assumes the product is already selected and the
  *  "No plan applies yet" 404 state (with the inline create form) is showing. */
-export async function createDefaultPlan(page: Page, rate: string): Promise<void> {
-  const form = page.locator('form').filter({ hasText: 'Create a plan for this product' });
-  await form.getByPlaceholder('0.1000 (10%)').fill(rate);
-  await form.getByRole('button', { name: 'Create plan' }).click();
+export async function createDefaultPlan(
+  page: Page,
+  ratePercent: string,
+  browser: Browser,
+  optionLabel: string,
+): Promise<void> {
+  const form = page.locator('form').filter({ hasText: 'Propose a plan for this product' });
+  await form.getByLabel('Rate, percent of the premium').fill(ratePercent);
+  await form.getByRole('button', { name: 'Propose plan' }).click();
+  // Finding 190 (2026-11-12): it earns nothing until a second person approves it.
+  await expect(page.getByText('Earns nothing until a second person approves it', { exact: false })).toBeVisible({
+    timeout: 15_000,
+  });
+  const productName = optionLabel.replace(/ \([^)]*\)$/, '');
+  await asAdmin(browser, async (admin) => {
+    await admin.goto('/staff/commission-plans');
+    const row = admin.getByRole('listitem', { name: productName, exact: true });
+    await row.getByRole('button', { name: 'Approve plan' }).click();
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+  });
+  await page.reload();
+  await chooseProduct(page, optionLabel);
 }
 
 export async function issueRealPolicyForAgent(
@@ -125,7 +143,7 @@ export async function giveAgentEarningPolicy(
     await financePage.goto(`/staff/agents/${agentId}`);
     await chooseProduct(financePage, optionLabel);
     await expect(financePage.getByText('No plan applies to this agent for this product yet.')).toBeVisible();
-    await createDefaultPlan(financePage, '0.1000');
+    await createDefaultPlan(financePage, '10', browser, optionLabel);
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
   } finally {

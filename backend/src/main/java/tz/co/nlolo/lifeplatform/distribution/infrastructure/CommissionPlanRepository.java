@@ -34,6 +34,9 @@ public interface CommissionPlanRepository extends JpaRepository<CommissionPlan, 
      * a way to deactivate one, remain deliberately deferred -- both need a real decision about what
      * happens to commission already accrued under the old plan.
      */
+    /** The plans waiting for a second person, oldest first (finding 190, 2026-11-12). */
+    List<CommissionPlan> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, tz.co.nlolo.lifeplatform.distribution.api.PlanStatus status);
+
     List<CommissionPlan> findByTenantIdAndProductIdAndStatusOrderByCreatedAtDescCommissionPlanIdDesc(
         UUID tenantId, UUID productId, PlanStatus status);
 }

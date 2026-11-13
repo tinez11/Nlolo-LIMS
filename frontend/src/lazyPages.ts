@@ -195,6 +195,9 @@ export const PaymentRunPage = lazy(() =>
 export const MaturitiesPage = lazy(() =>
   import('@/features/policies/MaturitiesPage').then((m) => ({ default: m.MaturitiesPage })),
 );
+export const CommissionPlansPage = lazy(() =>
+  import('@/features/distribution/CommissionPlansPage').then((m) => ({ default: m.CommissionPlansPage })),
+);
 export const WithholdingRulesPage = lazy(() =>
   import('@/features/finance/WithholdingRulesPage').then((m) => ({ default: m.WithholdingRulesPage })),
 );

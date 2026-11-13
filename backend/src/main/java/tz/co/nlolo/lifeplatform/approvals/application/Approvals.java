@@ -55,6 +55,7 @@ public class Approvals {
         "bank-transfer", "receipt", "payout-approval", "payment-run", "free-look", "surrender", "account-withdrawal",
         "unit-withdrawal", "deposit-payee", "term-account-payee", "payout-review", "account-adjustment",
         "field-receipt", "price-adjustment", "fund-price", "rate-declaration", "bonus-declaration", "withholding-rule",
+        "commission-plan", "fund", "treaty",
         "manual-journal", "expense-allocation", "engine-run", "year-end-close", "reinsurance-statement",
         "accounting-policy", "period-reopen");
 
@@ -141,7 +142,9 @@ public class Approvals {
         Map.entry("period-reopen", "ledger.approve-own"),
         Map.entry("expense-allocation", "ifrs17.approve-own"), Map.entry("engine-run", "ifrs17.approve-own"),
         Map.entry("year-end-close", "ifrs17.approve-own"),
-        Map.entry("reinsurance-statement", "reinsurance.approve-own"));
+        Map.entry("reinsurance-statement", "reinsurance.approve-own"),
+        Map.entry("commission-plan", "commission.approve-own"), Map.entry("fund", "funds.approve-own"),
+        Map.entry("treaty", "reinsurance.approve-own"));
 
     private boolean actsAlone(String kind) {
         String own = OWN_WORK.get(kind);

@@ -4,7 +4,9 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import type { FundPriceView, FundView, PriceAdjustmentView } from '@/api/types';
+import { can } from '@/auth/access';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
+import { barredAsOwn, SIGNING_OWN } from '@/lib/ownWork';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField, RequiredNote } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
@@ -73,8 +75,10 @@ export function FundsPage() {
     // A closed fund takes no new money, so it is out of the way by default (2026-10-19): 78 closed test funds
     // buried the two a person actually prices each day. Still one switch away -- a closed fund keeps its prices
     // and the policies still holding its units.
-    const closed = all.filter((fund) => fund.status !== 'OPEN').length;
-    const rows = showClosed ? all : all.filter((fund) => fund.status === 'OPEN');
+    // A fund waiting for its second person is shown with the open ones: someone has to approve it (finding 126).
+    const live = (fund: FundView) => fund.status === 'OPEN' || fund.status === 'PROPOSED';
+    const closed = all.filter((fund) => !live(fund)).length;
+    const rows = showClosed ? all : all.filter(live);
     return (
       <div className="space-y-3">
         {closed > 0 && (
@@ -136,9 +140,11 @@ function FundCard({ fund, viewerSubject, isAdmin }: { fund: FundView; viewerSubj
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-            {open ? 'Hide prices' : 'Prices'}
-          </Button>
+          {fund.status !== 'PROPOSED' && fund.status !== 'REJECTED' && (
+            <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              {open ? 'Hide prices' : 'Prices'}
+            </Button>
+          )}
           {isAdmin && fund.status === 'OPEN' && (
             <Button size="sm" variant="ghost" disabled={acting?.status === 'loading'} onClick={() => void closeFund(fund.code)}>
               Close to new money
@@ -147,8 +153,64 @@ function FundCard({ fund, viewerSubject, isAdmin }: { fund: FundView; viewerSubj
         </div>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+      {fund.status === 'PROPOSED' && <FundDecision fund={fund} viewerSubject={viewerSubject} />}
+      {fund.status === 'REJECTED' && fund.decisionReason && (
+        <p className="mt-2 text-xs text-muted-foreground">Rejected: {fund.decisionReason}</p>
+      )}
       {open && <FundPrices fund={fund} viewerSubject={viewerSubject} />}
     </section>
+  );
+}
+
+/**
+ * A new fund, and its management charge, takes nothing until a second person approves it (2026-11-12, finance
+ * finding 126). Its proposer approves alone only holding funds.approve-own; anyone may withdraw their own.
+ */
+function FundDecision({ fund, viewerSubject }: { fund: FundView; viewerSubject: string | undefined }) {
+  const decide = useUnitLinkedStore((s) => s.decideFund);
+  const busy = useUnitLinkedStore((s) => s.acting[`fund.${fund.code}`]?.status === 'loading');
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const mine = viewerSubject != null && viewerSubject === fund.createdBy;
+  const barred = barredAsOwn(viewerSubject, fund.createdBy, 'funds');
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-border pt-3">
+      <p className="text-xs text-muted-foreground">
+        Proposed by <StaffName subject={fund.createdBy} />. It takes no money and no price until a second person approves it.
+      </p>
+      {can('funds.approve') && (
+        <>
+          {barred && <p className="text-xs text-muted-foreground">You proposed this fund, so someone else must approve it.</p>}
+          {mine && !barred && <p className="text-xs text-muted-foreground">{SIGNING_OWN}</p>}
+          {rejecting ? (
+            <div className="space-y-2">
+              <FormField required label="Why is it rejected?">
+                <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+              </FormField>
+              <div className="flex gap-2">
+                <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                  onClick={() => void decide(fund.code, reason.trim())}>
+                  Reject fund
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" disabled={barred || busy} pending={busy} onClick={() => void decide(fund.code, null)}>
+                Approve fund
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRejecting(true)}>
+                {mine ? 'Withdraw' : 'Reject'}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

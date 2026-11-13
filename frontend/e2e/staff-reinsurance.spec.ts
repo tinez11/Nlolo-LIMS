@@ -3,7 +3,7 @@ import { asAdmin } from './admin';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy, todayIso } from './dates';
 import { expectNavItemsHidden, expectRouteDenied } from './guards';
-import { firstFreeDay, treatyForToday } from './treaties';
+import { approveTreatyAsSecondPerson, firstFreeDay, treatyForToday } from './treaties';
 
 /**
  * Reinsurance e2e coverage against the real backend.
@@ -52,7 +52,11 @@ test.describe('staff reinsurance', () => {
 
     // The first day no other treaty is in force: only one is, at a time (2026-11-08).
     const from = await firstFreeDay(request);
-    const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50', from);
+    const { treatyId, reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50', from);
+    // Finance proposed it; it waits for a second person, who cannot be finance itself (finding 170).
+    await expect(page.getByText('It cedes nothing until a second person approves it', { exact: false })).toBeVisible();
+    await approveTreatyAsSecondPerson(request, treatyId);
+    await page.reload();
     await expect(page.getByRole('heading', { name: reinsurerName })).toBeVisible();
     await expect(page.getByText('Quota share', { exact: true })).toBeVisible();
     // A quota share is described by what it takes, not by the 0.00 retention it stores.

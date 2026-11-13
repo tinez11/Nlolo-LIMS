@@ -103,6 +103,24 @@ class FundRegister {
             in.cutOffTime(), by, clock.instant()));
     }
 
+    /** A second person opens a proposed fund (finding 126); its proposer only holding funds.approve-own. */
+    @Transactional
+    Fund approve(String code, String by) {
+        Fund fund = fund(code);
+        fund.approve(by, ownWork.mayActAlone("funds.approve-own"), clock.instant());
+        Fund saved = funds.save(fund);
+        if (saved.isActedAlone()) ownWork.record("Fund approved by its proposer", saved.getCode(), null, by);
+        return saved;
+    }
+
+    /** Rejected with its reason, or withdrawn by whoever proposed it: it never takes money. */
+    @Transactional
+    Fund reject(String code, String reason, String by) {
+        Fund fund = fund(code);
+        fund.reject(by, reason, clock.instant());
+        return funds.save(fund);
+    }
+
     @Transactional
     Fund close(String code, String by) {
         Fund fund = fund(code);
@@ -114,6 +132,10 @@ class FundRegister {
     FundPrice propose(String fundCode, LocalDate valuationDate, BigDecimal price, String moveReason, String by) {
         UUID tenantId = TenantContext.get();
         Fund fund = fund(fundCode);
+        if (fund.isProposed() || "REJECTED".equals(fund.getStatus())) {
+            throw new UnitLinkedStateException("Fund " + fund.getCode() + " is " + fund.getStatus().toLowerCase()
+                + "; a fund is priced only once a second person has approved it");
+        }
         if (valuationDate == null) {
             throw new IllegalArgumentException("A fund price needs its valuation date");
         }

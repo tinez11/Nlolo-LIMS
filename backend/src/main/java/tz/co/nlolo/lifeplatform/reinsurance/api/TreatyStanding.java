@@ -15,5 +15,9 @@ public enum TreatyStanding {
     /** On cover today: started, not ended, not withdrawn. */
     IN_FORCE,
     /** Past its effective-to, or withdrawn ({@link TreatyStatus#EXPIRED}). */
-    ENDED
+    ENDED,
+    /** Proposed, waiting for a second person (2026-11-12, finding 170). */
+    AWAITING_APPROVAL,
+    /** Rejected or withdrawn before it ever ceded. */
+    REJECTED
 }

@@ -88,7 +88,7 @@ class BordereauIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -133,9 +133,9 @@ class BordereauIntegrationTest {
 
     private TreatyView quotaShare(UUID tenantId, String percent, String commission) {
         TenantContext.set(tenantId);
-        return reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re", TreatyType.QUOTA_SHARE,
+        return reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re", TreatyType.QUOTA_SHARE,
             new BigDecimal("0.00"), CURRENCY, new BigDecimal(percent), new BigDecimal(commission), null,
-            TREATY_FROM, null), "finance-officer");
+            TREATY_FROM, null), "finance-officer").treatyId(), "treaty-approver");
     }
 
     private String activate(UUID tenantId, String category, String frequency, String premium, LocalDate on) {
@@ -327,9 +327,9 @@ class BordereauIntegrationTest {
     void anXolTreatyChargesATwelfthOfItsAnnualPremiumEachMonth() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
-        TreatyView treaty = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Munich Re",
+        TreatyView treaty = reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Munich Re",
             TreatyType.XOL, new BigDecimal("1500000.00"), CURRENCY, null, new BigDecimal("5.00"),
-            new BigDecimal("120000.00"), TREATY_FROM, null), "finance-officer");
+            new BigDecimal("120000.00"), TREATY_FROM, null), "finance-officer").treatyId(), "treaty-approver");
         assertThat(treaty.xolAnnualPremium()).isEqualByComparingTo("120000.00");
 
         bordereauJob.drain(LocalDate.of(2026, 3, 1));

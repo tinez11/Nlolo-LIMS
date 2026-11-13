@@ -244,7 +244,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -291,7 +291,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -378,9 +378,9 @@ class ReinsuranceAndLoanPostingEndToEndTest {
 
     private void createQuotaShareTreaty(UUID tenantId, BigDecimal cessionPercent) {
         TenantContext.set(tenantId);
-        reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
+        reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Africa Re", TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, cessionPercent,
-            new BigDecimal("20.00"), null, LocalDate.now().minusMonths(1), null), "finance-officer");
+            new BigDecimal("20.00"), null, LocalDate.now().minusMonths(1), null), "finance-officer").treatyId(), "treaty-approver");
     }
 
     /** Sum assured fixed at 2,000,000 -- the DEATH claim below settles for the full sum assured,

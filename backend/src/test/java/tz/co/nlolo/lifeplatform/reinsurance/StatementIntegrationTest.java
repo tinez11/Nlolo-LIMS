@@ -88,7 +88,7 @@ class StatementIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -139,9 +139,9 @@ class StatementIntegrationTest {
 
     private TreatyView quotaShare(UUID tenantId, String percent, String commission) {
         TenantContext.set(tenantId);
-        return api.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re", TreatyType.QUOTA_SHARE,
+        return api.approveTreaty(api.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re", TreatyType.QUOTA_SHARE,
             new BigDecimal("0.00"), CURRENCY, new BigDecimal(percent), new BigDecimal(commission), null,
-            TREATY_FROM, null), "finance-officer");
+            TREATY_FROM, null), "finance-officer").treatyId(), "treaty-approver");
     }
 
     private void activate(UUID tenantId, String premium, LocalDate on) {

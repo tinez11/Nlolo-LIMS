@@ -172,7 +172,7 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -766,6 +766,46 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$[0].modelBasis").value("REGISTER"));
         mockMvc.perform(get("/finance/policy-classifications/{policyNumber}", "POL-CT-CLS").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());
+    }
+
+    /** Findings 99 and 66 (2026-11-12): the baseline is signed off by name -- finance, and an actuary may co-sign. */
+    @Test
+    void theBaselineIsSignedOffByFinanceAndAnActuaryByName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/finance/accounting-policies/baseline-sign-off").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.finance").doesNotExist())
+            .andExpect(jsonPath("$.actuary").doesNotExist());
+
+        mockMvc.perform(post("/finance/accounting-policies/baseline-sign-off/actuary").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reference\":\"Board minute 14/2026\"}"))
+            .andExpect(status().isForbidden()); // finance is not the actuary
+        mockMvc.perform(post("/finance/accounting-policies/baseline-sign-off/finance").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reference\":\" \"}"))
+            .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(post("/finance/accounting-policies/baseline-sign-off/finance").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reference\":\"Board minute 14/2026\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.finance.signedBy").value("alice"))
+            .andExpect(jsonPath("$.finance.reference").value("Board minute 14/2026"));
+        mockMvc.perform(post("/finance/accounting-policies/baseline-sign-off/finance").with(financeStaffOf(tenantId, "bob"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reference\":\"Again\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(post("/finance/accounting-policies/baseline-sign-off/actuary").with(actuaryOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reference\":\"Actuarial memo 3/2026\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.finance.signedBy").value("alice"))
+            .andExpect(jsonPath("$.actuary.signedBy").value("actuary"));
+    }
+
+    private static RequestPostProcessor actuaryOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ACTUARY"))
+            .jwt(builder -> builder.subject("actuary").claim("tenant_id", tenantId.toString()));
     }
 
     @Test

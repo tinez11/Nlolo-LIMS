@@ -215,7 +215,7 @@ class CreditLifeCommissionTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql");
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -455,7 +455,7 @@ class CreditLifeCommissionTest {
     void theAgreementsCommissionIsPaidWhateverRateTheLendersAgentCarries() {
         GroupProduct product = creditLifeProduct();
         UUID lenderAgent = onboardAgent("Lender Rate");
-        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("12.5"), "finance");
+        distributionApi.approveCommissionPlan(distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("12.5"), "finance").commissionPlanId(), "plan-approver");
         scheme = issueScheme(lenderAgent, product);
 
         submitAndAccept(THREE_BORROWERS);
@@ -503,7 +503,7 @@ class CreditLifeCommissionTest {
         submitAndAccept(THREE_BORROWERS);
 
         UUID lenderAgent = onboardAgentFor(lenderParty);
-        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("10"), "finance");
+        distributionApi.approveCommissionPlan(distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("10"), "finance").commissionPlanId(), "plan-approver");
         policyApi.changeSchemeAgentOfRecord(scheme, lenderAgent, "The lender earns commission (spec 2.8)", "finance");
         submitAndAccept(",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
 
@@ -548,7 +548,7 @@ class CreditLifeCommissionTest {
     void aSchemeFromBeforeTheRulePaysNoCommissionToAnAgentWhoIsNotTheLender() {
         GroupProduct product = creditLifeProduct();
         UUID outsider = onboardAgent("Legacy Agent");
-        distributionApi.setAgentCommissionRate(outsider, product.productId(), new BigDecimal("10"), "finance");
+        distributionApi.approveCommissionPlan(distributionApi.setAgentCommissionRate(outsider, product.productId(), new BigDecimal("10"), "finance").commissionPlanId(), "plan-approver");
         scheme = issueSchemeFor(newLenderParty(), null, product);
         // The state a pre-rule scheme is in: the outsider named as its agent of record, on both sides.
         jdbcTemplate.update("UPDATE policy.policy SET agent_of_record_id = ? WHERE policy_number = ?", outsider, scheme);
@@ -816,9 +816,9 @@ class CreditLifeCommissionTest {
      */
     private void schemeWithBankAsAgent(boolean agreed) {
         GroupProduct product = creditLifeProduct();
-        distributionApi.createCommissionPlan(product.productId(), List.of(
+        distributionApi.approveCommissionPlan(distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, FIRST_YEAR_RATE, null, null)),
-            "actuary");
+            "actuary").commissionPlanId(), "plan-approver");
 
         int tag = SEQ.incrementAndGet();
         UUID bankParty = partyApi.registerIndividual("Bank Agent " + tag, LocalDate.of(1980, 1, 1),

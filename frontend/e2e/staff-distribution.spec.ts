@@ -109,7 +109,7 @@ test.describe('staff distribution', () => {
     // prove is that an underwriter is refused the page, not shown actions that would 403.
     await page.goto(`/staff/agents/${agentId}`);
     await expect(page.getByText('You do not have access to this')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Create a plan for this product')).not.toBeVisible();
+    await expect(page.getByText('Propose a plan for this product')).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'Request payout' })).not.toBeVisible();
   });
 
@@ -128,7 +128,7 @@ test.describe('staff distribution', () => {
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();
 
-    await createDefaultPlan(financePage, '0.1000');
+    await createDefaultPlan(financePage, '10', browser, optionLabel);
 
     // A real POST -> 201 -> the store writes the response straight into the
     // same (agent, product) slot the 404 came from -- no reload needed to see
@@ -170,7 +170,7 @@ test.describe('staff distribution', () => {
     await expect(
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();
-    await createDefaultPlan(financePage, '0.1000');
+    await createDefaultPlan(financePage, '10', browser, optionLabel);
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     // Selling the policy is underwriting's, not finance's, since staff permissions (2026-10-26).

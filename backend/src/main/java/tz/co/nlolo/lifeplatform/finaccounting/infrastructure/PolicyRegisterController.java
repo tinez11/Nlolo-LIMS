@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import tz.co.nlolo.lifeplatform.finaccounting.api.BaselineSignOffView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
+import tz.co.nlolo.lifeplatform.finaccounting.application.BaselineSignOffs;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionView;
 
@@ -35,9 +37,12 @@ public class PolicyRegisterController {
     public record RejectionRequest(String reason) {}
 
     private final FinaccountingApi api;
+    private final tz.co.nlolo.lifeplatform.finaccounting.application.BaselineSignOffs signOffs;
 
-    public PolicyRegisterController(FinaccountingApi api) {
+    public PolicyRegisterController(FinaccountingApi api,
+                                    tz.co.nlolo.lifeplatform.finaccounting.application.BaselineSignOffs signOffs) {
         this.api = api;
+        this.signOffs = signOffs;
     }
 
     /** The elections in force on {@code asOf} (today when omitted), those scheduled after it, and every one proposed. */
@@ -68,6 +73,28 @@ public class PolicyRegisterController {
     public PolicyElectionView approve(@PathVariable UUID electionId, @RequestBody ApprovalRequest body,
                                       @AuthenticationPrincipal Jwt jwt) {
         return api.approvePolicyElection(electionId, body == null ? null : body.signOffRef(), jwt.getSubject());
+    }
+
+    // ---- the baseline's sign-off (2026-11-12, finance findings 99 and 66) ----------------------------------------
+
+    public record SignOffRequest(String reference) {}
+
+    @GetMapping("/finance/accounting-policies/baseline-sign-off")
+    @PreAuthorize("@access.can('ledger.view')")
+    public BaselineSignOffView baselineSignOff() {
+        return signOffs.current();
+    }
+
+    @PostMapping("/finance/accounting-policies/baseline-sign-off/finance")
+    @PreAuthorize("@access.can('ledger.baseline-sign-off')")
+    public BaselineSignOffView signOffAsFinance(@RequestBody SignOffRequest body, @AuthenticationPrincipal Jwt jwt) {
+        return signOffs.signOff(BaselineSignOffs.Signer.FINANCE, body == null ? null : body.reference(), jwt.getSubject());
+    }
+
+    @PostMapping("/finance/accounting-policies/baseline-sign-off/actuary")
+    @PreAuthorize("@access.can('ifrs17.actuary-sign-off')")
+    public BaselineSignOffView signOffAsActuary(@RequestBody SignOffRequest body, @AuthenticationPrincipal Jwt jwt) {
+        return signOffs.signOff(BaselineSignOffs.Signer.ACTUARY, body == null ? null : body.reference(), jwt.getSubject());
     }
 
     @PostMapping("/finance/accounting-policies/{electionId}/rejection")

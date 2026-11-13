@@ -14,6 +14,10 @@ package tz.co.nlolo.lifeplatform.distribution.api;
  * other call site (commission_rule.tier_type, agent_profile.license_status,
  * commission_statement.status) already follows it. */
 public enum PlanStatus {
+    /** Waiting for a second person (2026-11-12, finance finding 190): earns nothing yet. */
+    PROPOSED,
     ACTIVE,
-    RETIRED
+    RETIRED,
+    /** Refused by the second person; never earned anything. */
+    REJECTED
 }

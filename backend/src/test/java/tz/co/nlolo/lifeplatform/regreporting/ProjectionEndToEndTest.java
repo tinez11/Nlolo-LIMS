@@ -259,7 +259,7 @@ class ProjectionEndToEndTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",
@@ -318,9 +318,9 @@ class ProjectionEndToEndTest {
 
     private void createQuotaShareTreaty(BigDecimal cessionPercent) {
         TenantContext.set(SEEDED_TENANT);
-        reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
+        reinsuranceApi.approveTreaty(reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Africa Re", TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, cessionPercent,
-            LocalDate.now().minusMonths(1), null), "finance-officer");
+            LocalDate.now().minusMonths(1), null), "finance-officer").treatyId(), "treaty-approver");
     }
 
     /** ANNUALLY, deliberately -- billing's 12-month look-ahead schedule produces exactly one

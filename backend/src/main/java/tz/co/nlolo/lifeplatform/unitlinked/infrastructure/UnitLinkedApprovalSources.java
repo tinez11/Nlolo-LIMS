@@ -32,6 +32,19 @@ class UnitLinkedApprovalSources {
         });
     }
 
+    /** A new fund and its management charge, waiting for a second person (2026-11-12, finance finding 126). */
+    @Bean
+    ApprovalSource fundApprovals(FundRepository funds) {
+        return ApprovalSource.of("fund", "New funds", "Approve", "funds.approve",
+            limit -> ApprovalSource.Pending.of(funds.findByTenantIdOrderByCode(TenantContext.get()).stream()
+                .filter(Fund::isProposed)
+                .map(f -> new ApprovalSource.Item(f.getCode(), null,
+                    f.getCode() + " · " + f.getName() + ", management charge "
+                        + f.getAnnualManagementChargePercent().stripTrailingZeros().toPlainString() + "% a year",
+                    null, null, f.getCreatedBy(), f.getCreatedAt()))
+                .toList(), limit));
+    }
+
     @Bean
     ApprovalSource unitWithdrawalApprovals(UnitLinkedWithdrawalRequestRepository withdrawals) {
         return ApprovalSource.of("unit-withdrawal", "Unit-linked withdrawals", "Approve", "accounts.approve",

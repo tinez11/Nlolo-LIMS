@@ -57,6 +57,22 @@ public class CommissionPlan {
     @Column(name = "updated_by")
     private String updatedBy;
 
+    /** The agent whose own rate this is: their plan pointer moves to it only once it is approved. */
+    @Column(name = "proposed_for_agent_id")
+    private UUID proposedForAgentId;
+
+    @Column(name = "decided_by")
+    private String decidedBy;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
+
+    @Column(name = "decision_reason")
+    private String decisionReason;
+
+    @Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
     protected CommissionPlan() {}
 
     public CommissionPlan(UUID tenantId, UUID productId, String createdBy) {
@@ -64,6 +80,47 @@ public class CommissionPlan {
         this.productId = productId;
         this.createdBy = createdBy;
     }
+
+    /**
+     * A plan proposed, waiting for a second person (2026-11-12, finance finding 190). {@code forAgent} names the agent
+     * whose own rate it is, or null for the product's plan.
+     */
+    public static CommissionPlan proposed(UUID tenantId, UUID productId, UUID forAgent, String createdBy) {
+        CommissionPlan plan = new CommissionPlan(tenantId, productId, createdBy);
+        plan.status = PlanStatus.PROPOSED;
+        plan.proposedForAgentId = forAgent;
+        return plan;
+    }
+
+    /** Approved: it earns from now. {@code alone} when its proposer approved it, holding commission.approve-own. */
+    public void approve(String by, boolean alone) {
+        requireProposed("approved");
+        status = PlanStatus.ACTIVE;
+        decidedBy = by;
+        decidedAt = Instant.now();
+        actedAlone = alone;
+    }
+
+    public void reject(String by, String reason, boolean alone) {
+        requireProposed("rejected");
+        status = PlanStatus.REJECTED;
+        decidedBy = by;
+        decidedAt = Instant.now();
+        decisionReason = reason;
+        actedAlone = alone;
+    }
+
+    private void requireProposed(String what) {
+        if (status != PlanStatus.PROPOSED) {
+            throw new IllegalStateException("Only a proposed plan can be " + what + "; this one is " + status);
+        }
+    }
+
+    public UUID getProposedForAgentId() { return proposedForAgentId; }
+    public String getDecidedBy() { return decidedBy; }
+    public Instant getDecidedAt() { return decidedAt; }
+    public String getDecisionReason() { return decisionReason; }
+    public boolean isActedAlone() { return actedAlone; }
 
     public void setStatus(PlanStatus status) { this.status = status; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }

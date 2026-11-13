@@ -194,8 +194,10 @@ export const STATUS_MAPS = {
 
   // unitlinked fund.status, fund_price.status, price_correction_adjustment.status (product step 6).
   fund: {
+    PROPOSED: 'pending',
     OPEN: 'active',
     CLOSED: 'neutral',
+    REJECTED: 'danger',
   },
   fundPrice: {
     PROPOSED: 'pending',
@@ -394,13 +396,17 @@ export const STATUS_MAPS = {
 
   // reinsurance/api/TreatyStatus.java
   treaty: {
+    PROPOSED: 'pending',
     ACTIVE: 'active',
     EXPIRED: 'neutral',
+    REJECTED: 'danger',
   },
 
   // reinsurance/api/TreatyStanding.java -- where a treaty stands today, read from its dates.
   // What the console shows; `treaty` above is the stored flag, which never changes on its own.
   treatyStanding: {
+    AWAITING_APPROVAL: 'pending',
+    REJECTED: 'danger',
     NOT_STARTED: 'pending',
     IN_FORCE: 'active',
     ENDED: 'neutral',
@@ -432,8 +438,10 @@ export const STATUS_MAPS = {
 
   // distribution/api/PlanStatus.java
   commissionPlan: {
+    PROPOSED: 'pending',
     ACTIVE: 'active',
     RETIRED: 'neutral',
+    REJECTED: 'danger',
   },
 
   // product/api/ProductStatus.java

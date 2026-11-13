@@ -393,6 +393,14 @@ public class DistributionApiImpl implements DistributionApi {
     @Override
     @Transactional
     public CommissionPlanView createCommissionPlan(UUID productId, List<CommissionRuleInput> rules, String createdBy) {
+        return proposePlan(productId, rules, createdBy, null);
+    }
+
+    /**
+     * A plan is PROPOSED and earns nothing until a second person approves it (2026-11-12, finance finding 190: a rate
+     * change moves money to agents, and one person could make it). {@code forAgent} is the agent whose own rate it is.
+     */
+    private CommissionPlanView proposePlan(UUID productId, List<CommissionRuleInput> rules, String createdBy, UUID forAgent) {
         UUID tenantId = TenantContext.get();
 
         // The product must exist. ProductNotFoundException propagates as-is (404 at the boundary).
@@ -405,7 +413,7 @@ public class DistributionApiImpl implements DistributionApi {
             validateRuleShape(rule);
         }
 
-        CommissionPlan plan = new CommissionPlan(tenantId, productId, createdBy);
+        CommissionPlan plan = CommissionPlan.proposed(tenantId, productId, forAgent, createdBy);
         commissionPlanRepository.save(plan);
 
         List<CommissionRule> savedRules = new ArrayList<>();
@@ -437,10 +445,59 @@ public class DistributionApiImpl implements DistributionApi {
         }
         // Stored as the fraction the calculator multiplies premium by: 12.5% is 0.1250.
         BigDecimal rate = ratePercent.divide(new BigDecimal("100"), 4, java.math.RoundingMode.UNNECESSARY);
-        CommissionPlanView plan = createCommissionPlan(productId,
-            List.of(new CommissionRuleInput(TierType.FIRST_YEAR, rate, null, null)), setBy);
-        agent.setCommissionPlanId(plan.commissionPlanId());
-        agentProfileRepository.save(agent);
+        // Proposed: the agent's plan pointer moves to it only once a second person approves it (finding 190).
+        return proposePlan(productId, List.of(new CommissionRuleInput(TierType.FIRST_YEAR, rate, null, null)), setBy,
+            agent.getAgentId());
+    }
+
+    @Override
+    @Transactional
+    public CommissionPlanView approveCommissionPlan(UUID planId, String by) {
+        UUID tenantId = TenantContext.get();
+        CommissionPlan plan = proposedPlan(planId, tenantId);
+        boolean alone = by.equals(plan.getCreatedBy());
+        if (alone && !ownWork.mayActAlone("commission.approve-own")) {
+            throw new InvalidAgentStateException("You proposed this plan; a second person must approve it");
+        }
+        plan.approve(by, alone);
+        commissionPlanRepository.save(plan);
+        if (plan.getProposedForAgentId() != null) {
+            AgentProfile agent = findAgentOrThrow(plan.getProposedForAgentId(), tenantId);
+            agent.setCommissionPlanId(plan.getCommissionPlanId());
+            agentProfileRepository.save(agent);
+        }
+        if (alone) ownWork.record("Commission plan approved by its proposer", planId.toString(), null, by);
+        return toCommissionPlanView(plan);
+    }
+
+    @Override
+    @Transactional
+    public CommissionPlanView rejectCommissionPlan(UUID planId, String reason, String by) {
+        UUID tenantId = TenantContext.get();
+        if (reason == null || reason.isBlank()) {
+            throw new DistributionValidationException("Say why the plan is rejected");
+        }
+        CommissionPlan plan = proposedPlan(planId, tenantId);
+        // Its proposer may always withdraw it: rejecting earns nobody anything, so it is not acting alone.
+        plan.reject(by, reason.trim(), false);
+        commissionPlanRepository.save(plan);
+        return toCommissionPlanView(plan);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommissionPlanView> proposedCommissionPlans() {
+        UUID tenantId = TenantContext.get();
+        return commissionPlanRepository.findByTenantIdAndStatusOrderByCreatedAtAsc(tenantId, PlanStatus.PROPOSED).stream()
+            .map(this::toCommissionPlanView).toList();
+    }
+
+    private CommissionPlan proposedPlan(UUID planId, UUID tenantId) {
+        CommissionPlan plan = commissionPlanRepository.findByCommissionPlanIdAndTenantId(planId, tenantId)
+            .orElseThrow(() -> new CommissionPlanNotFoundException("Commission plan " + planId + " not found"));
+        if (plan.getStatus() != PlanStatus.PROPOSED) {
+            throw new DistributionValidationException("This plan is already " + plan.getStatus().name().toLowerCase());
+        }
         return plan;
     }
 
@@ -862,7 +919,15 @@ public class DistributionApiImpl implements DistributionApi {
 
     private CommissionPlanView toCommissionPlanView(CommissionPlan plan, List<CommissionRule> rules) {
         List<CommissionRuleView> ruleViews = rules.stream().map(this::toCommissionRuleView).toList();
-        return new CommissionPlanView(plan.getCommissionPlanId(), plan.getProductId(), plan.getStatus(), ruleViews);
+        // Names only for a plan still waiting: the approver reads them, and nothing else needs the lookups.
+        boolean waiting = plan.getStatus() == PlanStatus.PROPOSED;
+        String agentName = waiting && plan.getProposedForAgentId() != null
+            ? agentProfileRepository.findByAgentIdAndTenantId(plan.getProposedForAgentId(), plan.getTenantId())
+                .flatMap(a -> partyName(a.getPartyId())).orElse(null)
+            : null;
+        return new CommissionPlanView(plan.getCommissionPlanId(), plan.getProductId(), plan.getStatus(), ruleViews,
+            plan.getCreatedBy(), plan.getProposedForAgentId(), plan.getDecidedBy(), plan.getDecisionReason(),
+            plan.getCreatedAt(), waiting ? productName(plan.getProductId()).orElse(null) : null, agentName);
     }
 
     private CommissionRuleView toCommissionRuleView(CommissionRule rule) {

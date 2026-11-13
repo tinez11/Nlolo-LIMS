@@ -298,7 +298,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
-            "db-migrations/distribution/V11__commission_payout_approval.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -309,7 +309,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql",
             // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
             // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE
@@ -332,7 +332,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql",
             // M10 (Task 9) additions: regreporting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap finaccounting had entering
             // M9. regreporting/V1 has zero GRANT statements and zero RLS on either of its two

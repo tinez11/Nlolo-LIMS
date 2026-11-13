@@ -159,6 +159,19 @@ export function createCommissionPlan(
   return post<CommissionPlanView>('/commission-plans', request);
 }
 
+/** `GET /commission-plans/proposed` -- plans and agent rates waiting for a second person, oldest first (finding 190). */
+export function listProposedCommissionPlans(): Promise<CommissionPlanView[]> {
+  return get<CommissionPlanView[]>('/commission-plans/proposed');
+}
+
+/** Approve (reason null) or reject (with the reason) a proposed plan -- commission.approve. */
+export function decideCommissionPlan(planId: string, rejectReason: string | null): Promise<CommissionPlanView> {
+  const id = encodeURIComponent(planId);
+  return rejectReason === null
+    ? post<CommissionPlanView>(`/commission-plans/${id}/approval`, {})
+    : post<CommissionPlanView>(`/commission-plans/${id}/rejection`, { reason: rejectReason });
+}
+
 /** `period` is `YYYY-MM`. A bare array -- no pager, same shape as products'
  *  catalog listing. */
 export function listCommissionStatements(

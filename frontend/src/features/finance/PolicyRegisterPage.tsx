@@ -30,6 +30,7 @@ import {
 } from './registerForms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { StaffName } from '@/components/StaffName';
+import { BaselineSignOff } from './BaselineSignOff';
 
 const KEY_LABEL: Record<ElectionKey, string> = {
   MEASUREMENT_MODEL: 'Measurement model',
@@ -111,6 +112,7 @@ export function PolicyRegisterPage() {
         description="A change applies from today or later, and a second person approves it."
       />
       <div className="space-y-4 px-6 pb-6">
+        <BaselineSignOff />
         {renderBody()}
         <ProposeForm />
       </div>
@@ -143,7 +145,10 @@ function ElectionTable({ label, rows, showKey = false }: { label: string; rows: 
               </td>
               <td className="py-1 pr-3">{formatDate(e.effectiveFrom)}</td>
               <td className="py-1 pr-3 tabular-nums">{e.registerVersion}</td>
-              <td className="py-1 text-xs text-muted-foreground">{e.signOffRef}</td>
+              {/* The baseline's stored reference is the platform's own note; its sign-off is the panel above (finding 66). */}
+              <td className="py-1 text-xs text-muted-foreground">
+                {e.decidedBy === 'system:baseline' ? 'Baseline — see its sign-off above' : e.signOffRef}
+              </td>
             </tr>
           ))}
         </tbody>

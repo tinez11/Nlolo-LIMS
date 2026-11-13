@@ -28,6 +28,7 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'lender-refund': (r) => policy(r, 'billing'),
   // The row's reference is agentId/statementId (DistributionApprovalSources); the agent's page releases it.
   'commission-payout': (r) => `/staff/agents/${encodeURIComponent(r.reference.split('/')[0] ?? '')}`,
+  'commission-plan': () => '/staff/commission-plans',
   'payment-run': (r) => `/staff/payment-runs/${id(r)}`,
   'free-look': (r) => policy(r),
   surrender: (r) => policy(r),
@@ -39,6 +40,9 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'field-receipt': () => '/staff/field-receipts',
   'price-adjustment': () => '/staff/funds',
   'fund-price': () => '/staff/funds',
+  // 2026-11-12 (findings 126, 170): a new fund is approved on its card; a new treaty on its own page.
+  fund: () => '/staff/funds',
+  treaty: (r) => `/staff/treaties/${id(r)}`,
   'rate-declaration': (r) => `/staff/products/${id(r)}`,
   'bonus-declaration': (r) => `/staff/products/${id(r)}`,
   'withholding-rule': () => '/staff/withholding-rules',

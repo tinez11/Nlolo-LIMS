@@ -91,6 +91,19 @@ public class ReinsuranceTreaty {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    /* 2026-11-12, finance finding 170: a second person decides a new treaty. */
+    @Column(name = "decided_by")
+    private String decidedBy;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
+
+    @Column(name = "decision_reason")
+    private String decisionReason;
+
+    @Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
     @Column(name = "updated_by")
     private String updatedBy;
 
@@ -135,6 +148,8 @@ public class ReinsuranceTreaty {
      * would refuse. The rest only splits "not in force" into before and after.
      */
     public TreatyStanding standingOn(LocalDate date) {
+        if (status == TreatyStatus.PROPOSED) return TreatyStanding.AWAITING_APPROVAL;
+        if (status == TreatyStatus.REJECTED) return TreatyStanding.REJECTED;
         if (isActiveOn(date)) {
             return TreatyStanding.IN_FORCE;
         }
@@ -176,6 +191,49 @@ public class ReinsuranceTreaty {
         this.updatedAt = Instant.now();
         this.updatedBy = endedBy;
     }
+
+    /**
+     * Made through the platform, a treaty is PROPOSED and cedes nothing until a second person approves it (2026-11-12,
+     * finance finding 170: it moves premium to an outside company every month).
+     */
+    public void markProposed() {
+        this.status = TreatyStatus.PROPOSED;
+    }
+
+    /** A second person puts it in force; its proposer only when they may act alone, which the row records. */
+    public void approve(String by, boolean mayActAlone) {
+        requireProposed();
+        boolean alone = by.equals(createdBy);
+        if (alone && !mayActAlone) {
+            throw new IllegalStateException("You proposed this treaty; a second person must approve it");
+        }
+        this.status = TreatyStatus.ACTIVE;
+        this.decidedBy = by;
+        this.decidedAt = Instant.now();
+        this.actedAlone = alone;
+    }
+
+    /** Rejected with its reason, or withdrawn by its proposer: it never cedes. */
+    public void reject(String by, String reason) {
+        requireProposed();
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Say why the treaty is rejected");
+        }
+        this.status = TreatyStatus.REJECTED;
+        this.decidedBy = by;
+        this.decidedAt = Instant.now();
+        this.decisionReason = reason.trim();
+    }
+
+    private void requireProposed() {
+        if (status != TreatyStatus.PROPOSED) {
+            throw new IllegalStateException("This treaty is " + status.name().toLowerCase() + ", not waiting for approval");
+        }
+    }
+
+    public boolean isActedAlone() { return actedAlone; }
+    public String getDecidedBy() { return decidedBy; }
+    public String getDecisionReason() { return decisionReason; }
 
     public void expire(String expiredBy) {
         this.status = TreatyStatus.EXPIRED;

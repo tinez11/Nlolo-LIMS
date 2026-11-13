@@ -35,6 +35,14 @@ export function createTreaty(
 }
 
 /** `POST /treaties/{id}/end` (2026-11-08): the last day the treaty takes new policies. */
+/** Approve (reason null) or reject a proposed treaty -- reinsurance.approve (2026-11-12, finance finding 170). */
+export function decideTreaty(treatyId: string, rejectReason: string | null): Promise<TreatyView> {
+  const id = encodeURIComponent(treatyId);
+  return rejectReason === null
+    ? post<TreatyView>(`/treaties/${id}/approval`, {})
+    : post<TreatyView>(`/treaties/${id}/rejection`, { reason: rejectReason });
+}
+
 export function endTreaty(treatyId: string, endsOn: string): Promise<TreatyView> {
   return post<TreatyView>(`/treaties/${encodeURIComponent(treatyId)}/end`, { endsOn });
 }

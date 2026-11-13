@@ -159,6 +159,18 @@ public interface DistributionApi {
      */
     CommissionPlanView setAgentCommissionRate(UUID agentId, UUID productId, BigDecimal ratePercent, String setBy);
 
+    /**
+     * A proposed plan or agent rate approved: it earns from now, and an agent's rate becomes theirs (2026-11-12, finance
+     * finding 190). Its proposer may approve it only holding commission.approve-own, recorded as acting alone.
+     */
+    CommissionPlanView approveCommissionPlan(UUID planId, String by);
+
+    /** A proposed plan or agent rate rejected, with the reason: it never earns. */
+    CommissionPlanView rejectCommissionPlan(UUID planId, String reason, String by);
+
+    /** The plans and agent rates waiting for a second person, oldest first. */
+    List<CommissionPlanView> proposedCommissionPlans();
+
     /** Every accrual and clawback booked on one policy, oldest first -- what it has earned whom. */
     List<CommissionAccrualView> listAccrualsForPolicy(String policyNumber);
 

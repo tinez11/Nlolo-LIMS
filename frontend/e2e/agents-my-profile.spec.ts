@@ -33,7 +33,7 @@ test.describe('agents my profile', () => {
     // No "create plan" / "request payout" affordance anywhere -- those are
     // FINANCE_OFFICER/ADMIN staff actions, and canManage is hardcoded false
     // on this page.
-    await expect(page.getByRole('button', { name: 'Create plan' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Propose plan' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Request payout' })).toHaveCount(0);
 
     // Commission earned moved to its own screen; the profile links there instead of listing statements.

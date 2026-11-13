@@ -146,6 +146,50 @@ paths:
                 items: { $ref: '#/components/schemas/TreatyView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /treaties/{treatyId}/approval:
+    post:
+      summary: Approve a proposed treaty (reinsurance.approve; its proposer only with reinsurance.approve-own)
+      description: 2026-11-12, finance finding 170. It cedes from now. Refused while another treaty is in force over its dates.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+      responses:
+        '200':
+          description: The treaty, ACTIVE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TreatyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /treaties/{treatyId}/rejection:
+    post:
+      summary: Reject a proposed treaty with a reason, or withdraw one's own (reinsurance.approve)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: The treaty, REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TreatyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /treaties/{treatyId}/end:
     post:
       summary: End a treaty early -- the last day it takes new policies (2026-11-08)
@@ -671,11 +715,11 @@ components:
         does not apply to it. It participates only in recovery.
     TreatyStatus:
       type: string
-      enum: [ACTIVE, EXPIRED]
-      description: Only ACTIVE treaties are eligible for cession selection.
+      enum: [PROPOSED, ACTIVE, EXPIRED, REJECTED]
+      description: Only ACTIVE treaties are eligible for cession selection. A new treaty is PROPOSED until a second person approves it (2026-11-12, finding 170).
     TreatyStanding:
       type: string
-      enum: [NOT_STARTED, IN_FORCE, ENDED]
+      enum: [NOT_STARTED, IN_FORCE, ENDED, AWAITING_APPROVAL, REJECTED]
       description: >
         Where the treaty stands today (civil date, Africa/Dar_es_Salaam), worked out from its
         dates when read and never stored. IN_FORCE is exactly what cession selection accepts.
@@ -738,6 +782,9 @@ components:
         takesNewPolicies:
           type: boolean
           description: "Whether a policy issued today is ceded to it. False for a treaty in force while a later one is: each policy goes to one treaty."
+        createdBy: { type: [string, 'null'] }
+        decidedBy: { type: [string, 'null'] }
+        decisionReason: { type: [string, 'null'] }
     BordereauView:
       type: object
       required: [treatyId, period, currency, policyCount, premium, commission, recoveries, lines]

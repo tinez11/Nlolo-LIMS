@@ -227,6 +227,23 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     }
 
     @Override
+    public FundView approveFund(String code, String by) {
+        return view(register.approve(code, by));
+    }
+
+    @Override
+    public FundView rejectFund(String code, String reason, String by) {
+        return view(register.reject(code, reason, by));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FundView> proposedFunds() {
+        return funds.findByTenantIdOrderByCode(TenantContext.get()).stream().filter(Fund::isProposed)
+            .map(UnitLinkedApiImpl::view).toList();
+    }
+
+    @Override
     public FundView closeFund(String code, String closedBy) {
         return view(register.close(code, closedBy));
     }
@@ -290,7 +307,7 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     static FundView view(Fund f) {
         return new FundView(f.getFundId(), f.getCode(), f.getName(), f.getCurrency(), f.getAssetClass(),
             f.getAnnualManagementChargePercent(), f.getCutOffTime(), f.getStatus(), f.getCreatedBy(), f.getCreatedAt(),
-            f.getClosedBy(), f.getClosedAt());
+            f.getClosedBy(), f.getClosedAt(), f.getDecidedBy(), f.getDecisionReason());
     }
 
     static FundPriceView view(FundPrice p, String fundCode) {

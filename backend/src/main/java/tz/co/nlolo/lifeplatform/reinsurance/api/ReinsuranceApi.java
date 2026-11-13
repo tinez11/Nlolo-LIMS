@@ -41,6 +41,12 @@ public interface ReinsuranceApi {
 
     /** Ends a treaty early (2026-11-08): no new policies after {@code endsOn}; policies already ceded stay ceded. */
     TreatyView endTreaty(UUID treatyId, java.time.LocalDate endsOn, String endedBy);
+
+    /** A proposed treaty put in force by a second person (2026-11-12, finance finding 170). */
+    TreatyView approveTreaty(UUID treatyId, String by);
+
+    /** A proposed treaty rejected with its reason, or withdrawn by its proposer. */
+    TreatyView rejectTreaty(UUID treatyId, String reason, String by);
     TreatyView getTreaty(UUID treatyId);
     List<TreatyView> listTreaties(TreatyStatus status);
 

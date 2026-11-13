@@ -144,6 +144,7 @@ import {
   PaymentRunPage,
   MaturitiesPage,
   WithholdingRulesPage,
+  CommissionPlansPage,
   HeldVestingsPage,
   FundsPage,
   PeriodsPage,
@@ -392,6 +393,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
+  'commission-plans': ['agents.view'],
   payments: ['collections.view'],
   // The one Deposit page (2026-11-07): finance records money received; servicing may ask a phone for it.
   'receipts/new': ['collections.manage', 'policies.service', 'accounts.transact'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
@@ -637,6 +639,12 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'agents/new', element: <OnboardAgentPage />, reach: 'drill-in' },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
+  // Finding 190 (2026-11-12): plans and agents' own rates wait here for a second person; the Approvals queue links in.
+  {
+    path: 'commission-plans',
+    element: <CommissionPlansPage />,
+    reach: { group: 'distribution', label: 'Commission plans', icon: Percent },
+  },
 
   // FIRST in the finance group, because it is the only screen in it that is WORK rather
   // than a record: GL postings, the chart of accounts and treaties are all things you look

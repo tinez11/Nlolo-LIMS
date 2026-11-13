@@ -20,7 +20,9 @@ public record TreatyResponseDto(UUID treatyId, String reinsurerName, TreatyType 
                                  /** Policies ceded to it (2026-11-08), on the list only; absent elsewhere. */
                                  Long cededPolicies,
                                  /** Whether a policy issued today goes to it -- false while a later treaty in force takes it. */
-                                 boolean takesNewPolicies) {
+                                 boolean takesNewPolicies,
+                                 /** 2026-11-12, finding 170: who proposed it, who decided it, and why it was rejected. */
+                                 String createdBy, String decidedBy, String decisionReason) {
 
     public static TreatyResponseDto from(TreatyView view) {
         return new TreatyResponseDto(view.treatyId(), view.reinsurerName(), view.treatyType(), view.status(),
@@ -31,6 +33,7 @@ public record TreatyResponseDto(UUID treatyId, String reinsurerName, TreatyType 
             view.commissionPercent().toPlainString(),
             view.xolAnnualPremium() == null ? null
                 : new MoneyDto(view.xolAnnualPremium().toPlainString(), view.retentionLimitCurrency()),
-            view.standing(), view.cededPolicies(), view.takesNewPolicies());
+            view.standing(), view.cededPolicies(), view.takesNewPolicies(), view.createdBy(), view.decidedBy(),
+            view.decisionReason());
     }
 }

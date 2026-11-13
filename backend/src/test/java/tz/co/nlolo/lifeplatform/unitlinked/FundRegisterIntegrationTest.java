@@ -59,6 +59,34 @@ class FundRegisterIntegrationTest {
     @Autowired private UnitLinkedApi api;
     @Autowired private JdbcTemplate jdbc;
 
+    /** Finding 126 (2026-11-12): a new fund takes no price and no money until a second person approves it. */
+    @Test
+    void aNewFundOpensOnlyOnceSomeoneElseApprovesIt() {
+        UUID tenant = UUID.randomUUID();
+        var proposed = asTenant(tenant, () -> api.createFund(new tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund(
+            "NEW1", "New fund", "TZS", "EQUITY", new BigDecimal("1.5"), java.time.LocalTime.of(14, 0)), ADMIN));
+        assertThat(proposed.status()).isEqualTo("PROPOSED");
+        assertThat(asTenant(tenant, () -> api.proposedFunds())).extracting(f -> f.code()).containsExactly("NEW1");
+
+        assertThatThrownBy(() -> asTenant(tenant, () ->
+            api.proposePrice("NEW1", TODAY.minusDays(1), new BigDecimal("1.000000"), null, FINANCE)))
+            .isInstanceOf(UnitLinkedStateException.class).hasMessageContaining("second person");
+        // No signed-in person holds funds.approve-own here: its proposer cannot open it.
+        assertThatThrownBy(() -> asTenant(tenant, () -> api.approveFund("NEW1", ADMIN)))
+            .isInstanceOf(UnitLinkedStateException.class);
+
+        var opened = asTenant(tenant, () -> api.approveFund("NEW1", FINANCE));
+        assertThat(opened.status()).isEqualTo("OPEN");
+        assertThat(opened.decidedBy()).isEqualTo(FINANCE);
+        assertThat(asTenant(tenant, () -> api.proposedFunds())).isEmpty();
+
+        asTenant(tenant, () -> api.createFund(new tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund(
+            "NEW2", "Typo fund", "TZS", "EQUITY", new BigDecimal("15"), java.time.LocalTime.of(14, 0)), ADMIN));
+        var withdrawn = asTenant(tenant, () -> api.rejectFund("NEW2", "Charge typed wrong", ADMIN));
+        assertThat(withdrawn.status()).isEqualTo("REJECTED");
+        assertThat(withdrawn.decisionReason()).isEqualTo("Charge typed wrong");
+    }
+
     @Test
     void aPriceProposedByOnePersonIsApprovedOnlyBySomeoneElse() {
         UUID tenant = UUID.randomUUID();

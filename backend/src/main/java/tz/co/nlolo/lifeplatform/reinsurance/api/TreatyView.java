@@ -16,4 +16,6 @@ public record TreatyView(UUID treatyId, String reinsurerName, TreatyType treatyT
                           Long cededPolicies,
                           /** Whether a policy issued today is ceded to it: false for one in force while another, later
                            *  one is too -- every policy goes to one treaty, so this one takes no new business. */
-                          boolean takesNewPolicies) {}
+                          boolean takesNewPolicies,
+                          /** Who proposed it, who decided it, and why it was rejected (2026-11-12, finding 170). */
+                          String createdBy, String decidedBy, String decisionReason) {}
