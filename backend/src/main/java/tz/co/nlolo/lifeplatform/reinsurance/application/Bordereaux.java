@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.domain.BordereauCalculator;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.BordereauCalculator.CededPolicy;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.BordereauCalculator.Cover;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.BordereauCalculator.Recovery;
+import tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis;
 
 import java.sql.Timestamp;
 import java.time.YearMonth;
@@ -33,8 +34,11 @@ class Bordereaux {
         this.jdbc = jdbc;
     }
 
-    /** Every policy ceded to the treaty, with when it was on risk. Schemes are never ceded, so never here. */
-    List<CededPolicy> cededTo(UUID tenantId, UUID treatyId) {
+    /**
+     * Every policy ceded to the treaty, with when it was on risk and what it is charged on (finding 166): its premium,
+     * the month's cost of insurance ({@code monthCostOfInsurance}, by policy), or nothing. Schemes are never ceded.
+     */
+    List<CededPolicy> cededTo(UUID tenantId, UUID treatyId, Map<String, java.math.BigDecimal> monthCostOfInsurance) {
         Map<String, List<Cover>> cover = new LinkedHashMap<>();
         jdbc.query("SELECT cp.policy_number, cp.starts_on, cp.ends_on FROM reinsurance.cover_period cp"
                 + " JOIN reinsurance.cession c ON c.tenant_id = cp.tenant_id AND c.policy_number = cp.policy_number"
@@ -45,14 +49,16 @@ class Bordereaux {
                         rs.getDate("ends_on") == null ? null : rs.getDate("ends_on").toLocalDate()));
             }, tenantId, treatyId);
         return jdbc.query("SELECT c.policy_number, c.premium_share, p.premium_amount, p.premium_currency,"
-                + " p.premium_frequency, p.premiums_end_on FROM reinsurance.cession c"
+                + " p.premium_frequency, p.premiums_end_on, p.product_category FROM reinsurance.cession c"
                 + " JOIN reinsurance.policy_projection p ON p.tenant_id = c.tenant_id AND p.policy_number = c.policy_number"
                 + " WHERE c.tenant_id = ? AND c.treaty_id = ? ORDER BY c.policy_number",
             (rs, i) -> new CededPolicy(rs.getString("policy_number"), rs.getBigDecimal("premium_share"),
                 rs.getBigDecimal("premium_amount"), trim(rs.getString("premium_currency")),
                 rs.getString("premium_frequency"),
                 rs.getDate("premiums_end_on") == null ? null : rs.getDate("premiums_end_on").toLocalDate(),
-                cover.getOrDefault(rs.getString("policy_number"), List.of())),
+                cover.getOrDefault(rs.getString("policy_number"), List.of()),
+                CessionBasis.of(rs.getString("product_category")),
+                monthCostOfInsurance.get(rs.getString("policy_number"))),
             tenantId, treatyId);
     }
 

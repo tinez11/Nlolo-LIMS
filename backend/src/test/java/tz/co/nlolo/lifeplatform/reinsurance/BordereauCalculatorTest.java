@@ -37,6 +37,47 @@ class BordereauCalculatorTest {
         return new Cover(LocalDate.parse(from), LocalDate.parse(to));
     }
 
+    /** Finding 166 (2026-11-12): a unit-linked policy pays the treaty its share of the month's cost of insurance. */
+    @Test
+    void aUnitLinkedPolicyIsChargedItsShareOfTheMonthsCostOfInsuranceNotThePremium() {
+        CededPolicy ulip = new CededPolicy("POL-UL", new BigDecimal("0.5"), new BigDecimal("100000.00"), "TZS", "MONTHLY",
+            null, List.of(open("2026-09-15")), tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.COST_OF_INSURANCE,
+            new BigDecimal("1840.00"));
+        Result r = BordereauCalculator.calculate(OCTOBER, QUOTA_20, List.of(ulip), List.of());
+
+        assertThat(r.premium()).isEqualByComparingTo("920.00");
+        assertThat(r.commission()).isEqualByComparingTo("184.00");
+        assertThat(r.lines().get(0).policyPremium()).isEqualByComparingTo("1840.00");
+
+        CededPolicy noCharge = new CededPolicy("POL-UL2", new BigDecimal("0.5"), new BigDecimal("100000.00"), "TZS",
+            "MONTHLY", null, List.of(open("2026-09-15")),
+            tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.COST_OF_INSURANCE, null);
+        assertThat(BordereauCalculator.calculate(OCTOBER, QUOTA_20, List.of(noCharge), List.of()).policyCount()).isZero();
+    }
+
+    /** Finding 166: a savings policy or an annuity ceded before the rule is charged nothing from now on. */
+    @Test
+    void aSavingsPolicyOrAnnuityCededBeforeTheRuleIsChargedNothing() {
+        CededPolicy endowment = new CededPolicy("POL-END", new BigDecimal("0.5"), new BigDecimal("5000.00"), "TZS",
+            "MONTHLY", null, List.of(open("2026-09-15")), tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.NOT_CEDED,
+            null);
+        Result r = BordereauCalculator.calculate(OCTOBER, QUOTA_20, List.of(endowment), List.of());
+        assertThat(r.premium()).isEqualByComparingTo("0");
+        assertThat(r.policyCount()).isZero();
+    }
+
+    @Test
+    void theBasisFollowsTheProductCategory() {
+        assertThat(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.of("TERM_LIFE"))
+            .isEqualTo(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.PREMIUM);
+        assertThat(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.of("UNIT_LINKED"))
+            .isEqualTo(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.COST_OF_INSURANCE);
+        for (String saving : List.of("ANNUITY", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS")) {
+            assertThat(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.of(saving)).as(saving)
+                .isEqualTo(tz.co.nlolo.lifeplatform.reinsurance.domain.CessionBasis.NOT_CEDED);
+        }
+    }
+
     @Test
     void aMonthlyPolicyCedesItsShareOfOneInstalmentAndTheCommissionReducesIt() {
         Result r = BordereauCalculator.calculate(OCTOBER, QUOTA_20,

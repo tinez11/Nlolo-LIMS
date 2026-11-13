@@ -39,14 +39,17 @@ public class BordereauJob {
 
     private final JdbcTemplate jdbc;
     private final Bordereaux bordereaux;
+    /** A unit-linked policy's monthly cost of insurance, what its treaty is charged on (finding 166). */
+    private final RiskCharges riskCharges;
     private final ReinsuranceTreatyRepository treaties;
     private final ApplicationEventPublisher events;
     private final TransactionTemplate requiresNew;
 
-    BordereauJob(JdbcTemplate jdbc, Bordereaux bordereaux, ReinsuranceTreatyRepository treaties,
+    BordereauJob(JdbcTemplate jdbc, Bordereaux bordereaux, RiskCharges riskCharges, ReinsuranceTreatyRepository treaties,
                  ApplicationEventPublisher events, PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.bordereaux = bordereaux;
+        this.riskCharges = riskCharges;
         this.treaties = treaties;
         this.events = events;
         this.requiresNew = new TransactionTemplate(transactionManager);
@@ -131,7 +134,8 @@ public class BordereauJob {
     private BordereauCalculator.Result calculate(UUID tenantId, ReinsuranceTreaty treaty, YearMonth month) {
         BordereauCalculator.Treaty terms = new BordereauCalculator.Treaty(treaty.getRetentionLimitCurrency(),
             treaty.getCommissionPercent(), treaty.getXolAnnualPremium());
-        return BordereauCalculator.calculate(month, terms, bordereaux.cededTo(tenantId, treaty.getTreatyId()),
+        return BordereauCalculator.calculate(month, terms,
+            bordereaux.cededTo(tenantId, treaty.getTreatyId(), riskCharges.in(tenantId, month)),
             bordereaux.recoveriesIn(tenantId, treaty.getTreatyId(), month),
             bordereaux.reversals(tenantId, treaty.getTreatyId()));
     }

@@ -88,7 +88,7 @@ class StatementIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql", "db-migrations/reinsurance/V13__treaty_needs_approval.sql", "db-migrations/reinsurance/V14__risk_charge.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

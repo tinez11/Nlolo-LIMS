@@ -34,8 +34,22 @@ public final class BordereauCalculator {
     /** A period the policy was on risk; {@code endsOn} null while it still is. */
     public record Cover(LocalDate startsOn, LocalDate endsOn) {}
 
+    /**
+     * @param basis what the treaty is charged on (finding 166): the premium, the month's cost of insurance, or nothing
+     * @param monthCostOfInsurance the cost of insurance taken from the policy's units in the month; read only on that
+     *                             basis, null when none was taken
+     */
     public record CededPolicy(String policyNumber, BigDecimal premiumShare, BigDecimal premium, String premiumCurrency,
-                              String premiumFrequency, LocalDate premiumsEndOn, List<Cover> cover) {}
+                              String premiumFrequency, LocalDate premiumsEndOn, List<Cover> cover,
+                              CessionBasis basis, BigDecimal monthCostOfInsurance) {
+
+        /** A protection policy, charged on its premium. */
+        public CededPolicy(String policyNumber, BigDecimal premiumShare, BigDecimal premium, String premiumCurrency,
+                           String premiumFrequency, LocalDate premiumsEndOn, List<Cover> cover) {
+            this(policyNumber, premiumShare, premium, premiumCurrency, premiumFrequency, premiumsEndOn, cover,
+                CessionBasis.PREMIUM, null);
+        }
+    }
 
     public record Recovery(java.util.UUID claimId, String policyNumber, BigDecimal amount, String currency) {}
 
@@ -69,7 +83,9 @@ public final class BordereauCalculator {
             if (ceded.signum() <= 0) {
                 continue;
             }
-            lines.add(new Line(LineType.PREMIUM, p.policyNumber(), null, p.premiumShare(), p.premium(), ceded,
+            // The line's own premium is what the share was taken of: the month's cost of insurance for unit-linked.
+            BigDecimal base = p.basis() == CessionBasis.COST_OF_INSURANCE ? p.monthCostOfInsurance() : p.premium();
+            lines.add(new Line(LineType.PREMIUM, p.policyNumber(), null, p.premiumShare(), base, ceded,
                 commission(ceded, rate), BigDecimal.ZERO));
         }
         int policyCount = lines.size();
@@ -111,8 +127,14 @@ public final class BordereauCalculator {
         LocalDate last = month.atEndOfMonth();
         boolean onRisk = p.cover().stream().anyMatch(c -> !c.startsOn().isAfter(last)
             && (c.endsOn() == null || !c.endsOn().isBefore(first)));
-        if (!onRisk) {
+        if (!onRisk || p.basis() == CessionBasis.NOT_CEDED) {
             return BigDecimal.ZERO;
+        }
+        // Finding 166: a unit-linked policy pays the treaty its share of the risk premium actually taken this month --
+        // never of the premium that buys units, and nothing in a month no cost of insurance was taken.
+        if (p.basis() == CessionBasis.COST_OF_INSURANCE) {
+            return p.monthCostOfInsurance() == null ? BigDecimal.ZERO
+                : p.monthCostOfInsurance().multiply(p.premiumShare()).setScale(2, RoundingMode.HALF_UP);
         }
         if ("SINGLE".equals(p.premiumFrequency())) {
             LocalDate began = p.cover().stream().map(Cover::startsOn).min(LocalDate::compareTo).orElse(null);
