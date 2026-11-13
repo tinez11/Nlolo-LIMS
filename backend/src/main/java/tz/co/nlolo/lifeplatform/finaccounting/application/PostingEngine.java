@@ -62,13 +62,16 @@ class PostingEngine {
     private final PaaEarningSchedule paa;
     private final DisbursementMethodRecorder rails;
     private final PolicyRegister register;
+    private final tz.co.nlolo.lifeplatform.finaccounting.infrastructure.AccountingPeriodRepository periods;
     private final MeterRegistry meters;
     private final TransactionTemplate requiresNew;
 
     PostingEngine(PostingRules rules, PolicyClassifier classifier, FinaccountingApiImpl ledger,
                   JournalEntryRepository journals, ChartOfAccountSeeder seeder, UnpostedEvents queue,
                   PaaEarningSchedule paa, MeterRegistry meters, PlatformTransactionManager transactionManager,
-                  DisbursementMethodRecorder rails, PolicyRegister register) {
+                  DisbursementMethodRecorder rails, PolicyRegister register,
+                  tz.co.nlolo.lifeplatform.finaccounting.infrastructure.AccountingPeriodRepository periods) {
+        this.periods = periods;
         this.rails = rails;
         this.register = register;
         this.rules = rules;
@@ -143,8 +146,13 @@ class PostingEngine {
                 + " by " + row.resolvedBy());
         }
         PostingFacts kept = queue.facts(tenantId, unpostedEventId);
+        // Finding 89 (2026-11-13): on its own day while that month is still open -- it was queued for something else,
+        // a missing rule or classification -- and in today's month only once its own is closing or locked.
+        LocalDate now = LocalDate.now(LedgerEventListener.CIVIL);
+        LocalDate on = kept.eventDate() != null && !kept.eventDate().isAfter(now) && isOpen(tenantId, kept.eventDate())
+            ? kept.eventDate() : now;
         PostingFacts today = new PostingFacts(kept.eventType(), kept.sourceRef(), kept.policyNumber(), kept.currency(),
-            LocalDate.now(LedgerEventListener.CIVIL), kept.amounts(), kept.attributes());
+            on, kept.amounts(), kept.attributes());
         // The rule decides SYSTEM (source: SYSTEM), not the event type.
         Result result = post(tenantId, today, by);
         if (result.outcome() == Outcome.NOTHING_TO_POST) {
@@ -152,6 +160,14 @@ class PostingEngine {
                 "Retried: the rules in force post nothing for these facts", by));
         }
         return result;
+    }
+
+    /** Whether the month of {@code day} still takes events: no period row, or one still OPEN. */
+    private boolean isOpen(UUID tenantId, LocalDate day) {
+        return Boolean.TRUE.equals(requiresNew.execute(status -> periods
+            .findByTenantIdAndPeriod(tenantId, java.time.YearMonth.from(day).toString())
+            .map(p -> p.getStatus() == tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStatus.OPEN)
+            .orElse(true)));
     }
 
     /** A policy has just been classified: what was queued for want of its classification posts now. */
@@ -174,6 +190,12 @@ class PostingEngine {
         }
         Optional<PolicyClassifier.InForce> classification = facts.policyNumber() == null ? Optional.empty()
             : classifier.inForce(tenantId, facts.policyNumber(), facts.eventDate());
+        // Finding 89: money dated the day it came may predate the policy's classification -- a first premium paid on
+        // 30 Oct for a policy issued on 2 Nov. The classification it has now is still what that money is for.
+        LocalDate postingDay = LocalDate.now(LedgerEventListener.CIVIL);
+        if (classification.isEmpty() && facts.policyNumber() != null && facts.eventDate().isBefore(postingDay)) {
+            classification = classifier.inForce(tenantId, facts.policyNumber(), postingDay);
+        }
         String model = facts.policyNumber() == null ? PostingRuleSet.NONE
             : classification.map(PolicyClassifier.InForce::model).orElse(PostingRuleSet.UNCLASSIFIED);
         Optional<PostingRuleSet.Rule> rule = set.select(facts.eventType(), model, facts.attributes(), facts.eventDate());

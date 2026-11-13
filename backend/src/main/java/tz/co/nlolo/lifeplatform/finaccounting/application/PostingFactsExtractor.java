@@ -123,13 +123,50 @@ final class PostingFactsExtractor {
      * nothing to key a journal (or a queue row) on, so it is logged and left -- the emitting module's defect to fix.
      */
     static List<PostingFacts> extract(String type, Map<String, Object> p, LocalDate today) {
-        List<PostingFacts> all = facts(type, p, today);
+        List<PostingFacts> all = facts(type, p, businessDate(type, p, today));
         if (all.stream().anyMatch(f -> f.sourceRef() == null)) {
             log.error("{} for policy {} carries no source reference; nothing can be posted or queued for it", type,
                 p.get("policyNumber"));
             return all.stream().filter(f -> f.sourceRef() != null).toList();
         }
         return all;
+    }
+
+    /**
+     * The day the business happened, which the journal is dated (2026-11-13, finance finding 89): money received on 31
+     * October but confirmed on 1 November belongs to October, so month-end matches the bank statement. Where the event
+     * carries one -- a receipt's businessDate, a unit-linked charge's or price's date, a savings account's month-end --
+     * and it is not in the future; otherwise the day it posts, as before. A month already closing or locked refuses
+     * it into Unposted events, as it would any event, for finance to see.
+     */
+    static LocalDate businessDate(String type, Map<String, Object> p, LocalDate today) {
+        LocalDate day = switch (type) {
+            case "unitlinked.ChargesTaken" -> date(p.get("chargeDate"));
+            case "unitlinked.FundRevalued" -> date(p.get("valuationDate"));
+            case "accumulation.PostingRecorded" -> java.util.Set.of("month-end", "deposit-interest", "term-account-interest")
+                .contains(String.valueOf(p.get("sourceType"))) ? monthEndOf(p) : null;
+            default -> date(p.get("businessDate"));
+        };
+        return day == null || day.isAfter(today) ? today : day;
+    }
+
+    private static LocalDate date(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(String.valueOf(value).substring(0, 10));
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** A savings account's month-end or interest posting is dated the day it was for: its entries' latest effective date. */
+    private static LocalDate monthEndOf(Map<String, Object> p) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) p.get("entries");
+        return entries == null ? null : entries.stream().map(e -> date(e.get("effectiveDate")))
+            .filter(java.util.Objects::nonNull).max(LocalDate::compareTo).orElse(null);
     }
 
     private static List<PostingFacts> facts(String type, Map<String, Object> p, LocalDate today) {

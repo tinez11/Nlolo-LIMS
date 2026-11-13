@@ -582,6 +582,34 @@ class PremiumPostingEndToEndTest {
     }
 
     /**
+     * Finding 89 (2026-11-13): cash received at the branch on the last day of a month, recorded and approved in the next,
+     * belongs to the month it came in -- month-end matches the bank statement. Here: received a month ago, a policy
+     * issued today (so its classification starts after the money came), approved today.
+     */
+    @Test
+    void aReceiptPostsInTheMonthTheMoneyCameNotTheMonthItWasApproved() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-RECEIVED-ON");
+        BigDecimal premium = new BigDecimal("120000.00");
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+        java.time.LocalDate received = java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).minusMonths(1);
+        var slip = new Receipts.NewReceipt(invoice.invoiceId(), null, ReceiptMethod.CASH, "RC-LATE-1", premium, received,
+            null, "Banked at month-end, recorded late", null);
+
+        TenantContext.set(tenantId);
+        ReceiptView recorded = receipts.record(slip, "finance-one");
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(s -> receipts.approve(recorded.receiptId(), "finance-two"));
+
+        TenantContext.set(tenantId);
+        JournalEntry deposit = onlyEntry(tenantId, "billing.DepositReceived");
+        assertThat(deposit.getPeriod()).isEqualTo(java.time.YearMonth.from(received).toString());
+        assertThat(legsOf(tenantId, deposit)).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
+    }
+
+    /**
      * Record deposit names the policy, not an invoice (money movement step 5, design 7.2): twice the premium onto the
      * balance, and once a second person confirms it, the premium due today is paid from it, the rest stays for the next
      * one, and the deposit posts to the bank account the transfer reached.

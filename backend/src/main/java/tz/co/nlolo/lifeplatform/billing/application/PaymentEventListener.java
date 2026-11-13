@@ -62,7 +62,10 @@ public class PaymentEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "payment.PaymentConfirmed" -> withTenant(envelope, this::handleConfirmed);
+            // The ledger posts the money's arrival on the day a recorded receipt says it came (finding 89, 2026-11-13).
+            case "payment.PaymentConfirmed" -> withTenant(envelope, payload -> billingApiImpl.receivedOn(
+                payload.get("receivedOn") == null ? null : java.time.LocalDate.parse(String.valueOf(payload.get("receivedOn"))),
+                () -> handleConfirmed(payload)));
             case "payment.PaymentFailed" -> withTenant(envelope, this::handleFailed);
             // Money above what a loan owed (money movement step 2): the payer's, onto the policy's balance. policyloan's
             // rule E-03-SURPLUS already posted it, so the deposit posts nothing more.

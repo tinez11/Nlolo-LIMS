@@ -1755,6 +1755,10 @@ components:
             # The number the money came from (2026-10-02). Billing carries it onto
             # billing.PremiumCollected; a fixed-term deposit is paid back to it by default.
             payerRef: {type: string}
+            # A recorded receipt's day the money actually came (2026-11-13, finance finding 89). Billing carries it
+            # onto billing.DepositReceived / PremiumCollected as businessDate, and the ledger books the arrival on it.
+            # Absent for mobile money, confirmed the day it lands.
+            receivedOn: {type: string, format: date}
     PaymentFailedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
