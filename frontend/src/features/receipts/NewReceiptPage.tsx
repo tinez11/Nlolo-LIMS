@@ -331,6 +331,15 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       return;
     }
 
+    // Asking a payer's phone for more than the loan owes is refused by the server (2026-11-14): say so at the amount,
+    // before anything is sent, rather than as a refusal after it. Money handed in can be more -- the rest goes to the
+    // policy's balance -- so this is the mobile-money request's rule only.
+    if (values.paysFor === 'LOAN' && loan?.outstandingBalance?.amount
+        && compareAmounts(amount, loan.outstandingBalance.amount) > 0) {
+      setError('amount', { message: `The loan owes ${formatMoney(loan.outstandingBalance)} now. Ask for that or less.` });
+      return;
+    }
+
     let ok = false;
     let asked = { amount, currencyCode: currency };
     if (values.paysFor === 'PREMIUM' && oldestOpen?.invoiceId) {

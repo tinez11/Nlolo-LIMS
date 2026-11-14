@@ -287,7 +287,8 @@ describe('a server refusal', () => {
     });
 
     expect(screen.getByRole('alert')).toHaveTextContent(/departs from it/);
-    expect(screen.getByText(/trace-123/)).toBeInTheDocument();
+    // A refusal says why; its reference is for support and only shown for a fault on our side (2026-11-14).
+    expect(screen.queryByText(/trace-123/)).not.toBeInTheDocument();
   });
 });
 

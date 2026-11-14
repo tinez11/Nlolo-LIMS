@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
+import { faultOnOurSide } from '@/lib/apiError';
 
 /**
  * A rejected action, shown where the action was taken.
@@ -33,7 +34,8 @@ export function InlineError({
   className,
   sticky = false,
 }: {
-  error: Pick<ApiError, 'title' | 'detail' | 'traceId'>;
+  /** `status` decides whether the reference is shown: only for a fault on our side (5xx), never for a refusal. */
+  error: Pick<ApiError, 'title' | 'detail' | 'traceId'> & { status?: number };
   /**
    * What the person was trying to do, before the server's own words -- "Could not mark it
    * matched". A ProblemDetail says what is wrong with the request, not which of the several
@@ -83,9 +85,13 @@ export function InlineError({
         {error.detail ?? error.title}
       </p>
       {children}
-      {error.traceId && (
+      {/* The reference is for support, and only when something broke on our side (2026-11-14, the user: "users are
+          going to use [this], not software engineers"). A refusal -- more than the loan owes, a month that is locked --
+          already says what to change; a code beside it only alarms. */}
+      {error.traceId && faultOnOurSide(error.status) && (
         <p className="mt-1 text-xs">
-          Reference <span className="font-mono select-all">{error.traceId}</span>
+          Something went wrong on our side. If it happens again, give support this reference:{' '}
+          <span className="font-mono select-all">{error.traceId}</span>
         </p>
       )}
     </div>

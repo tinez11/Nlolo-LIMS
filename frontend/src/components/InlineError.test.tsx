@@ -13,12 +13,22 @@ describe('InlineError', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Conflict');
   });
 
-  it('prints the trace id at full strength, labelled, and selectable', () => {
-    render(<InlineError error={{ title: 'Conflict', detail: null, traceId: 'abc123' }} />);
+  it('gives support a selectable reference when something broke on our side', () => {
+    render(<InlineError error={{ status: 500, title: 'Internal Server Error', detail: null, traceId: 'abc123' }} />);
     const trace = screen.getByText('abc123');
     expect(trace).toHaveClass('select-all');
     expect(trace.className).not.toMatch(/opacity|text-\[1[01]px\]/);
-    expect(screen.getByRole('alert')).toHaveTextContent('Reference abc123');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Something went wrong on our side. If it happens again, give support this reference: abc123');
+  });
+
+  /** 2026-11-14, the user: a refusal with a code under it makes no sense to the people using this. */
+  it('shows a refusal as its reason alone, with no reference', () => {
+    render(<InlineError lead="Could not send the request"
+      error={{ status: 409, title: 'Conflict', detail: 'The loan owes TZS 20,000.00 now. Ask for that or less.', traceId: 'abc123' }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not send the request — The loan owes TZS 20,000.00 now. Ask for that or less.');
+    expect(screen.queryByText('abc123')).not.toBeInTheDocument();
   });
 
   it('names the act before the server words, when the caller gives one', () => {

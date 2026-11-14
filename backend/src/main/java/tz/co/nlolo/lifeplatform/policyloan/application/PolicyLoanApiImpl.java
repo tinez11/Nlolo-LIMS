@@ -369,12 +369,15 @@ public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatfor
         }
         PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
         if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
-            throw new LoanNotEligibleException("Loan " + loanId + " has nothing to repay (" + loan.getStatus() + ")");
+            throw new LoanNotEligibleException(nothingToRepay(loan.getStatus()));
         }
         BigDecimal owed = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
-        if (amount.signum() <= 0 || amount.compareTo(owed) > 0) {
-            throw new LoanNotEligibleException("Ask for between 0.01 and " + owed.toPlainString() + " " + currency
-                + ", what the loan owes now");
+        // In words a person acts on (2026-11-14): no loan id, no "0.01", the amount as money.
+        if (amount.signum() <= 0) {
+            throw new LoanNotEligibleException("Enter an amount to ask for.");
+        }
+        if (amount.compareTo(owed) > 0) {
+            throw new LoanNotEligibleException("The loan owes " + money(owed, currency) + " now. Ask for that or less.");
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.RepaymentRequested", tenantId,
             Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "payerRef", payerRef,
@@ -577,6 +580,24 @@ public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatfor
     // expected, not a bug. Likewise, LoanSettledForPayout (one of the 6 DEFERRED surrender/
     // maturity choreography events) is neither published nor consumed anywhere in this class --
     // that whole choreography is out of M3's scope.
+
+    /** Why a loan takes no repayment now, in words (2026-11-14) -- not "Loan <id> has nothing to repay (SETTLED)". */
+    static String nothingToRepay(String status) {
+        return switch (status) {
+            case "SETTLED" -> "This loan is fully repaid. There is nothing to ask for.";
+            case "RESERVED_PENDING_ORIGINATION", "ORIGINATED", "AWAITING_PAYOUT_APPROVAL", "DISBURSEMENT_REQUESTED" ->
+                "This loan has not been paid out yet, so nothing is owed on it.";
+            case "PAYOUT_REFUSED", "DISBURSEMENT_FAILED" -> "This loan was never paid out, so nothing is owed on it.";
+            case "FORCED_LAPSE_TRIGGERED" -> "This loan was closed against the policy's value. There is nothing to ask for.";
+            default -> "This loan takes no repayment now.";
+        };
+    }
+
+    /** TZS 20,000.00. */
+    static String money(BigDecimal amount, String currency) {
+        return currency + " " + new java.text.DecimalFormat("#,##0.00",
+            java.text.DecimalFormatSymbols.getInstance(java.util.Locale.ROOT)).format(amount.setScale(2, java.math.RoundingMode.HALF_UP));
+    }
 
     private BigDecimal computeOutstandingBalance(PolicyLoan loan) {
         BigDecimal balance = loan.getPrincipalAmount();

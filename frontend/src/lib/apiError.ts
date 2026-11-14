@@ -57,6 +57,14 @@ const KIND_BY_STATUS: Record<number, ApiErrorKind> = {
   501: 'notImplemented',
 };
 
+/**
+ * Whether an error is a fault on our side (5xx) rather than a refusal the person can act on (2026-11-14). Only then is
+ * its reference worth showing: support traces it in the logs. A 4xx already says what to change.
+ */
+export function faultOnOurSide(status: number | undefined): boolean {
+  return status !== undefined && status >= 500;
+}
+
 function classify(status: number): ApiErrorKind {
   const known = KIND_BY_STATUS[status];
   if (known) return known;
