@@ -158,6 +158,19 @@ public class NotificationApiImpl implements NotificationApi {
         }
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> renderSystemTemplate(String templateKey, String language, Map<String, String> values) {
+        return findEffectiveTemplate(TenantContext.get(), templateKey, NotificationChannel.SMS.name(), language)
+            .flatMap(template -> {
+                try {
+                    return Optional.of(TemplateRenderer.render(template.getBodyTemplate(), values));
+                } catch (RuntimeException unfilled) {
+                    return Optional.empty();
+                }
+            });
+    }
+
     private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
                           Map<String, String> values, Reachable target, String language) {
         NotificationDispatch dispatch =

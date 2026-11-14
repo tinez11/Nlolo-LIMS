@@ -53,6 +53,10 @@ public class ProductionSettingsGuard {
         if (supportPhone == null || supportPhone.isBlank()) {
             problems.add("app.support-phone is not set (SUPPORT_PHONE: the number the password-changed text gives)");
         }
+        // Staff consoles move money and change access: a password alone is not enough in production (2026-11-14).
+        if (!"true".equalsIgnoreCase(settings.apply("app.staff-sign-in-code.enabled"))) {
+            problems.add("app.staff-sign-in-code.enabled is off (STAFF_SIGN_IN_CODE: staff must get a sign-in code)");
+        }
         if ("true".equalsIgnoreCase(settings.apply("communication.sms-gateway.live"))) {
             String authorization = settings.apply("communication.sms-gateway.authorization");
             if (authorization == null || authorization.isBlank()) {

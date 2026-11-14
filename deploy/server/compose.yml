@@ -154,6 +154,8 @@ services:
       PASSWORD_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET}
       # The number "your password was changed" tells a person to call (2026-11-06); the backend refuses to start without it.
       SUPPORT_PHONE: ${SUPPORT_PHONE}
+      # A texted code after the password on every staff sign-in (2026-11-14); the backend refuses to start with it off.
+      STAFF_SIGN_IN_CODE: ${STAFF_SIGN_IN_CODE}
       SMS_GATEWAY_BASE_URL: ${SMS_GATEWAY_BASE_URL}
       SMS_GATEWAY_AUTHORIZATION: ${SMS_GATEWAY_AUTHORIZATION}
       SMS_GATEWAY_SENDER_NAME: ${SMS_GATEWAY_SENDER_NAME}

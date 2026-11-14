@@ -78,6 +78,10 @@ spring:
       connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
+  # A texted code after the password on every staff sign-in (2026-11-14). Off in dev and the test suites; Keycloak then
+  # lets staff in on their password as before. Production refuses to start with it off (ProductionSettingsGuard).
+  staff-sign-in-code:
+    enabled: ${STAFF_SIGN_IN_CODE:false}
   # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
   # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
   access:
