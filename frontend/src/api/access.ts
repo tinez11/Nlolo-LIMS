@@ -62,6 +62,11 @@ export function setStaffActive(userId: string, active: boolean): Promise<void> {
   return put<void>(`/access/users/${encodeURIComponent(userId)}/active`, { active });
 }
 
+/** Where their sign-in code goes, and the language of their texts (2026-11-14). Never one's own login. */
+export function updateStaffContact(userId: string, phone: string | null, textLanguage: 'en' | 'sw'): Promise<StaffUser> {
+  return put<StaffUser>(`/access/users/${encodeURIComponent(userId)}/contact`, { phone, textLanguage });
+}
+
 export function resetStaffPassword(userId: string): Promise<PasswordIssued> {
   return post<PasswordIssued>(`/access/users/${encodeURIComponent(userId)}/password-reset`, {});
 }

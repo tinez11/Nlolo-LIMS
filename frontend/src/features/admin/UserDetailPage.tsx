@@ -19,6 +19,8 @@ import { selectActing, selectUser, useIamStore } from '@/store/iamStore';
 import { describeChange } from './changeText';
 import { PendingChange } from './PendingChange';
 import { PermissionPicker } from './PermissionPicker';
+import { StaffContactPanel } from './StaffContactPanel';
+import { TEXT_LANGUAGES } from './textLanguages';
 import { staffUserStatus } from './UsersPage';
 
 /**
@@ -181,6 +183,9 @@ export function UserDetailPage() {
           </div>
         )}
 
+        <StaffContactPanel key={`${user.phone ?? ''}|${user.textLanguage}`} user={user}
+          editable={can('users.manage') && !self} onSaved={() => void loadUser(userId)} />
+
         <Panel title="History">
           <ul className="divide-y divide-border">
             {(detail.data?.history ?? []).map((c) => (
@@ -239,6 +244,7 @@ export function UserDetailPage() {
           <Field label="Signs in as" value={user.username} />
           <Field label="Email" value={user.email ?? '—'} />
           <Field label="Phone" value={user.phone ?? '—'} />
+          <Field label="Texts in" value={TEXT_LANGUAGES[user.textLanguage]} />
           <Field label="Home branch" value={user.homeBranch ?? '—'} />
           <Field label="Last in" value={user.lastSeenAt ? formatDate(user.lastSeenAt) : '—'} />
           <Field label="Roles" value={user.roles.length ? user.roles.map((r) => r.name).join(', ') : '—'} />
