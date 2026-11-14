@@ -370,6 +370,15 @@ api "$STAFF_FINANCE_TOKEN" POST "/funds" \
 for fund in EQ-GROWTH MM-CASH; do
   api "$STAFF_ADMIN_TOKEN" POST "/funds/$fund/approval" >/dev/null
 done
+
+# The company's paid-up capital (2026-11-14, shareholders register): DEMO figures, not an insurer's real capital.
+# Finance sets the nominal value and records the issue; the finance approver -- a second person -- approves it below,
+# once their token exists, which posts Dr 1110 / Cr 3110 1,000,000,000.
+api "$STAFF_FINANCE_TOKEN" PUT "/finance/share-register/classes/ORDINARY" '{"nominalValue":1000}' >/dev/null
+DEMO_HOLDER_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/finance/share-register/shareholders" \
+  '{"name":"Demo Holdings Ltd","kind":"COMPANY","tanzanian":true,"idNumber":"DEMO-REG-0001"}')
+DEMO_ISSUE_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/finance/share-register/issues" \
+  "{\"shareholderId\":\"$(jsonval "$DEMO_HOLDER_JSON" shareholderId)\",\"classCode\":\"ORDINARY\",\"shares\":1000000,\"pricePerShare\":1000,\"amountPaid\":1000000000,\"receivedOn\":\"$(date +%F)\",\"bankAccount\":\"1110\",\"reference\":\"Demo allotment\"}")
 UL_PRICE_DATE=$(date -d 'yesterday' +%F 2>/dev/null || date -v-1d +%F)
 for fund_price in EQ-GROWTH:1.000000 MM-CASH:1.000000; do
   IFS=: read -r fund price <<EOF
@@ -671,6 +680,8 @@ echo "invoiceId=$INVOICE_ID"
 # A second finance person confirms money before it counts (2026-10-27): a mobile-money request the rail accepts waits
 # for them exactly as a typed deposit does. Every confirmation below is staff.finance-approver's, never the recorder's.
 STAFF_APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+# The demo share issue recorded above, approved by the second person (2026-11-14, shareholders register).
+api "$STAFF_APPROVER_TOKEN" POST "/finance/share-register/issues/$(jsonval "$DEMO_ISSUE_JSON" issueId)/approval" >/dev/null
 
 confirm_waiting_on_invoice() {   # confirm_waiting_on_invoice <invoiceId>
   local waiting id
