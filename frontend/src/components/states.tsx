@@ -1,6 +1,6 @@
 import { AlertTriangle, Ban, Inbox, Loader2, ShieldOff, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { ApiError } from '@/lib/apiError';
+import { faultOnOurSide, type ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 import { Button } from './ui/button';
 
@@ -153,10 +153,12 @@ export function ErrorPanel({
         </Button>
       )}
 
-      {error.traceId && (
-        // The only thread back to the backend logs. Selectable, not decorative.
-        <p className="mt-3 font-mono text-xs text-subtle-foreground select-all">
-          trace {error.traceId}
+      {error.traceId && faultOnOurSide(error.status) && (
+        // For support, and only when something broke on our side (2026-11-14): "You do not have access" or "Not
+        // found" with a code under it reads like a crash to someone who is not an engineer.
+        <p className="mt-3 max-w-md text-xs text-muted-foreground">
+          If it happens again, give support this reference:{' '}
+          <span className="font-mono select-all">{error.traceId}</span>
         </p>
       )}
     </div>

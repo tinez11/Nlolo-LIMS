@@ -122,6 +122,23 @@ describe('Deposit page', () => {
     );
   });
 
+  /** 2026-11-14: asking for more than the loan owes was sent, then refused with a reference code. */
+  it('does not ask a phone for more than the loan owes, and says so at the amount', async () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    vi.mocked(policiesApi.listLoans).mockResolvedValue([{
+      loanId: 'loan-1', policyNumber: 'POL-1', status: 'REPAYING', principalAmount: TZS('300000.00'),
+      outstandingBalance: TZS('20000.00'),
+    } as never]);
+    const user = userEvent.setup();
+    renderPage('for=LOAN&loan=loan-1&policy=POL-1');
+    await screen.findByText('At most TZS 20,000.00, what the loan owes.');
+    await user.type(screen.getByLabelText('Phone number'), '+255700000002');
+    await user.type(screen.getByLabelText(/^Amount/), '25000');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    expect(await screen.findByText('The loan owes TZS 20,000.00 now. Ask for that or less.')).toBeInTheDocument();
+    expect(policiesApi.requestLoanPayment).not.toHaveBeenCalled();
+  });
+
   // 2026-11-07: the agent console takes its deposits here too -- asking the payer's phone for a premium, nothing else.
   it('offers an agent the premium by mobile money only, and leads back to the agent console', async () => {
     grantAccess();
