@@ -65,7 +65,7 @@ class AccessAdministrationIntegrationTest {
     @BeforeAll
     static void applyMigration() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/iam/V1__access_control.sql");
+            "db-migrations/iam/V1__access_control.sql", "db-migrations/iam/V8__staff_text_language.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -110,6 +110,45 @@ class AccessAdministrationIntegrationTest {
             .andExpect(jsonPath("$.delivery").value("EMAIL_LINK"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
         return id;
+    }
+
+    /** 2026-11-14, staff sign-in code: where a staff member's code goes, set by another administrator, recorded. */
+    @Test
+    void anAdministratorChangesAStaffPhoneAndLanguageAndTheHistoryKeepsOnlyTheLastDigits() throws Exception {
+        UUID neema = addUser("neema.contact", "UNDERWRITER");
+        mockMvc.perform(get("/access/users/{id}", neema).with(asha()))
+            .andExpect(jsonPath("$.user.textLanguage").value("en"));
+
+        mockMvc.perform(put("/access/users/{id}/contact", neema).with(asha()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":\"+255 755 418 369\",\"textLanguage\":\"sw\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.phone").value("+255 755 418 369"))
+            .andExpect(jsonPath("$.textLanguage").value("sw"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+
+        mockMvc.perform(get("/access/users/{id}", neema).with(asha()))
+            .andExpect(jsonPath("$.history[0].changeType").value("CONTACT_CHANGED"))
+            .andExpect(jsonPath("$.history[0].detail.phoneEnds").value("369"))
+            .andExpect(jsonPath("$.history[0].detail.textLanguage").value("sw"))
+            .andExpect(jsonPath("$.history[0].detail.phone").doesNotExist())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+    }
+
+    @Test
+    void nobodyChangesTheirOwnPhoneAndATextLanguageIsEnglishOrKiswahili() throws Exception {
+        UUID neema = addUser("neema.language", "UNDERWRITER");
+        mockMvc.perform(put("/access/users/{id}/contact", asha).with(asha()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":\"0755000000\",\"textLanguage\":\"en\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        mockMvc.perform(put("/access/users/{id}/contact", neema).with(asha()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":\"0755000000\",\"textLanguage\":\"fr\"}"))
+            // Not checked against the spec: the spec itself refuses "fr" in the request, which is the point.
+            .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(put("/access/users/{id}/contact", neema).with(baraka()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":null,\"textLanguage\":\"en\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.phone").doesNotExist());
     }
 
     @Test

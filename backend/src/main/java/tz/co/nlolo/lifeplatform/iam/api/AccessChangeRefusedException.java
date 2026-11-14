@@ -7,7 +7,9 @@ package tz.co.nlolo.lifeplatform.iam.api;
 public class AccessChangeRefusedException extends RuntimeException {
 
     public enum Reason { SELF_CHANGE, LAST_ADMINISTRATOR, SAME_PERSON_APPROVES, NOT_PENDING, UNKNOWN_ROLE,
-        UNKNOWN_PERMISSION, ROLE_CODE_TAKEN, USERNAME_TAKEN, NOT_FOUND, LOGIN_PROVIDER }
+        UNKNOWN_PERMISSION, ROLE_CODE_TAKEN, USERNAME_TAKEN, NOT_FOUND, LOGIN_PROVIDER,
+        /** A contact that cannot be (2026-11-14): a text language other than en or sw. */
+        INVALID_CONTACT }
 
     private final Reason reason;
 

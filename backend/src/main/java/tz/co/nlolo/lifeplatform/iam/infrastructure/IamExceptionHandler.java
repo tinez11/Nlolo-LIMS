@@ -22,7 +22,7 @@ public class IamExceptionHandler {
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case ROLE_CODE_TAKEN, USERNAME_TAKEN, NOT_PENDING, LAST_ADMINISTRATOR -> HttpStatus.CONFLICT;
             case LOGIN_PROVIDER -> HttpStatus.BAD_GATEWAY;
-            case UNKNOWN_ROLE, UNKNOWN_PERMISSION -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case UNKNOWN_ROLE, UNKNOWN_PERMISSION, INVALID_CONTACT -> HttpStatus.UNPROCESSABLE_ENTITY;
         };
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
         problem.setProperty("errorCode", "ACCESS_" + ex.reason().name());

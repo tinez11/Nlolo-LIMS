@@ -191,6 +191,9 @@ public class SecurityConfig {
                 // Keycloak saying a password changed, so the person is texted (2026-11-06): signed the same way, checked
                 // by PasswordChangedController before anything happens.
                 .requestMatchers(HttpMethod.POST, "/internal/password-changed").permitAll()
+                // Keycloak asking for a staff sign-in code to be texted (2026-11-14): signed the same way, checked by
+                // StaffSignInCodeController before anything happens.
+                .requestMatchers(HttpMethod.POST, "/internal/staff-sign-in-code/sms").permitAll()
                 // The public quote link (2026-11-02): open to anyone by design, and guarded inside instead -- a
                 // Turnstile-checked visit, a signed visit token for pricing, rate limits, and the deployment's own
                 // insurer as the tenant (omnichannel PublicAccess). Exact paths, never a /public/** prefix, so a

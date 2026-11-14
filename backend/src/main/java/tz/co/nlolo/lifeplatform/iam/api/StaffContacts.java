@@ -11,4 +11,7 @@ public interface StaffContacts {
 
     /** The phone on the staff record of {@code userId} in the current tenant, when there is one. */
     Optional<String> phoneOf(UUID userId);
+
+    /** The language of texts to {@code userId}: "en" or "sw" (2026-11-14, staff sign-in code); "en" when unknown. */
+    String languageOf(UUID userId);
 }

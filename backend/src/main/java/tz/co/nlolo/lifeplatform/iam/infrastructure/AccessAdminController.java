@@ -101,6 +101,15 @@ public class AccessAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    public record ContactRequest(String phone, String textLanguage) {}
+
+    /** Where a staff member's sign-in code goes, and in which language (2026-11-14). Never one's own. */
+    @PutMapping("/users/{userId}/contact")
+    @PreAuthorize("@access.can('users.manage')")
+    public AccessAdministration.UserView updateContact(@PathVariable UUID userId, @RequestBody ContactRequest request) {
+        return admin.updateContact(actor(), userId, request.phone(), request.textLanguage());
+    }
+
     @PostMapping("/users/{userId}/password-reset")
     @PreAuthorize("@access.can('users.manage')")
     public AccessAdministration.PasswordIssued resetPassword(@PathVariable UUID userId) {

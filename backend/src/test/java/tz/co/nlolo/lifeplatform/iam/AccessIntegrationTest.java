@@ -55,7 +55,7 @@ class AccessIntegrationTest {
     @BeforeAll
     static void applyMigration() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/iam/V1__access_control.sql");
+            "db-migrations/iam/V1__access_control.sql", "db-migrations/iam/V8__staff_text_language.sql");
     }
 
     @Autowired private MockMvc mockMvc;
