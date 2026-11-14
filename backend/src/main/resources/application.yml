@@ -1,6 +1,14 @@
 spring:
   application:
     name: lifeplatform
+  # Durable events (2026-11-14): deliveries a listener did not finish are delivered again at start-up, and every ten
+  # minutes by EventRedelivery. The registry table is created by db-migrations/audit/V4, never by the application.
+  modulith:
+    republish-outstanding-events-on-restart: true
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: false
   mail:
     # Mailpit, which infra/docker-compose.yml has carried since M4 explicitly "for
     # communication-module testing (EMAIL channel)" -- provisioned long before anything

@@ -103,6 +103,17 @@
       <groupId>org.springframework.modulith</groupId>
       <artifactId>spring-modulith-starter-core</artifactId>
     </dependency>
+    <!-- Durable events (2026-11-14): every delivery of an event to a listener is recorded with the business change
+         and marked done when the listener finishes, so a crash or a failure after commit is retried, not lost. -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-jdbc</artifactId>
+    </dependency>
+    <!-- DurableEventSerializer implements its EventSerializer; the starter brings it at runtime only. -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-events-core</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.modulith</groupId>

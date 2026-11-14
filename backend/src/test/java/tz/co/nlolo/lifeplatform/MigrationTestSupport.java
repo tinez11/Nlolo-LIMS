@@ -19,6 +19,8 @@ public final class MigrationTestSupport {
 
     private MigrationTestSupport() {}
 
+    static final String EVENT_PUBLICATION = "db-migrations/audit/V4__event_publication.sql";
+
     public static void applyMigration(String jdbcUrl, String username, String password, String... migrationPaths)
             throws IOException, SQLException {
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
@@ -38,6 +40,11 @@ public final class MigrationTestSupport {
                 try (Statement statement = connection.createStatement()) {
                     statement.execute(sql);
                 }
+            }
+            // The event publication registry (2026-11-14, durable events): every application context records each
+            // after-commit delivery there, so every test database needs it, whichever modules it migrates. Re-runnable.
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(Files.readString(Path.of(EVENT_PUBLICATION)));
             }
         }
     }
