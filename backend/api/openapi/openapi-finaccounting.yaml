@@ -517,6 +517,245 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/shareholders:
+    get:
+      summary: The shareholders, with the shares each holds through approved issues (ledger.view)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Every shareholder, by name
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ShareholderView' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Register a shareholder (ledger.manage)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShareholderInput' }
+      responses:
+        '201':
+          description: The shareholder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareholderView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/shareholders/{shareholderId}:
+    put:
+      summary: Change a shareholder's details (ledger.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: shareholderId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShareholderInput' }
+      responses:
+        '200':
+          description: The shareholder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareholderView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/classes:
+    get:
+      summary: The share classes and their nominal values (ledger.view)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Each class with a nominal value set
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ShareClassView' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/share-register/classes/{classCode}:
+    put:
+      summary: Set a class's nominal value per share, until shares of it are issued (ledger.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: classCode, in: path, required: true, schema: { type: string, enum: [ORDINARY, PREFERENCE] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nominalValue]
+              properties:
+                nominalValue: { type: number }
+      responses:
+        '200':
+          description: The class
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareClassView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/issues:
+    get:
+      summary: Issues of shares, newest first (ledger.view)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [PROPOSED, APPROVED, REJECTED, WITHDRAWN] } }
+      responses:
+        '200':
+          description: The issues
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ShareIssueView' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Record an issue of shares for cash; nothing posts until a second person approves it (ledger.manage)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShareIssueInput' }
+      responses:
+        '201':
+          description: The issue, PROPOSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareIssueView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/issues/{issueId}/withdrawal:
+    post:
+      summary: The person who recorded an issue takes it back before it is decided (ledger.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShareIssueId'
+      responses:
+        '200':
+          description: The issue, WITHDRAWN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareIssueView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/share-register/issues/{issueId}/approval:
+    post:
+      summary: A second person approves the issue, which posts Dr bank, Cr share capital, Cr share premium (ledger.approve)
+      description: The recorder may approve alone only holding ledger.approve-own. Refused for a locked month.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShareIssueId'
+      responses:
+        '200':
+          description: The issue, APPROVED, with its journal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareIssueView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/share-register/issues/{issueId}/rejection:
+    post:
+      summary: A second person rejects the issue, saying why (ledger.approve)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShareIssueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The issue, REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareIssueView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/capital:
+    get:
+      summary: Paid-up capital and the three checks (ledger.view)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The capital position
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapitalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/share-register/capital/minimum:
+    put:
+      summary: Set the minimum paid-up capital from TIRA, or null for Not set; every change is kept (ledger.manage)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minimumPaidUp]
+              properties:
+                minimumPaidUp: { type: number, nullable: true }
+      responses:
+        '200':
+          description: The capital position with the new minimum
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapitalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/share-register/bank-accounts:
+    get:
+      summary: The accounts a share issue may be paid into -- cash and bank accounts finance posts to by hand (ledger.view)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The accounts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/BankAccountView' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /finance/accounting-policies/{electionId}/approval:
     post:
       summary: A second person approves the election with its sign-off; it becomes the register's next version
@@ -1470,6 +1709,11 @@ paths:
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
 components:
   parameters:
+    ShareIssueId:
+      name: issueId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     ManualJournalId:
       name: id
       in: path
@@ -1544,6 +1788,102 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    ShareholderInput:
+      type: object
+      required: [name, kind, tanzanian, idNumber]
+      properties:
+        name: { type: string, maxLength: 200 }
+        kind: { type: string, enum: [PERSON, COMPANY] }
+        tanzanian: { type: boolean }
+        idNumber: { type: string, maxLength: 60, description: "ID number, or a company's registration number" }
+        phone: { type: string, nullable: true, maxLength: 40 }
+        address: { type: string, nullable: true, maxLength: 300 }
+    ShareholderView:
+      type: object
+      required: [shareholderId, name, kind, tanzanian, idNumber, phone, address, shares, paid]
+      properties:
+        shareholderId: { type: string, format: uuid }
+        name: { type: string }
+        kind: { type: string, enum: [PERSON, COMPANY] }
+        tanzanian: { type: boolean }
+        idNumber: { type: string }
+        phone: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        shares: { type: integer, format: int64, description: "Shares held through approved issues" }
+        paid: { type: number, description: "Paid for those shares" }
+    ShareClassView:
+      type: object
+      required: [classCode, nominalValue, setBy, setAt, issued]
+      properties:
+        classCode: { type: string, enum: [ORDINARY, PREFERENCE] }
+        nominalValue: { type: number }
+        setBy: { type: string }
+        setAt: { type: string, format: date-time }
+        issued: { type: boolean, description: "An issue of this class is approved, so the nominal value is fixed" }
+    ShareIssueInput:
+      type: object
+      required: [shareholderId, classCode, shares, pricePerShare, amountPaid, receivedOn, bankAccount, reference]
+      properties:
+        shareholderId: { type: string, format: uuid }
+        classCode: { type: string, enum: [ORDINARY, PREFERENCE] }
+        shares: { type: integer, format: int64, minimum: 1 }
+        pricePerShare: { type: number }
+        amountPaid: { type: number }
+        receivedOn: { type: string, format: date }
+        bankAccount: { type: string }
+        reference: { type: string, maxLength: 200, description: "The board resolution or allotment the issue rests on" }
+    ShareIssueView:
+      type: object
+      required: [issueId, shareholderId, shareholderName, classCode, shares, pricePerShare, nominalValue, amountPaid,
+                 shareCapital, sharePremium, receivedOn, bankAccount, reference, status, proposedBy, proposedAt,
+                 decidedBy, decidedAt, decisionReason, journalEntryId, actedAlone]
+      properties:
+        issueId: { type: string, format: uuid }
+        shareholderId: { type: string, format: uuid }
+        shareholderName: { type: string }
+        classCode: { type: string, enum: [ORDINARY, PREFERENCE] }
+        shares: { type: integer, format: int64 }
+        pricePerShare: { type: number }
+        nominalValue: { type: number }
+        amountPaid: { type: number }
+        shareCapital: { type: number, description: "Shares × nominal value" }
+        sharePremium: { type: number, description: "Amount paid above the nominal value" }
+        receivedOn: { type: string, format: date }
+        bankAccount: { type: string }
+        reference: { type: string }
+        status: { type: string, enum: [PROPOSED, APPROVED, REJECTED, WITHDRAWN] }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        decisionReason: { type: string, nullable: true }
+        journalEntryId: { type: string, format: uuid, nullable: true }
+        actedAlone: { type: boolean }
+    CapitalCheck:
+      type: object
+      required: [state, figure]
+      properties:
+        state: { type: string, enum: [MET, NOT_MET, NOT_SET] }
+        figure: { type: string, nullable: true, description: "The difference, the share Tanzanians hold, or how much is short" }
+    CapitalView:
+      type: object
+      required: [paidUpCapital, ledgerCapital, issuedShares, minimumPaidUp, minimumSetBy, minimumSetAt, books, tanzanian, minimum]
+      properties:
+        paidUpCapital: { type: number, description: "Paid for all approved issues, by the register" }
+        ledgerCapital: { type: number, description: "3110 + 3120 + 3130 in the books" }
+        issuedShares: { type: integer, format: int64 }
+        minimumPaidUp: { type: number, nullable: true }
+        minimumSetBy: { type: string, nullable: true }
+        minimumSetAt: { type: string, format: date-time, nullable: true }
+        books: { $ref: '#/components/schemas/CapitalCheck' }
+        tanzanian: { $ref: '#/components/schemas/CapitalCheck' }
+        minimum: { $ref: '#/components/schemas/CapitalCheck' }
+    BankAccountView:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
     UnitLinkedReconciliation:
       type: object
       additionalProperties: false

@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.AccountingPeriodView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalApi;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStatus;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ShareRegisterApi;
 import tz.co.nlolo.lifeplatform.finaccounting.application.EngineRuns;
 import tz.co.nlolo.lifeplatform.finaccounting.application.ExpenseAllocations;
 import tz.co.nlolo.lifeplatform.finaccounting.application.YearEndCloses;
@@ -31,6 +32,18 @@ class FinanceApprovalSources {
                 .sorted(Comparator.comparing(j -> j.submittedAt() == null ? j.preparedAt() : j.submittedAt()))
                 .map(j -> new ApprovalSource.Item(j.id().toString(), null, j.title() + " · " + j.period(),
                     j.totalDebit(), j.currency(), j.preparer(), j.submittedAt() == null ? j.preparedAt() : j.submittedAt()))
+                .toList(), limit));
+    }
+
+    /** An issue of shares (2026-11-14, shareholders register): approving it posts the share capital. */
+    @Bean
+    ApprovalSource shareIssueApprovals(ShareRegisterApi register) {
+        return ApprovalSource.of("share-issue", "Share issues", "Approve and post", "ledger.approve",
+            limit -> ApprovalSource.Pending.of(register.issues("PROPOSED").stream()
+                .sorted(Comparator.comparing(ShareRegisterApi.IssueView::proposedAt))
+                .map(i -> new ApprovalSource.Item(i.issueId().toString(), null,
+                    i.shares() + " " + i.classCode().toLowerCase() + " shares to " + i.shareholderName(),
+                    i.amountPaid(), "TZS", i.proposedBy(), i.proposedAt()))
                 .toList(), limit));
     }
 

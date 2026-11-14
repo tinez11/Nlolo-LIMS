@@ -803,6 +803,73 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$.actuary.signedBy").value("actuary"));
     }
 
+    /** Shareholders register (2026-11-14): an issue recorded by finance and approved by a finance approver. */
+    @Test
+    void anIssueOfSharesIsRecordedApprovedAndCheckedOnTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString();
+
+        mockMvc.perform(get("/finance/share-register/capital").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.minimum.state").value("NOT_SET"));
+        mockMvc.perform(put("/finance/share-register/classes/ORDINARY").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"nominalValue\":1000}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        String holder = mockMvc.perform(post("/finance/share-register/shareholders").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Demo Holdings Ltd\",\"kind\":\"COMPANY\",\"tanzanian\":true,\"idNumber\":\"REG-1\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        String holderId = com.jayway.jsonpath.JsonPath.read(holder, "$.shareholderId");
+        mockMvc.perform(get("/finance/share-register/bank-accounts").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        String issue = mockMvc.perform(post("/finance/share-register/issues").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"shareholderId":"%s","classCode":"ORDINARY","shares":1000,"pricePerShare":1500,"amountPaid":1500000,
+                     "receivedOn":"%s","bankAccount":"1110","reference":"Board resolution 1/2026"}""".formatted(holderId, today)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PROPOSED"))
+            .andExpect(jsonPath("$.sharePremium").value(500000.0))
+            .andReturn().getResponse().getContentAsString();
+        String issueId = com.jayway.jsonpath.JsonPath.read(issue, "$.issueId");
+
+        mockMvc.perform(post("/finance/share-register/issues/{id}/approval", issueId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden()); // a finance officer does not hold ledger.approve
+        mockMvc.perform(post("/finance/share-register/issues/{id}/approval", issueId).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.journalEntryId").isNotEmpty());
+        mockMvc.perform(post("/finance/share-register/issues/{id}/approval", issueId).with(financeApproverOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get("/finance/share-register/issues").param("status", "APPROVED").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/finance/share-register/shareholders").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].shares").value(1000));
+        mockMvc.perform(put("/finance/share-register/capital/minimum").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"minimumPaidUp\":null}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.books.state").value("MET"))
+            .andExpect(jsonPath("$.tanzanian.state").value("MET"))
+            .andExpect(jsonPath("$.minimum.state").value("NOT_SET"))
+            .andExpect(jsonPath("$.ledgerCapital").value(1500000.0));
+        mockMvc.perform(get("/finance/share-register/capital").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
     private static RequestPostProcessor actuaryOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ACTUARY"))
             .jwt(builder -> builder.subject("actuary").claim("tenant_id", tenantId.toString()));

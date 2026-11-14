@@ -11,6 +11,8 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionNotFoundExceptio
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalStateException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ShareRegisterNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ShareRegisterStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventResolvedException;
 import org.springframework.core.Ordered;
@@ -127,6 +129,16 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(ManualJournalStateException.class)
     public ProblemDetail handleManualJournalState(ManualJournalStateException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "MANUAL_JOURNAL_STATE");
+    }
+
+    @ExceptionHandler(ShareRegisterStateException.class)
+    public ProblemDetail handleShareRegisterState(ShareRegisterStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "SHARE_REGISTER_STATE");
+    }
+
+    @ExceptionHandler(ShareRegisterNotFoundException.class)
+    public ProblemDetail handleShareRegisterNotFound(ShareRegisterNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "SHARE_REGISTER_NOT_FOUND");
     }
 
     @ExceptionHandler(UnpostedEventNotFoundException.class)
