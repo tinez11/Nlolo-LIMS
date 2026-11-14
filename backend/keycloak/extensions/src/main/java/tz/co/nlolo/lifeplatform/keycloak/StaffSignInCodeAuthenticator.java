@@ -105,7 +105,8 @@ final class StaffSignInCodeAuthenticator implements Authenticator {
     private void deliver(AuthenticationFlowContext context, String infoWhenSent) {
         UserModel user = context.getUser();
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        if (!withinHourlyCap(context.getSession(), context.getRealm(), user)) {
+        List<Long> sends = recentSends(context.getSession(), context.getRealm(), user);
+        if (!SignInCodes.maySend(sends, Time.currentTime())) {
             context.getEvent().clone().user(user).error("too_many_sign_in_codes");
             context.challenge(page(context, "lpSignInCodeWait", null));
             return;
@@ -119,6 +120,11 @@ final class StaffSignInCodeAuthenticator implements Authenticator {
         authSession.setAuthNote(NOTE_LAST_SENT, Long.toString(Time.currentTime()));
 
         String answer = texter.send(user.getFirstAttribute("tenant_id"), user.getId(), code);
+        // Only a text the platform tried to send counts towards the cap: with codes switched off (OFF) or no phone,
+        // nothing went to anyone's phone, and counting those would lock staff out after five sign-ins an hour.
+        if ("SENT".equals(answer) || "NOT_SENT".equals(answer)) {
+            recordSend(context.getSession(), context.getRealm(), user, sends);
+        }
         switch (answer) {
             case "OFF" -> {
                 // Codes are switched off on the platform (dev, tests): in on the password, as before.
@@ -138,20 +144,28 @@ final class StaffSignInCodeAuthenticator implements Authenticator {
         }
     }
 
-    /** At most five texts an hour, and one a minute, to one account across browsers -- as the reset code counts them. */
-    private static boolean withinHourlyCap(KeycloakSession session, RealmModel realm, UserModel user) {
+    /**
+     * The texts sent to one account in the last hour, across browsers -- at most five, and one a minute (as the reset
+     * code counts them). Kept where every Keycloak node can see it.
+     */
+    private static List<Long> recentSends(KeycloakSession session, RealmModel realm, UserModel user) {
+        Map<String, String> notes = session.singleUseObjects().get(sendsKey(realm, user));
+        return new ArrayList<>(ResetCodes.recentSends(notes == null ? null : notes.get("at"), Time.currentTime()));
+    }
+
+    private static void recordSend(KeycloakSession session, RealmModel realm, UserModel user, List<Long> recent) {
         SingleUseObjectProvider store = session.singleUseObjects();
-        String key = "lp-signin-sends:" + realm.getId() + ":" + user.getId();
-        long now = Time.currentTime();
-        Map<String, String> notes = store.get(key);
-        List<Long> sends = new ArrayList<>(ResetCodes.recentSends(notes == null ? null : notes.get("at"), now));
-        if (!SignInCodes.maySend(sends, now)) return false;
-        sends.add(now);
+        String key = sendsKey(realm, user);
+        List<Long> sends = new ArrayList<>(recent);
+        sends.add((long) Time.currentTime());
         Map<String, String> next = new HashMap<>();
         next.put("at", ResetCodes.store(sends));
-        if (notes != null) store.remove(key);
+        if (store.get(key) != null) store.remove(key);
         store.put(key, 3600, next);
-        return true;
+    }
+
+    private static String sendsKey(RealmModel realm, UserModel user) {
+        return "lp-signin-sends:" + realm.getId() + ":" + user.getId();
     }
 
     private static void forget(AuthenticationSessionModel authSession) {
