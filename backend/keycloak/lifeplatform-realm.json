@@ -4,7 +4,58 @@
   "loginTheme": "lifeplatform",
   "emailTheme": "lifeplatform",
   "resetCredentialsFlow": "lifeplatform reset credentials",
+  "browserFlow": "lifeplatform browser",
   "authenticationFlows": [
+    {
+      "alias": "lifeplatform browser",
+      "description": "Sign in; staff then enter a code texted to the phone on their staff record (2026-11-14)",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "flowAlias": "lifeplatform browser forms",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "lifeplatform browser forms",
+      "description": "Username and password, then the staff sign-in code (others pass straight through)",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "lifeplatform-staff-sign-in-code",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    },
     {
       "alias": "lifeplatform reset credentials",
       "description": "Forgot password: a reset link to the email on file and a code by text to the phone the platform holds (2026-10-28)",
