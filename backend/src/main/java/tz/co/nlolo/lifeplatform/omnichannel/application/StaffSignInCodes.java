@@ -39,12 +39,18 @@ public class StaffSignInCodes {
         this.notifications = notifications;
     }
 
-    /** In the tenant already set from the request: the staff member's own. */
-    public Result send(UUID userId, String code) {
+    /**
+     * In the tenant already set from the request: the staff member's own. {@code loginPhone} is the phone set on the
+     * Keycloak login when it was created from the server (deploy/server/add-user.sh --phone): the first administrator
+     * has no staff record until their first sign-in, and without it nobody could sign in to give anyone a phone. The
+     * staff record's phone wins whenever there is one.
+     */
+    public Result send(UUID userId, String code, String loginPhone) {
         if (!enabled) {
             return Result.OFF;
         }
-        String phone = staff.phoneOf(userId).orElse(null);
+        String phone = staff.phoneOf(userId)
+            .orElse(loginPhone == null || loginPhone.isBlank() ? null : loginPhone.trim());
         if (phone == null) {
             log.info("Sign-in code for staff user {} not texted: no phone on the staff record", userId);
             return Result.NO_PHONE;

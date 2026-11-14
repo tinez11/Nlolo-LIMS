@@ -89,8 +89,13 @@ backup.
 
 ```bash
 ssh deploy@SERVER 'cd platform && ./add-user.sh staff asha.juma \
-    --roles UNDERWRITER --home-branch DSM --first-name Asha --last-name Juma'
+    --roles ADMIN --home-branch DSM --phone +255712345678 --first-name Asha --last-name Juma'
 ```
+
+Staff need `--phone` (2026-11-14): every staff sign-in asks for a code texted to it (`STAFF_SIGN_IN_CODE=true`, which
+the backend requires in production). Make the first administrator here with their own phone; they then add every
+other staff member from Users and roles, phone included. Before switching codes on for an existing install, give every
+active staff login a phone there — the users list marks the ones without.
 
 Everyone signs in at the same address, `https://APP_DOMAIN/`, through one Keycloak realm, `lifeplatform`
 (2026-11-06). The first argument is the **workspace** the login opens: `staff`, `agent` or `regulator`. After

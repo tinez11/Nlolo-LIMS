@@ -29,13 +29,17 @@ final class StaffCodeTexter {
         this.secret = secret;
     }
 
-    String send(String tenantId, String userId, String code) {
+    /**
+     * {@code loginPhone}: the {@code phone} attribute on the login, set when it was created on the server
+     * (add-user.sh --phone) -- the platform uses it only while the staff record has no phone of its own.
+     */
+    String send(String tenantId, String userId, String code, String loginPhone) {
         if (url == null || url.isBlank() || secret == null || secret.isBlank()) {
             log.warn("A staff sign-in code was not texted: LP_STAFF_CODE_SMS_URL / LP_RESET_SMS_SECRET are not set");
             return "NOT_SENT";
         }
         String body = "{\"tenantId\":\"" + json(tenantId) + "\",\"userId\":\"" + json(userId) + "\",\"code\":\""
-            + json(code) + "\"}";
+            + json(code) + "\",\"phone\":\"" + json(loginPhone) + "\"}";
         long now = System.currentTimeMillis() / 1000;
         try {
             HttpResponse<String> response = HTTP.send(HttpRequest.newBuilder(URI.create(url))

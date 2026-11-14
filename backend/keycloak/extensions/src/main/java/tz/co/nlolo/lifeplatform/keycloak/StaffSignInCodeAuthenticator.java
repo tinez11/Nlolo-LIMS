@@ -119,7 +119,8 @@ final class StaffSignInCodeAuthenticator implements Authenticator {
         authSession.setAuthNote(NOTE_ATTEMPTS, "0");
         authSession.setAuthNote(NOTE_LAST_SENT, Long.toString(Time.currentTime()));
 
-        String answer = texter.send(user.getFirstAttribute("tenant_id"), user.getId(), code);
+        String answer = texter.send(user.getFirstAttribute("tenant_id"), user.getId(), code,
+            user.getFirstAttribute("phone"));
         // Only a text the platform tried to send counts towards the cap: with codes switched off (OFF) or no phone,
         // nothing went to anyone's phone, and counting those would lock staff out after five sign-ins an hour.
         if ("SENT".equals(answer) || "NOT_SENT".equals(answer)) {

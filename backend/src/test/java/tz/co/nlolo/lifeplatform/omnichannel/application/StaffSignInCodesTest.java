@@ -31,7 +31,7 @@ class StaffSignInCodesTest {
 
     @Test
     void offSendsNothingAndLooksNothingUp() {
-        assertThat(new StaffSignInCodes(false, staff, notifications).send(user, "123456"))
+        assertThat(new StaffSignInCodes(false, staff, notifications).send(user, "123456", null))
             .isEqualTo(StaffSignInCodes.Result.OFF);
         verifyNoInteractions(staff, notifications);
     }
@@ -39,8 +39,24 @@ class StaffSignInCodesTest {
     @Test
     void noPhoneIsSaidAndNothingIsSent() {
         when(staff.phoneOf(user)).thenReturn(Optional.empty());
-        assertThat(on().send(user, "123456")).isEqualTo(StaffSignInCodes.Result.NO_PHONE);
+        assertThat(on().send(user, "123456", null)).isEqualTo(StaffSignInCodes.Result.NO_PHONE);
         verify(notifications, never()).sendSystemSms(anyString(), anyString(), anyString());
+    }
+
+    /** The first administrator, made on the server with --phone, has no staff record until they first sign in. */
+    @Test
+    void withNoStaffRecordPhoneTheLoginsOwnPhoneIsUsedAndTheRecordWinsWhenThereIsOne() {
+        when(staff.phoneOf(user)).thenReturn(Optional.empty());
+        when(staff.languageOf(user)).thenReturn("en");
+        when(notifications.renderSystemTemplate(any(), any(), any()))
+            .thenReturn(Optional.of("Your Nlolo sign-in code is 123456."));
+        assertThat(on().send(user, "123456", " +255700000002 ")).isEqualTo(StaffSignInCodes.Result.SENT);
+        verify(notifications).sendSystemSms("+255700000002", "STAFF_SIGN_IN_CODE", "Your Nlolo sign-in code is 123456.");
+
+        when(staff.phoneOf(user)).thenReturn(Optional.of(PHONE));
+        assertThat(on().send(user, "123456", "+255700000002")).isEqualTo(StaffSignInCodes.Result.SENT);
+        verify(notifications).sendSystemSms(PHONE, "STAFF_SIGN_IN_CODE", "Your Nlolo sign-in code is 123456.");
+        assertThat(on().send(user, "123456", "  ")).isEqualTo(StaffSignInCodes.Result.SENT);
     }
 
     @Test
@@ -51,7 +67,7 @@ class StaffSignInCodesTest {
             .thenReturn(Optional.of("Namba yako ya kuingia Nlolo ni 123456."));
         when(notifications.sendSystemSms(any(), any(), any())).thenReturn(null);
 
-        assertThat(on().send(user, "123456")).isEqualTo(StaffSignInCodes.Result.SENT);
+        assertThat(on().send(user, "123456", null)).isEqualTo(StaffSignInCodes.Result.SENT);
         verify(notifications).sendSystemSms(PHONE, "STAFF_SIGN_IN_CODE", "Namba yako ya kuingia Nlolo ni 123456.");
     }
 
@@ -61,7 +77,7 @@ class StaffSignInCodesTest {
         when(staff.languageOf(user)).thenReturn("en");
         when(notifications.renderSystemTemplate(any(), any(), any())).thenReturn(Optional.of("Your code is on its way."));
 
-        assertThat(on().send(user, "654321")).isEqualTo(StaffSignInCodes.Result.SENT);
+        assertThat(on().send(user, "654321", null)).isEqualTo(StaffSignInCodes.Result.SENT);
         verify(notifications).sendSystemSms(PHONE, "STAFF_SIGN_IN_CODE",
             "Your Nlolo sign-in code is 654321. It expires in 5 minutes. Never share it.");
     }
@@ -72,7 +88,7 @@ class StaffSignInCodesTest {
         when(staff.languageOf(user)).thenReturn("en");
         when(notifications.renderSystemTemplate(any(), any(), any())).thenReturn(Optional.empty());
 
-        assertThat(on().send(user, "111222")).isEqualTo(StaffSignInCodes.Result.SENT);
+        assertThat(on().send(user, "111222", null)).isEqualTo(StaffSignInCodes.Result.SENT);
         verify(notifications).sendSystemSms(PHONE, "STAFF_SIGN_IN_CODE", StaffSignInCodes.builtIn("111222"));
     }
 
@@ -84,6 +100,6 @@ class StaffSignInCodesTest {
             .thenReturn(Optional.of("Your Nlolo sign-in code is 123456."));
         when(notifications.sendSystemSms(any(), any(), any())).thenReturn("Recipient is not on the SMS testing allowlist");
 
-        assertThat(on().send(user, "123456")).isEqualTo(StaffSignInCodes.Result.NOT_SENT);
+        assertThat(on().send(user, "123456", null)).isEqualTo(StaffSignInCodes.Result.NOT_SENT);
     }
 }

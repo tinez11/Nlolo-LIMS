@@ -42,7 +42,7 @@ class StaffSignInCodeControllerTest {
     @Test
     void aSignedRequestIsAnsweredWithWhatHappenedInTheirOwnTenant() throws Exception {
         AtomicReference<UUID> seen = new AtomicReference<>();
-        when(codes.send(user, "123456")).thenAnswer(i -> {
+        when(codes.send(user, "123456", "")).thenAnswer(i -> {
             seen.set(TenantContext.get());
             return StaffSignInCodes.Result.SENT;
         });
@@ -56,8 +56,17 @@ class StaffSignInCodeControllerTest {
     }
 
     @Test
+    void thePhoneOnTheLoginIsPassedOn() throws Exception {
+        when(codes.send(user, "123456", "+255700000002")).thenReturn(StaffSignInCodes.Result.SENT);
+        long at = System.currentTimeMillis() / 1000;
+        String b = "{\"tenantId\":\"" + tenant + "\",\"userId\":\"" + user + "\",\"code\":\"123456\","
+            + "\"phone\":\"+255700000002\"}";
+        assertThat(controller.text(b, Long.toString(at), sign(SECRET, at, b)).getBody()).isEqualTo(Map.of("result", "SENT"));
+    }
+
+    @Test
     void offIsAnsweredToo() throws Exception {
-        when(codes.send(user, "123456")).thenReturn(StaffSignInCodes.Result.OFF);
+        when(codes.send(user, "123456", "")).thenReturn(StaffSignInCodes.Result.OFF);
         long at = System.currentTimeMillis() / 1000;
         String b = body("123456");
         assertThat(controller.text(b, Long.toString(at), sign(SECRET, at, b)).getBody()).isEqualTo(Map.of("result", "OFF"));
@@ -71,7 +80,7 @@ class StaffSignInCodeControllerTest {
         assertThat(controller.text(b, Long.toString(at), sign("other", at, b)).getStatusCode().value()).isEqualTo(401);
         long old = at - 600;
         assertThat(controller.text(b, Long.toString(old), sign(SECRET, old, b)).getStatusCode().value()).isEqualTo(401);
-        verify(codes, never()).send(any(), any());
+        verify(codes, never()).send(any(), any(), any());
     }
 
     @Test
@@ -83,6 +92,6 @@ class StaffSignInCodeControllerTest {
         String shortCode = body("12345");
         assertThat(controller.text(shortCode, Long.toString(at), sign(SECRET, at, shortCode)).getStatusCode().value())
             .isEqualTo(400);
-        verify(codes, never()).send(any(), any());
+        verify(codes, never()).send(any(), any(), any());
     }
 }

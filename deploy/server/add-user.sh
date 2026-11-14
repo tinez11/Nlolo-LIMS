@@ -17,7 +17,12 @@
 # console too; this script is for the first ones, before anyone can sign in.
 #
 # Run on the server, in the platform directory:
-#   ./add-user.sh staff asha.juma --roles UNDERWRITER --home-branch DSM --first-name Asha --last-name Juma
+#   ./add-user.sh staff asha.juma --roles ADMIN --home-branch DSM --phone +255712345678 --first-name Asha --last-name Juma
+#
+# STAFF NEED --phone (2026-11-14): every staff sign-in asks for a code texted to their phone. A login made here has
+# no staff record until its first sign-in, so the phone goes on the login itself; the platform texts it until an
+# administrator sets the phone on the staff record (Users and roles). Without it the first administrator could never
+# sign in to give anyone a phone.
 #   ./add-user.sh agent john.mwita --party-id 7ddd05c3-... --first-name John --last-name Mwita
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,10 +33,11 @@ WORKSPACE="${1:?Usage: ./add-user.sh <staff|agent|regulator> <username> [options
 USERNAME="${2:?username}"
 shift 2
 
-ROLES=""; HOME_BRANCH=""; PARTY_ID=""; EMAIL=""; FIRST=""; LAST=""
+ROLES=""; HOME_BRANCH=""; PARTY_ID=""; EMAIL=""; FIRST=""; LAST=""; PHONE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --roles)       ROLES="$2"; shift 2 ;;
+    --phone)       PHONE="$2"; shift 2 ;;
     --home-branch) HOME_BRANCH="$2"; shift 2 ;;
     --party-id)    PARTY_ID="$2"; shift 2 ;;
     --email)       EMAIL="$2"; shift 2 ;;
@@ -47,6 +53,12 @@ case "$WORKSPACE" in
 esac
 if [ "$WORKSPACE" = staff ] && [ -z "$HOME_BRANCH" ]; then
   echo "staff need --home-branch (it goes in the token; without it they cannot post a journal)" >&2; exit 1
+fi
+if [ "$WORKSPACE" = staff ] && [ -z "$PHONE" ]; then
+  echo "staff need --phone (their sign-in code is texted to it; without one they cannot sign in)" >&2; exit 1
+fi
+if [ -n "$PHONE" ] && ! printf '%s' "$PHONE" | grep -Eq '^\+?[0-9 ]{9,16}$'; then
+  echo "--phone takes digits, spaces and a leading +, e.g. +255712345678" >&2; exit 1
 fi
 if [ "$WORKSPACE" = agent ] && [ -z "$PARTY_ID" ]; then
   echo "agents need --party-id -- the agent's party id, copied from their record in the console" >&2; exit 1
@@ -64,6 +76,7 @@ kc config credentials --server http://localhost:8080 --realm master \
 ATTRIBUTES="\"tenant_id\":[\"$PLATFORM_TENANT_ID\"]"
 [ -n "$HOME_BRANCH" ] && ATTRIBUTES="$ATTRIBUTES,\"home_branch\":[\"$HOME_BRANCH\"]"
 [ -n "$PARTY_ID" ] && ATTRIBUTES="$ATTRIBUTES,\"party_id\":[\"$PARTY_ID\"]"
+[ -n "$PHONE" ] && ATTRIBUTES="$ATTRIBUTES,\"phone\":[\"$PHONE\"]"
 
 BODY="{\"username\":\"$USERNAME\",\"enabled\":true,\"firstName\":\"$FIRST\",\"lastName\":\"$LAST\""
 BODY="$BODY,\"attributes\":{$ATTRIBUTES}"

@@ -53,11 +53,13 @@ public class StaffSignInCodeController {
         UUID tenantId;
         UUID userId;
         String code;
+        String loginPhone;
         try {
             JsonNode request = json.readTree(body);
             tenantId = UUID.fromString(request.path("tenantId").asText());
             userId = UUID.fromString(request.path("userId").asText());
             code = request.path("code").asText();
+            loginPhone = request.path("phone").asText("");
         } catch (Exception malformed) {
             return ResponseEntity.badRequest().build();
         }
@@ -67,7 +69,7 @@ public class StaffSignInCodeController {
         // The person's own tenant, from their login: every lookup is held to it, as a signed-in request is.
         TenantContext.set(tenantId);
         try {
-            return ResponseEntity.ok(Map.of("result", codes.send(userId, code).name()));
+            return ResponseEntity.ok(Map.of("result", codes.send(userId, code, loginPhone).name()));
         } finally {
             TenantContext.clear();
         }
