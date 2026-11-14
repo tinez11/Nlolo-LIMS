@@ -18,8 +18,16 @@ member's phone, the channel every staff member already uses.
   existing lockout.
 - **No phone:** a staff login with no phone number cannot sign in; the page says "No phone number is set for your
   login. Ask an administrator." Users and roles marks staff with no phone, and the admin adds it there (audited).
-- **Text:** "Your Nlolo sign-in code is 123456. It expires in 5 minutes. Never share it." (English; Swahili only if
-  staff logins record a language — to check while planning). Wording for the user to approve.
+- **Text (approved 2026-11-14, editable):** an SMS template `STAFF_SIGN_IN_CODE` in English and Swahili, seeded by a
+  communication migration and reworded like any other template in Communications > Templates (the existing
+  `PUT /notifications/templates/{id}`; `{{code}}` must stay in the text). Starting wording:
+  - en: "Your Nlolo sign-in code is {{code}}. It expires in 5 minutes. Never share it."
+  - sw: "Namba yako ya kuingia Nlolo ni {{code}}. Itaisha baada ya dakika 5. Usimpe mtu yeyote."
+    (Swahili draft for the user to check.)
+  Sent without a message-log row (`sendSystemSms`), because the body holds the code; a new NotificationApi method
+  renders the tenant's template first.
+- **Language:** staff logins have no language today. Add "Language for texts" (English / Kiswahili, default English)
+  to a staff login in Users and roles (iam migration, audited like other changes).
 - **Logged:** each code sent and each failed code as Keycloak events; the code itself is never logged.
 
 ## How it works
