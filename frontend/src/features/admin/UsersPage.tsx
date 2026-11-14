@@ -85,7 +85,11 @@ export function UsersPage() {
       render: (u) => (
         <span>
           <span className="block font-medium">{u.displayName ?? u.username}</span>
-          <span className="block text-xs text-muted-foreground">{u.username}</span>
+          <span className="block text-xs text-muted-foreground">
+            {u.username}
+            {/* 2026-11-14: no phone, no sign-in code -- they cannot sign in once codes are on. */}
+            {u.active && !u.phone && <span className="text-status-warning-fg"> · No phone</span>}
+          </span>
         </span>
       ),
     },

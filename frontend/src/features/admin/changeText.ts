@@ -18,6 +18,13 @@ export function describeChange(c: AccessChangeView): string {
       return `Reactivated ${who}`;
     case 'PASSWORD_RESET':
       return `Gave ${who} a new temporary password`;
+    case 'CONTACT_CHANGED': {
+      // 2026-11-14: where their sign-in code goes. The history keeps the last three digits, never the number.
+      const language = d.textLanguage === 'sw' ? 'Kiswahili' : 'English';
+      return d.phoneRemoved
+        ? `Removed ${who}'s phone, texts in ${language}`
+        : `Changed ${who}'s phone (ends ${String(d.phoneEnds ?? '')}), texts in ${language}`;
+    }
     case 'ROLE_CREATED':
       return `Created the role ${String(d.code ?? '')}`;
     case 'ROLE_CHANGED': {

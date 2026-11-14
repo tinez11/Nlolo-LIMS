@@ -53,6 +53,16 @@ test('password policy, lockout and SMTP settings', () => {
 
 test('the workspace roles and every role the platform authorizes on survive', () => {
   assert.deepEqual(realm.roles.realm.map((r) => r.name).sort(), ['ADMIN', 'CLAIMS_ASSESSOR', 'CLAIMS_MANAGER',
-    'CUSTOMER_SERVICE_REP', 'FINANCE_APPROVER', 'FINANCE_OFFICER', 'SENIOR_UNDERWRITER', 'TIRA_READ_ONLY',
+    'CUSTOMER_SERVICE_REP', 'FINANCE_APPROVER', 'FINANCE_OFFICER', 'MANAGEMENT', 'SENIOR_UNDERWRITER', 'TIRA_READ_ONLY',
     'UNDERWRITER', 'agent', 'customer', 'regulator', 'staff']);
+});
+
+// 2026-11-14: staff sign in with a texted code after the password; production keeps the dev realm's flow.
+test('the browser flow asks staff for their sign-in code after the password', () => {
+  assert.equal(realm.browserFlow, 'lifeplatform browser');
+  const forms = realm.authenticationFlows.find((f) => f.alias === 'lifeplatform browser forms');
+  assert.deepEqual(forms.authenticationExecutions.map((e) => [e.authenticator, e.requirement]), [
+    ['auth-username-password-form', 'REQUIRED'],
+    ['lifeplatform-staff-sign-in-code', 'REQUIRED'],
+  ]);
 });

@@ -29,4 +29,13 @@ class StaffContactsImpl implements StaffContacts {
             new MapSqlParameterSource("tenant", TenantContext.get()).addValue("user", userId), String.class);
         return phones.stream().filter(p -> p != null && !p.isBlank()).map(String::trim).findFirst();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String languageOf(UUID userId) {
+        List<String> languages = jdbc.queryForList(
+            "SELECT text_language FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user",
+            new MapSqlParameterSource("tenant", TenantContext.get()).addValue("user", userId), String.class);
+        return languages.stream().anyMatch("sw"::equals) ? "sw" : "en";
+    }
 }

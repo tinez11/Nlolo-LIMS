@@ -60,7 +60,9 @@ public class AccessAdministration {
 
     public record UserView(UUID userId, String username, String displayName, String email, String phone,
                            String homeBranch, boolean active, Instant lastSeenAt, List<RoleRef> roles,
-                           List<String> extraPermissions, List<String> effectivePermissions, boolean pendingApproval) {}
+                           List<String> extraPermissions, List<String> effectivePermissions, boolean pendingApproval,
+                           /** en or sw: the language of their texts, the sign-in code among them (2026-11-14). */
+                           String textLanguage) {}
 
     public record UserDetail(UserView user, List<ChangeView> history) {}
 
@@ -245,7 +247,7 @@ public class AccessAdministration {
             users.add(new UserView(userId, (String) row.get("username"), (String) row.get("display_name"),
                 (String) row.get("email"), (String) row.get("phone"), (String) row.get("home_branch"),
                 Boolean.TRUE.equals(row.get("active")), seen == null ? null : seen.toInstant(), List.copyOf(mine),
-                List.copyOf(own), List.copyOf(effective), pending.contains(userId)));
+                List.copyOf(own), List.copyOf(effective), pending.contains(userId), language(row)));
         }
         return users;
     }
@@ -300,6 +302,37 @@ public class AccessAdministration {
         logins.setEnabled(userId, active);
         record(tenant, userId, null, active ? "USER_ACTIVATED" : "USER_DEACTIVATED", Map.of(), "APPLIED", actor);
         access.evict(tenant, userId);
+    }
+
+    /**
+     * The phone and text language on a staff login (2026-11-14, staff sign-in code): where their sign-in code goes.
+     * Never one's own -- an administrator who could repoint their own code could pass the check with any phone. The
+     * history keeps the last three digits, never the number.
+     */
+    @Transactional
+    public UserView updateContact(Actor actor, UUID userId, String phone, String textLanguage) {
+        UUID tenant = TenantContext.get();
+        refuseSelf(actor, userId);
+        userView(tenant, userId);
+        String language = textLanguage == null || textLanguage.isBlank() ? "en" : textLanguage.trim();
+        if (!language.equals("en") && !language.equals("sw")) {
+            throw new AccessChangeRefusedException(INVALID_CONTACT, "Texts are in English (en) or Kiswahili (sw).");
+        }
+        String newPhone = blankToNull(phone);
+        jdbc.update("UPDATE iam.staff_user SET phone = :phone, text_language = :language WHERE tenant_id = :tenant"
+                + " AND user_id = :user",
+            new MapSqlParameterSource("tenant", tenant).addValue("user", userId).addValue("phone", newPhone)
+                .addValue("language", language));
+        Map<String, Object> detail = new java.util.LinkedHashMap<>();
+        if (newPhone == null) {
+            detail.put("phoneRemoved", true);
+        } else {
+            String digits = newPhone.replaceAll("\\D", "");
+            detail.put("phoneEnds", digits.length() <= 3 ? digits : digits.substring(digits.length() - 3));
+        }
+        detail.put("textLanguage", language);
+        record(tenant, userId, null, "CONTACT_CHANGED", detail, "APPLIED", actor);
+        return userView(tenant, userId);
     }
 
     @Transactional
@@ -477,7 +510,12 @@ public class AccessAdministration {
         return new UserView(userId, (String) row.get("username"), (String) row.get("display_name"), (String) row.get("email"),
             (String) row.get("phone"), (String) row.get("home_branch"), Boolean.TRUE.equals(row.get("active")),
             seen == null ? null : seen.toInstant(), List.copyOf(roles), extra,
-            List.copyOf(effectiveOf(tenant, roleIds, extra)), pending != null && pending > 0);
+            List.copyOf(effectiveOf(tenant, roleIds, extra)), pending != null && pending > 0, language(row));
+    }
+
+    /** en unless the row says sw (a database before iam V8 has no column at all). */
+    private static String language(Map<String, Object> row) {
+        return "sw".equals(row.get("text_language")) ? "sw" : "en";
     }
 
     private Set<String> effectiveOf(UUID tenant, Collection<UUID> roleIds, Collection<String> permissions) {

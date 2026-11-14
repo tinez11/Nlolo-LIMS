@@ -194,6 +194,32 @@ paths:
         '204': { description: Done }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/users/{userId}/contact:
+    put:
+      summary: Set the phone a staff member's sign-in code goes to, and the language of their texts -- never one's own
+      description: Recorded in the user's history as CONTACT_CHANGED, with the phone's last three digits only (2026-11-14).
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, textLanguage]
+              properties:
+                phone: { type: [string, "null"], maxLength: 40, description: "Null removes it" }
+                textLanguage: { type: string, enum: [en, sw] }
+      responses:
+        '200':
+          description: The user as they now stand
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /access/users/{userId}/password-reset:
     post:
       summary: Send a user a new password -- an email link, or a one-time password returned once
@@ -312,8 +338,9 @@ components:
     UserView:
       type: object
       required: [userId, username, displayName, email, phone, homeBranch, active, lastSeenAt, roles, extraPermissions,
-                 effectivePermissions, pendingApproval]
+                 effectivePermissions, pendingApproval, textLanguage]
       properties:
+        textLanguage: { type: string, enum: [en, sw], description: "The language of their texts, the sign-in code among them" }
         userId: { type: string, format: uuid }
         username: { type: string }
         displayName: { type: [string, "null"] }
@@ -337,7 +364,7 @@ components:
         roleId: { type: [string, "null"], format: uuid }
         roleName: { type: [string, "null"] }
         changeType: { type: string, enum: [IMPORTED, USER_CREATED, ACCESS_CHANGED, USER_ACTIVATED, USER_DEACTIVATED,
-                                           PASSWORD_RESET, ROLE_CREATED, ROLE_CHANGED] }
+                                           PASSWORD_RESET, ROLE_CREATED, ROLE_CHANGED, CONTACT_CHANGED] }
         detail: { type: object, additionalProperties: true }
         status: { type: string, enum: [APPLIED, PENDING, APPROVED, REJECTED, WITHDRAWN] }
         requestedByName: { type: [string, "null"] }

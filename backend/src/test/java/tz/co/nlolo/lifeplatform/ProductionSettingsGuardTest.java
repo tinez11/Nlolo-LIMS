@@ -26,7 +26,19 @@ class ProductionSettingsGuardTest {
         s.put("app.portal.url", "https://portal.example.tz/customers");
         s.put("app.security.issuer", "https://login.example.tz/realms/lifeplatform");
         s.put("app.support-phone", "+255 22 000 0000");
+        s.put("app.staff-sign-in-code.enabled", "true");
         return s;
+    }
+
+    /** 2026-11-14: staff consoles move money; production never signs staff in on a password alone. */
+    @Test
+    void theStaffSignInCodeSwitchedOffOrMissingIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.staff-sign-in-code.enabled", "false");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.staff-sign-in-code.enabled is off (STAFF_SIGN_IN_CODE: staff must get a sign-in code)");
+        s.remove("app.staff-sign-in-code.enabled");
+        assertThat(ProductionSettingsGuard.problems(s::get)).hasSize(1);
     }
 
     @Test

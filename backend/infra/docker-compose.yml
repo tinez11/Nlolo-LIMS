@@ -103,6 +103,9 @@ services:
       LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET:-dev-only-reset-sms-secret}
       # "Your password was changed" by text (2026-11-06): the same signature, the platform's own endpoint.
       LP_PASSWORD_CHANGED_URL: ${LP_PASSWORD_CHANGED_URL:-http://host.docker.internal:8080/internal/password-changed}
+      # The staff sign-in code (2026-11-14): Keycloak asks the platform to text it, same signature. The platform's
+      # STAFF_SIGN_IN_CODE switch decides whether staff are asked at all (off in dev).
+      LP_STAFF_CODE_SMS_URL: ${LP_STAFF_CODE_SMS_URL:-http://host.docker.internal:8080/internal/staff-sign-in-code/sms}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: postgres

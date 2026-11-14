@@ -85,6 +85,8 @@ services:
       LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET}
       # "Your password was changed" by text (2026-11-06): the same signature, the platform's own endpoint.
       LP_PASSWORD_CHANGED_URL: http://backend:8080/internal/password-changed
+      # The staff sign-in code (2026-11-14): Keycloak asks the platform to text it, same signature.
+      LP_STAFF_CODE_SMS_URL: http://backend:8080/internal/staff-sign-in-code/sms
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
     ports:
@@ -154,6 +156,8 @@ services:
       PASSWORD_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET}
       # The number "your password was changed" tells a person to call (2026-11-06); the backend refuses to start without it.
       SUPPORT_PHONE: ${SUPPORT_PHONE}
+      # A texted code after the password on every staff sign-in (2026-11-14); the backend refuses to start with it off.
+      STAFF_SIGN_IN_CODE: ${STAFF_SIGN_IN_CODE}
       SMS_GATEWAY_BASE_URL: ${SMS_GATEWAY_BASE_URL}
       SMS_GATEWAY_AUTHORIZATION: ${SMS_GATEWAY_AUTHORIZATION}
       SMS_GATEWAY_SENDER_NAME: ${SMS_GATEWAY_SENDER_NAME}

@@ -60,6 +60,14 @@ public interface NotificationApi {
      */
     String sendSystemSms(String phoneNumber, String templateKey, String body);
 
+    /**
+     * The current tenant's SMS wording for {@code templateKey} -- its own, else the platform's; in {@code language},
+     * else Swahili, as {@link #notify} chooses -- with {@code values} filled in (2026-11-14: the staff sign-in code, an
+     * editable template sent through {@link #sendSystemSms}). Empty when there is no such template or a placeholder is
+     * left unfilled. Sends and records nothing.
+     */
+    java.util.Optional<String> renderSystemTemplate(String templateKey, String language, Map<String, String> values);
+
     /** Every template for the current tenant, ordered so one message's variants sit together. */
     java.util.List<NotificationTemplateView> listTemplates();
 
