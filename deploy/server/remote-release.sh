@@ -97,11 +97,22 @@ wait_healthy keycloak
 $DC up -d caddy
 $DC run --rm keycloak-config
 
+# Keycloak's own administrator account (2026-11-14, security audit H1): lock it after repeated wrong passwords, as
+# every platform login is. Keycloak leaves this off for `master`, and keycloak-config manages only `lifeplatform`.
+# Every release sets it again, so a hand edit in the console cannot quietly undo it.
+set -a; . ./.env; set +a
+$DC exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master \
+  --user admin --password "$KC_ADMIN_PASSWORD" > /dev/null
+$DC exec -T keycloak /opt/keycloak/bin/kcadm.sh update realms/master -s bruteForceProtected=true \
+  -s failureFactor=5 -s waitIncrementSeconds=60 -s maxFailureWaitSeconds=900 -s maxDeltaTimeSeconds=43200 \
+  -s permanentLockout=false
+
 if [ ! -f .first-admin-created ]; then
   echo "== first staff login"
-  set -a; . ./.env; set +a
+  # Staff sign in with a texted code (2026-11-14), so the first administrator needs a phone from the start.
+  [ -n "${FIRST_ADMIN_PHONE:-}" ] || { echo "Set FIRST_ADMIN_PHONE in .env: the first administrator's sign-in code goes to it" >&2; exit 1; }
   ./add-user.sh staff staff.admin --roles ALL --home-branch "${FIRST_ADMIN_HOME_BRANCH:-DSM}" \
-    --first-name Platform --last-name Admin
+    --phone "$FIRST_ADMIN_PHONE" --first-name Platform --last-name Admin
   touch .first-admin-created
 fi
 

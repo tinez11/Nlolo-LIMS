@@ -43,6 +43,13 @@ which Keycloak 26 intends as temporary.
 brute-force protection for `master` (the release can set it with `kcadm`). (3) Create a permanent admin with a long
 random password, then delete the bootstrap admin. (1) alone closes the internet path.
 
+**Status 2026-11-14: (1) and (2) done.** The Caddyfile shuts `/realms/master` on `AUTH_DOMAIN` (proved with a local
+Caddy in front of Keycloak: master's token endpoint 404, `lifeplatform` 200), `smoke.sh` fails a release that answers
+otherwise, and every release sets master's lockout (5 failures, waits up to 15 minutes) with `kcadm`. (3) is not done:
+the bootstrap admin keeps the long random `KC_ADMIN_PASSWORD` that `bootstrap-server.sh` generates, and is now reachable
+only through the SSH tunnel -- the server's SSH key is the second factor. Staff got their own texted code the same day
+(M5).
+
 ### H2 — The money rail is a mock
 
 **Where.** `deploy/server/compose.yml` runs `wiremock` as the mobile-money gateway; `MobileMoneyGatewayAdapter` sends
