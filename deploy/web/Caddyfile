@@ -47,5 +47,13 @@
 	@admin path /admin /admin/*
 	respond @admin 404
 
+	# Keycloak's own `master` realm -- the Keycloak administrator's login -- shut too (2026-11-14, security audit H1).
+	# Moving the console off the public address left master's token endpoint on it, where anyone could guess the
+	# administrator's password as fast as the network allows, and one right guess owns every account. Nothing on the
+	# internet needs master: the console comes through the SSH tunnel, and kcadm and keycloak-config reach Keycloak on
+	# the private network. Staff, agents and customers sign in through `lifeplatform`, untouched.
+	@master path /realms/master /realms/master/*
+	respond @master 404
+
 	reverse_proxy keycloak:8080
 }

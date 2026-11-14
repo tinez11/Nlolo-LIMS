@@ -30,4 +30,10 @@ curl -sS $K $R "https://$AUTH_DOMAIN/realms/lifeplatform/.well-known/openid-conf
 code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' "https://$AUTH_DOMAIN/admin/")
 [ "$code" = "404" ] || fail "the Keycloak admin console answered $code from the internet, expected 404"
 
+# The Keycloak administrator's own realm (2026-11-14, security audit H1): its token endpoint is where the admin
+# password could be guessed from outside.
+code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' -X POST \
+  "https://$AUTH_DOMAIN/realms/master/protocol/openid-connect/token")
+[ "$code" = "404" ] || fail "Keycloak's master realm answered $code from the internet, expected 404"
+
 echo "Smoke check passed."
