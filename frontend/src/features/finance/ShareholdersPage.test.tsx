@@ -83,6 +83,11 @@ describe('ShareholdersPage', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Approve and post' }));
+    expect(finApi.approveShareIssue).not.toHaveBeenCalled();
+    expect(screen.getByText(/Debit 1110 TZS 15,000.00; credit share capital TZS 10,000.00/)).toHaveTextContent(
+      'and share premium TZS 5,000.00, in November 2026.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post to the ledger' }));
     expect(finApi.approveShareIssue).toHaveBeenCalledWith('i-1');
   });
 

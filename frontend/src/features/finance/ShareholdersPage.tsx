@@ -27,6 +27,7 @@ import type {
 } from '@/api/types';
 import { can } from '@/auth/access';
 import { readIdentity } from '@/auth/claims';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { DataTable, type Column } from '@/components/DataTable';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
@@ -41,6 +42,7 @@ import { Input, Select } from '@/components/ui/input';
 import type { ApiError } from '@/lib/apiError';
 import { formatDate, todayIso } from '@/lib/dates';
 import { barredAsOwn, SIGNING_OWN } from '@/lib/ownWork';
+import { monthName } from './monthEndSteps';
 import { checkLabel, issueSplit, ownershipShare, tzs } from './shareRegister';
 
 interface Register {
@@ -544,6 +546,7 @@ function IssueForm({ register, onSaved, onCancel }: { register: Register; onSave
 function IssueDecision({ issue, onDecided }: { issue: ShareIssueView; onDecided: () => void }) {
   const viewer = readIdentity(useAuth().user?.access_token)?.subject ?? undefined;
   const [rejecting, setRejecting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -578,13 +581,29 @@ function IssueDecision({ issue, onDecided }: { issue: ShareIssueView; onDecided:
         {tzs(issue.shareCapital)}, premium {tzs(issue.sharePremium)} · recorded by <StaffName subject={issue.proposedBy} />
       </p>
       {error && <InlineError error={error} />}
+      {confirming && (
+        <ConfirmAct
+          heading="Post this issue of shares?"
+          consequence={
+            <>
+              Debit {issue.bankAccount} {tzs(issue.amountPaid)}; credit share capital {tzs(issue.shareCapital)}
+              {issue.sharePremium > 0 && <> and share premium {tzs(issue.sharePremium)}</>}, in{' '}
+              {monthName(issue.receivedOn.slice(0, 7))}.
+            </>
+          }
+          reversal="A posted journal is never changed; a mistake is corrected with a manual journal."
+          confirmLabel="Post to the ledger"
+          busy={busy}
+          onConfirm={() => void act(() => approveShareIssue(issue.issueId))}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
-        {can('ledger.approve') && !rejecting && (
+        {can('ledger.approve') && !rejecting && !confirming && (
           <>
             {barred && <span className="text-xs text-muted-foreground">You recorded it, so someone else must approve it.</span>}
             {mine && !barred && <span className="text-xs text-muted-foreground">{SIGNING_OWN}</span>}
-            <Button size="sm" variant="primary" disabled={barred || busy} pending={busy}
-              onClick={() => void act(() => approveShareIssue(issue.issueId))}>
+            <Button size="sm" variant="primary" disabled={barred || busy} onClick={() => setConfirming(true)}>
               Approve and post
             </Button>
             {!mine && (
@@ -594,7 +613,7 @@ function IssueDecision({ issue, onDecided }: { issue: ShareIssueView; onDecided:
             )}
           </>
         )}
-        {mine && can('ledger.manage') && !rejecting && (
+        {mine && can('ledger.manage') && !rejecting && !confirming && (
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => withdrawShareIssue(issue.issueId))}>
             Withdraw
           </Button>
