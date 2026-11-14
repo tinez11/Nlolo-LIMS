@@ -330,6 +330,15 @@ export type PeriodStatus = FinaccountingComponents['schemas']['PeriodStatus'];
 /** The effective-dated accounting policy register (IFRS 17 spec §3). */
 export type PolicyElectionView = FinaccountingComponents['schemas']['PolicyElectionView'];
 export type BaselineSignOffView = FinaccountingComponents['schemas']['BaselineSignOffView'];
+/** The shareholders register (2026-11-14). */
+export type ShareholderView = FinaccountingComponents['schemas']['ShareholderView'];
+export type ShareholderInput = FinaccountingComponents['schemas']['ShareholderInput'];
+export type ShareClassView = FinaccountingComponents['schemas']['ShareClassView'];
+export type ShareIssueView = FinaccountingComponents['schemas']['ShareIssueView'];
+export type ShareIssueInput = FinaccountingComponents['schemas']['ShareIssueInput'];
+export type CapitalView = FinaccountingComponents['schemas']['CapitalView'];
+export type CapitalCheck = FinaccountingComponents['schemas']['CapitalCheck'];
+export type BankAccountView = FinaccountingComponents['schemas']['BankAccountView'];
 /** A contract's IFRS 17 classification (I2). */
 export type PolicyClassificationView = FinaccountingComponents['schemas']['PolicyClassificationView'];
 export type PolicyElectionInput = FinaccountingComponents['schemas']['PolicyElectionInput'];

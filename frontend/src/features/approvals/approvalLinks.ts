@@ -47,6 +47,8 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'bonus-declaration': (r) => `/staff/products/${id(r)}`,
   'withholding-rule': () => '/staff/withholding-rules',
   'manual-journal': (r) => `/staff/manual-journals/${id(r)}`,
+  // 2026-11-14: a share issue is decided on the Shareholders page.
+  'share-issue': () => '/staff/shareholders',
   'expense-allocation': (r) => `/staff/ifrs17-engine/allocations/${id(r)}`,
   'engine-run': (r) => `/staff/ifrs17-engine/runs/${id(r)}`,
   'year-end-close': (r) => `/staff/year-end/closes/${id(r)}`,
