@@ -61,6 +61,7 @@ public class EngineReinsuranceGroups {
                 group.toString()));
         } catch (RuntimeException e) {
             log.error("Could not map {} {} to its reinsurance group", source[1], reference, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

@@ -73,6 +73,7 @@ public class FuneralEventListener {
         } catch (Exception e) {
             // The dispatch row records any failure for the desk; the policy change itself stands.
             log.error("Failed to send the {} notice for policy {}", type, payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

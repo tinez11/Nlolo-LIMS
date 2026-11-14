@@ -80,6 +80,7 @@ public class UnitLinkedEventListener {
         } catch (Exception e) {
             // The dispatch row records any failure for the desk; the unit movement itself stands.
             log.error("Failed to send the {} notice for policy {}", template, p.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) {
                 TenantContext.set(previous);

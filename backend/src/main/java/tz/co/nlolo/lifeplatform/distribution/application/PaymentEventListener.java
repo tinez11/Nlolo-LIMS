@@ -116,6 +116,7 @@ public class PaymentEventListener {
             handler.accept(payload);
         } catch (Exception e) {
             log.error("distribution failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

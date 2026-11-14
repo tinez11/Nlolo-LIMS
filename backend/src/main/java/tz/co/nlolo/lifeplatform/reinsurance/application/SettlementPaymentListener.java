@@ -51,6 +51,7 @@ class SettlementPaymentListener {
         } catch (Exception e) {
             log.error("reinsurance failed to record the outcome of settlement payout {} for tenant {}", p.get("sourceRef"),
                 envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

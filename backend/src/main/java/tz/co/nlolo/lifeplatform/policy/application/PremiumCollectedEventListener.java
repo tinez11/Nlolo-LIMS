@@ -80,6 +80,7 @@ public class PremiumCollectedEventListener {
             // logged loudly rather than swallowed, and the next premium on the same policy will
             // activate it: activateOnFirstPremium is idempotent precisely so that retry is safe.
             log.error("Failed to start cover for policy {} after its premium was collected", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

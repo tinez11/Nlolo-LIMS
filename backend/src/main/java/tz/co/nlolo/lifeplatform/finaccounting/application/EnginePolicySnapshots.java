@@ -90,6 +90,7 @@ public class EnginePolicySnapshots {
             });
         } catch (RuntimeException e) {
             log.error("Could not keep the engine's snapshot of {} on {}", p.get("policyNumber"), type, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

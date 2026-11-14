@@ -94,6 +94,7 @@ public class PolicyLapseRecommendedEventListener {
             });
         } catch (Exception e) {
             log.error("Automatic lapse failed for policy {} following billing's recommendation", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

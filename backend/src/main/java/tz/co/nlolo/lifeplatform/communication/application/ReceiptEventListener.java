@@ -91,6 +91,7 @@ public class ReceiptEventListener {
             // The money is recorded either way -- its module has committed, and rolling that back to save a message
             // would be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
             log.error("Failed to send {} on policy {}", templateKey, payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

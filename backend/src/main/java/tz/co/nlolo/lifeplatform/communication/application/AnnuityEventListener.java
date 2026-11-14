@@ -56,6 +56,7 @@ public class AnnuityEventListener {
         } catch (Exception e) {
             // The reminder is recorded as sent either way; the dispatch row records the failure for the desk.
             log.error("Failed to send the vesting reminder for policy {}", payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

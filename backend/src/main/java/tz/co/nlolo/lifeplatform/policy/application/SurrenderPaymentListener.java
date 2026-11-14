@@ -73,6 +73,7 @@ public class SurrenderPaymentListener {
         } catch (Exception e) {
             log.error("Failed to close surrender request {} after its payout {}", surrenderRequestId,
                 paid ? "completed" : "failed", e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

@@ -65,6 +65,7 @@ public class CashValueEventListener {
             // to recompute is recomputed on the next premium (the operation is idempotent), so it is
             // logged rather than allowed to poison the collection.
             log.error("Failed to recompute cash value for policy {} after a premium was collected", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

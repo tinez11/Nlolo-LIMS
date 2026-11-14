@@ -125,6 +125,7 @@ class CustomerNoticeListener {
         } catch (RuntimeException e) {
             // A message missed is recorded nowhere else: say so plainly, and never undo what already happened.
             log.error("communication could not act on {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }
