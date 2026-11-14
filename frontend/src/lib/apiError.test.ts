@@ -86,6 +86,15 @@ describe('toApiError', () => {
     expect(toApiError(refused).detail).toBe('A funeral plan is paid monthly, quarterly or annually');
   });
 
+  /** 2026-11-14: a refusal read from the server comes out in words -- no id, no enum state. */
+  it('puts a refusal in plain words as it is read', () => {
+    const cause = new AxiosError('Request failed', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 409, statusText: 'Conflict', headers: {}, config: {} as never,
+      data: { title: 'Conflict', detail: 'Loan 7f3e2a10-4b5c-4d6e-8f90-a1b2c3d4e5f6 must be ORIGINATED (current: SETTLED)' },
+    } as never);
+    expect(toApiError(cause).detail).toBe('This loan must be originated: it is settled');
+  });
+
   // A 404 on this platform is not always "missing": the refdata allowlist and the
   // IDOR guards deliberately return 404 for a denied resource so existence is not
   // leaked. The UI must not promise the user the record does not exist.

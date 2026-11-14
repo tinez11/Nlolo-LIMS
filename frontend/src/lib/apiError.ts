@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios';
+import { plainWords } from './plainWords';
 
 /**
  * Every failure in the console is normalized to this one shape, lifted from the
@@ -130,7 +131,8 @@ export function toApiError(cause: unknown): ApiError {
       kind: classify(status),
       errorCode: body ? readString(body, 'errorCode') : null,
       title: (body && readString(body, 'title')) ?? `Request failed (${status})`,
-      detail: body ? readString(body, 'detail') : null,
+      // In words a person reads (2026-11-14): no ids, no enum states. Every screen shows details from here.
+      detail: body ? plainWords(readString(body, 'detail')) : null,
       traceId: body ? readString(body, 'traceId') : null,
       fieldErrors: body ? readFieldErrors(body) : [],
       mayBeDenied: status === 404,
