@@ -57,9 +57,10 @@ class CommunicationContractTest {
 
     /**
      * V8's four messages (16 rows), V17's agent cash (2, SMS) with V21's email for it (2, 2026-11-11), and V19's nine
-     * customer notices (36), and V22's premium reminder (4, 2026-11-11).
+     * customer notices (36), and V22's premium reminder (4, 2026-11-11), V23's maturity payout redirected (4,
+     * 2026-11-12) and V24's staff sign-in code (2, SMS only, 2026-11-14).
      */
-    private static final int SEEDED_TEMPLATES = 16 + 2 + 2 + 36 + 4;
+    private static final int SEEDED_TEMPLATES = 16 + 2 + 2 + 36 + 4 + 4 + 2;
 
     private static final String SPEC_PATH = "api/openapi/openapi-communication.yaml";
     private static final UUID SEEDED_TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -98,7 +99,7 @@ class CommunicationContractTest {
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql",
             "db-migrations/communication/V17__agent_cash_received_template.sql",
-            "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql", "db-migrations/communication/V21__agent_cash_names_the_agent.sql", "db-migrations/communication/V22__premium_reminder_template.sql", "db-migrations/communication/V23__maturity_payout_redirected_template.sql",
+            "db-migrations/communication/V18__not_sent_and_outbox_indexes.sql", "db-migrations/communication/V19__customer_notices.sql", "db-migrations/communication/V20__offer_says_where_to_pay.sql", "db-migrations/communication/V21__agent_cash_names_the_agent.sql", "db-migrations/communication/V22__premium_reminder_template.sql", "db-migrations/communication/V23__maturity_payout_redirected_template.sql", "db-migrations/communication/V24__staff_sign_in_code_template.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -391,6 +392,8 @@ class CommunicationContractTest {
             "POLICY_LAPSED", "POLICY_REINSTATED", "CLAIM_RECEIVED", "CLAIM_APPROVED", "CLAIM_DECLINED", "CLAIM_PAID",
             "SURRENDER_PAID", "LOAN_PAID_OUT", "BENEFIT_PAID",
             // 2026-11-11 (communication V22): premiums to follow up.
-            "PREMIUM_REMINDER");
+            "PREMIUM_REMINDER",
+            // 2026-11-12 (V23): a maturity payout pointed elsewhere; 2026-11-14 (V24): a staff sign-in code.
+            "MATURITY_PAYOUT_REDIRECTED", "STAFF_SIGN_IN_CODE");
     }
 }
