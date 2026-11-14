@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getAgent } from '@/api/distribution';
+import { getAgent, getAgentName } from '@/api/distribution';
+import { can } from '@/auth/access';
+import { useAccessStore } from '@/store/accessStore';
 import { PartyName } from '@/components/PartyName';
 import { cn } from '@/lib/cn';
 
@@ -33,7 +35,11 @@ function resolveAgent(agentId: string) {
   const inFlight = PENDING.get(agentId);
   if (inFlight) return inFlight;
 
-  const request = getAgent(agentId)
+  // Staff without the agent register (customer service, underwriters) read the name-only lookup (2026-11-14); asking
+  // the register showed them a bare id after a 403. Agents and finance keep the register, which they may read.
+  const staffWithoutRegister = useAccessStore.getState().mine.data != null && !can('agents.view');
+  const lookup = staffWithoutRegister ? getAgentName(agentId) : getAgent(agentId);
+  const request = lookup
     .then((agent) => {
       const resolved = {
         partyId: agent.partyId ?? null,

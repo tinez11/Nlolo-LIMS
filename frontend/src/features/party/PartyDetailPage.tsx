@@ -99,10 +99,12 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
     void loadPartyDocuments(partyId);
     void loadPolicies(partyId);
     void loadClaims(partyId);
-    void loadCases(partyId);
+    // Only for someone who may read them (2026-11-14): finance asking for underwriting cases was refused on every
+    // client page, and the tab offered them "You do not have access".
+    if (mayReadCases(isStaff)) void loadCases(partyId);
     void loadBeneficiaryOf(partyId);
-    // `GET /agents` is staff-only, so asking as an agent would be a guaranteed 403.
-    if (isStaff) void loadAgentRecords(partyId);
+    // `GET /agents` is staff-only, and among staff needs agents.view: asking otherwise is a guaranteed 403.
+    if (mayReadAgents(isStaff)) void loadAgentRecords(partyId);
   }, [
     partyId,
     isStaff,
@@ -465,17 +467,19 @@ function clientTabs({
     ),
   });
 
-  tabs.push({
-    value: 'underwriting',
-    label: 'Underwriting',
-    content: (
-      <Panel
-        title="Underwriting"
-      >
-        <CaseList resource={cases} onRetry={onRetryCases} />
-      </Panel>
-    ),
-  });
+  if (mayReadCases(isStaff)) {
+    tabs.push({
+      value: 'underwriting',
+      label: 'Underwriting',
+      content: (
+        <Panel
+          title="Underwriting"
+        >
+          <CaseList resource={cases} onRetry={onRetryCases} />
+        </Panel>
+      ),
+    });
+  }
 
   // Labelled "Beneficiary", not "Beneficiary of" or "Named as beneficiary": the panel keeps the
   // full heading, and a tab bar reads better in nouns. The distinction the panel's subtitle
@@ -494,9 +498,9 @@ function clientTabs({
     ),
   });
 
-  // `GET /agents` is staff-only, so the agents realm never even fetches this -- a tab offering
-  // it there would open onto a guaranteed 403.
-  if (isStaff) {
+  // `GET /agents` is staff-only and needs agents.view, so nobody else even fetches this -- a tab
+  // offering it would open onto a guaranteed 403.
+  if (mayReadAgents(isStaff)) {
     tabs.push({
       value: 'agent',
       label: 'Agent',
@@ -619,6 +623,16 @@ function LinkRow({ to, left, middle, right }: { to: string; left: ReactNode; mid
 }
 
 /** What the viewer would do next on a claim in this state, if their permissions let them: the row opens it. */
+/** Underwriting cases: an agent sees their own clients' (the server scopes them); staff need underwriting.view. */
+function mayReadCases(isStaff: boolean): boolean {
+  return !isStaff || can('underwriting.view');
+}
+
+/** A client's agent records: staff with agents.view only. */
+function mayReadAgents(isStaff: boolean): boolean {
+  return isStaff && can('agents.view');
+}
+
 function claimNextStep(status: string | null | undefined): string | null {
   if ((status === 'REGISTERED' || status === 'REOPENED' || status === 'UNDER_ASSESSMENT') && can('claims.assess')) {
     return 'Assess';

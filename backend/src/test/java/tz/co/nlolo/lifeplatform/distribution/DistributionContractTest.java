@@ -562,6 +562,29 @@ class DistributionContractTest {
             .andExpect(jsonPath("$.agentId").value(agent.agentId().toString()));
     }
 
+    /**
+     * 2026-11-14: an underwriter may not read the agent register, but sees policies naming their selling agent -- so
+     * who the agent is (client record, licence) comes from a names-only lookup. An agent keeps its own rules.
+     */
+    @Test
+    void anyStaffMemberLearnsWhoAnAgentIsAndNothingMoreButAnAgentMayNotAsk() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "NAMES-1", null);
+
+        mockMvc.perform(get("/agents/{agentId}", agent.agentId()).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/agents/{agentId}/name", agent.agentId()).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.agentId").value(agent.agentId().toString()))
+            .andExpect(jsonPath("$.partyId").value(agent.partyId().toString()))
+            .andExpect(jsonPath("$.commissionPlanId").doesNotExist());
+        mockMvc.perform(get("/agents/{agentId}/name", UUID.randomUUID()).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get("/agents/{agentId}/name", agent.agentId()).with(agentOf(tenantId, agent.partyId())))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void getAgentReturns200ForTheAgentItself() throws Exception {
         UUID tenantId = UUID.randomUUID();

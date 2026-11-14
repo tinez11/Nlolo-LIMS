@@ -139,7 +139,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     if (!policyNumber) return;
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
-    if (isStaff) {
+    // The account, bonuses and annuity are accounts.view's to read (2026-11-14): an underwriter opening a policy was
+    // refused all three on every visit.
+    if (isStaff && can('accounts.view')) {
       void loadAccount(policyNumber);
       void loadBonuses(policyNumber);
       void loadAnnuity(policyNumber);
@@ -490,6 +492,19 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         label: 'Billing',
         content: (
           <div className="space-y-5 pt-5">
+            {/* Every premium this client owes, across all their policies (2026-11-14): the client's Premiums tab was
+                there, but finance reaching a policy first had no way to it from here. */}
+            {isStaff && can('collections.view') && policy?.policyholderPartyId && (
+              <p className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface px-4 py-2.5 text-sm">
+                <span className="text-muted-foreground">
+                  Premiums on all of <PartyName partyId={policy.policyholderPartyId} />&rsquo;s policies, and their last receipt
+                </span>
+                <Link to={`/staff/parties/${policy.policyholderPartyId}?tab=premiums`}
+                  className="font-medium underline-offset-2 hover:underline">
+                  Open the client&rsquo;s Premiums
+                </Link>
+              </p>
+            )}
             {vestedOn !== undefined && (
               <p className="rounded-md border border-border bg-hover px-4 py-2.5 text-sm" role="status">
                 No further premiums: this pension vested{vestedOn ? ` on ${formatDate(vestedOn)}` : ''}, and its
@@ -646,17 +661,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             },
           ]
         : []),
-      {
-        value: 'messages',
-        label: 'Messages',
-        content: (
-          <div className="pt-5">
-            <Panel title="Messages">
-              <MessagesPanel policyNumber={policyNumber} />
-            </Panel>
-          </div>
-        ),
-      },
+      // The messages sent about this policy, for whoever may read the outbox (2026-11-14): offered to everyone, it
+      // opened on "You do not have access" for an underwriter.
+      ...(can('communications.view')
+        ? [
+            {
+              value: 'messages',
+              label: 'Messages',
+              content: (
+                <div className="pt-5">
+                  <Panel title="Messages">
+                    <MessagesPanel policyNumber={policyNumber} />
+                  </Panel>
+                </div>
+              ),
+            },
+          ]
+        : []),
     );
 
     if (canSeeReinsurance && policy) {

@@ -87,6 +87,13 @@ export function getAgent(agentId: string): Promise<AgentView> {
   return get<AgentView>(`/agents/${encodeURIComponent(agentId)}`);
 }
 
+export type AgentNameView = DistributionComponents['schemas']['AgentName'];
+
+/** Who an agent is -- client record and licence only -- for staff who may not read the agent register (2026-11-14). */
+export function getAgentName(agentId: string): Promise<AgentNameView> {
+  return get<AgentNameView>(`/agents/${encodeURIComponent(agentId)}/name`);
+}
+
 /**
  * `GET /agents/me` -- agents-realm only. Resolves the caller's own agentId
  * from its `party_id` claim -- there is no `agentId` claim, and the `GET /agents`
