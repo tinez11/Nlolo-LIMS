@@ -145,6 +145,22 @@ public class AgentController {
      *
      * `partyId` answers "is this client also an agent" for the client register.
      */
+    /** Who sold a policy, for anyone who sees the policy (2026-11-14). */
+    public record AgentNameDto(UUID agentId, UUID partyId, String licenseNumber) {}
+
+    /**
+     * Who an agent is, and nothing more -- their client record and licence number -- for any active staff member
+     * (2026-11-14). A policy names its selling agent; customer service and underwriters, who may not read the agent
+     * register (agents.view), saw a bare id where the name should be. Staff only: an agent still reads only itself
+     * and its downline, through /agents/{agentId}. Another tenant's agent is 404, as there.
+     */
+    @GetMapping("/agents/{agentId}/name")
+    @PreAuthorize("@access.active()")
+    public ResponseEntity<AgentNameDto> agentName(@PathVariable UUID agentId) {
+        AgentView agent = distributionApi.getAgent(agentId);
+        return ResponseEntity.ok(new AgentNameDto(agentId, agent.partyId(), agent.licenseNumber()));
+    }
+
     @GetMapping("/agents")
     @PreAuthorize("@access.can('agents.view')")
     public ResponseEntity<AgentSearchResponse> listAgents(

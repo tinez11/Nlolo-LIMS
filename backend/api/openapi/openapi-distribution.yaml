@@ -174,6 +174,25 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /agents/{agentId}/name:
+    get:
+      summary: Who an agent is -- client record and licence number only -- for any active staff member
+      description: >
+        2026-11-14: a policy names its selling agent, and staff who may not read the agent register (agents.view) saw a
+        bare id. Staff only; an agent belonging to another tenant is 404.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentName' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /agents/{agentId}:
     get:
       summary: Get agent detail
@@ -789,6 +808,13 @@ components:
       properties:
         salesChannel: { $ref: '#/components/schemas/AgentChannel' }
         homeBranch: { type: string, description: "A refdata BRANCH code." }
+    AgentName:
+      type: object
+      required: [agentId, partyId, licenseNumber]
+      properties:
+        agentId: { type: string, format: uuid }
+        partyId: { type: string, format: uuid, nullable: true, description: "The agent's own client record, which carries the name" }
+        licenseNumber: { type: string, nullable: true }
     AgentView:
       type: object
       required: [agentId, partyId, licenseNumber, licenseStatus, licenseExpiryDate, salesChannel]
