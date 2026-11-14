@@ -215,7 +215,7 @@ class CommissionPayoutEndToEndTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql", "db-migrations/finaccounting/V20__dismissal_needs_a_second_person.sql", "db-migrations/finaccounting/V21__baseline_sign_off.sql", "db-migrations/finaccounting/V22__share_register.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",

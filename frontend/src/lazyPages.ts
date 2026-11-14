@@ -228,6 +228,9 @@ export const ManualJournalEditorPage = lazy(() =>
 export const ManualJournalDetailPage = lazy(() =>
   import('@/features/finance/ManualJournalDetailPage').then((m) => ({ default: m.ManualJournalDetailPage })),
 );
+export const ShareholdersPage = lazy(() =>
+  import('@/features/finance/ShareholdersPage').then((m) => ({ default: m.ShareholdersPage })),
+);
 export const JournalTemplatesPage = lazy(() =>
   import('@/features/finance/JournalTemplatesPage').then((m) => ({ default: m.JournalTemplatesPage })),
 );

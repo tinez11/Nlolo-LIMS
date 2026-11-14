@@ -444,6 +444,21 @@ export const STATUS_MAPS = {
     REJECTED: 'danger',
   },
 
+  // finaccounting share_issue.status (2026-11-14, shareholders register).
+  shareIssue: {
+    PROPOSED: 'pending',
+    APPROVED: 'success',
+    REJECTED: 'neutral',
+    WITHDRAWN: 'neutral',
+  },
+
+  // finaccounting ShareRegisterApi.CheckView.state: a capital check.
+  capitalCheck: {
+    MET: 'success',
+    NOT_MET: 'danger',
+    NOT_SET: 'warning',
+  },
+
   // product/api/ProductStatus.java
   product: {
     DRAFT: 'neutral',

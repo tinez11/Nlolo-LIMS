@@ -307,6 +307,13 @@ class ReportingContractTest {
                 .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
                 .andExpect(jsonPath("$.notices[0]").value(startsWith("Placeholder risk charges, not TIRA's")));
         }
+        // The shareholders register's checks (2026-11-14): no shares issued yet, no minimum entered.
+        mockMvc.perform(get("/reports/capital-adequacy").param("monthFrom", "2026-09").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sections[3].title").value("Paid-up capital today"))
+            .andExpect(jsonPath("$.sections[3].rows[0].result").value("Met"))
+            .andExpect(jsonPath("$.sections[3].rows[1].result").value("NOT met"))
+            .andExpect(jsonPath("$.sections[3].rows[2].result").value("Not set"));
         mockMvc.perform(get("/reports/capital-adequacy/parts").param("monthFrom", "2026-09").param("lineId", "required")
                 .with(staff(tenant, "FINANCE_OFFICER")))
             .andExpect(status().isOk())

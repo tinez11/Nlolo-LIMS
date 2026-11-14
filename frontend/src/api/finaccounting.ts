@@ -1,7 +1,14 @@
 import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 import type {
+  BankAccountView,
   BaselineSignOffView,
+  CapitalView,
+  ShareClassView,
+  ShareholderInput,
+  ShareholderView,
+  ShareIssueInput,
+  ShareIssueView,
   AccountingPeriodView,
   MonthEndView,
   AccountStatus,
@@ -212,6 +219,62 @@ export function signOffBaseline(signerRole: 'FINANCE' | 'ACTUARY', reference: st
   return post<BaselineSignOffView>(`/finance/accounting-policies/baseline-sign-off/${signerRole.toLowerCase()}`, {
     reference,
   });
+}
+
+// ---- the shareholders register (2026-11-14) ------------------------------------------------------------------------
+
+const SHARE_REGISTER = '/finance/share-register';
+
+export function listShareholders(): Promise<ShareholderView[]> {
+  return get<ShareholderView[]>(`${SHARE_REGISTER}/shareholders`);
+}
+
+export function addShareholder(body: ShareholderInput): Promise<ShareholderView> {
+  return post<ShareholderView>(`${SHARE_REGISTER}/shareholders`, body);
+}
+
+export function updateShareholder(shareholderId: string, body: ShareholderInput): Promise<ShareholderView> {
+  return put<ShareholderView>(`${SHARE_REGISTER}/shareholders/${encodeURIComponent(shareholderId)}`, body);
+}
+
+export function listShareClasses(): Promise<ShareClassView[]> {
+  return get<ShareClassView[]>(`${SHARE_REGISTER}/classes`);
+}
+
+export function setShareNominal(classCode: 'ORDINARY' | 'PREFERENCE', nominalValue: number): Promise<ShareClassView> {
+  return put<ShareClassView>(`${SHARE_REGISTER}/classes/${classCode}`, { nominalValue });
+}
+
+export function listShareIssues(status?: ShareIssueView['status']): Promise<ShareIssueView[]> {
+  return get<ShareIssueView[]>(`${SHARE_REGISTER}/issues`, status ? { params: { status } } : undefined);
+}
+
+export function proposeShareIssue(body: ShareIssueInput): Promise<ShareIssueView> {
+  return post<ShareIssueView>(`${SHARE_REGISTER}/issues`, body);
+}
+
+export function withdrawShareIssue(issueId: string): Promise<ShareIssueView> {
+  return post<ShareIssueView>(`${SHARE_REGISTER}/issues/${encodeURIComponent(issueId)}/withdrawal`, {});
+}
+
+export function approveShareIssue(issueId: string): Promise<ShareIssueView> {
+  return post<ShareIssueView>(`${SHARE_REGISTER}/issues/${encodeURIComponent(issueId)}/approval`, {});
+}
+
+export function rejectShareIssue(issueId: string, reason: string): Promise<ShareIssueView> {
+  return post<ShareIssueView>(`${SHARE_REGISTER}/issues/${encodeURIComponent(issueId)}/rejection`, { reason });
+}
+
+export function getCapital(): Promise<CapitalView> {
+  return get<CapitalView>(`${SHARE_REGISTER}/capital`);
+}
+
+export function setMinimumPaidUp(minimumPaidUp: number | null): Promise<CapitalView> {
+  return put<CapitalView>(`${SHARE_REGISTER}/capital/minimum`, { minimumPaidUp });
+}
+
+export function listShareBankAccounts(): Promise<BankAccountView[]> {
+  return get<BankAccountView[]>(`${SHARE_REGISTER}/bank-accounts`);
 }
 
 export function rejectPolicyElection(electionId: string, reason: string): Promise<PolicyElectionView> {

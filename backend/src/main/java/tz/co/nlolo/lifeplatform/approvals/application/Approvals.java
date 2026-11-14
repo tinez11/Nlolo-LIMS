@@ -56,7 +56,7 @@ public class Approvals {
         "unit-withdrawal", "deposit-payee", "term-account-payee", "payout-review", "account-adjustment",
         "field-receipt", "price-adjustment", "fund-price", "rate-declaration", "bonus-declaration", "withholding-rule",
         "commission-plan", "fund", "treaty",
-        "manual-journal", "expense-allocation", "engine-run", "year-end-close", "reinsurance-statement",
+        "manual-journal", "share-issue", "expense-allocation", "engine-run", "year-end-close", "reinsurance-statement",
         "accounting-policy", "period-reopen");
 
     public ApprovalsView forViewer(String viewerSubject) {
@@ -138,7 +138,8 @@ public class Approvals {
         Map.entry("fund-price", "funds.approve-own"), Map.entry("price-adjustment", "funds.approve-own"),
         Map.entry("rate-declaration", "products.declare-approve-own"),
         Map.entry("bonus-declaration", "products.declare-approve-own"),
-        Map.entry("manual-journal", "ledger.approve-own"), Map.entry("accounting-policy", "ledger.approve-own"),
+        Map.entry("manual-journal", "ledger.approve-own"), Map.entry("share-issue", "ledger.approve-own"),
+        Map.entry("accounting-policy", "ledger.approve-own"),
         Map.entry("period-reopen", "ledger.approve-own"),
         Map.entry("expense-allocation", "ifrs17.approve-own"), Map.entry("engine-run", "ifrs17.approve-own"),
         Map.entry("year-end-close", "ifrs17.approve-own"),

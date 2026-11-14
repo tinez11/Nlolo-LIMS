@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.reporting.api.ReportParts;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.api.SolvencyFactorSetView;
 import tz.co.nlolo.lifeplatform.reporting.api.SolvencyFactors;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ShareRegisterApi;
 import tz.co.nlolo.lifeplatform.reporting.domain.Figures;
 
 import java.math.BigDecimal;
@@ -44,9 +45,11 @@ public class CapitalAdequacyReport implements Report {
         ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), true).comparingPeriods().from("LEDGER");
 
     private final SolvencyReports solvency;
+    private final ShareRegisterApi register;
 
-    public CapitalAdequacyReport(SolvencyReports solvency) {
+    public CapitalAdequacyReport(SolvencyReports solvency, ShareRegisterApi register) {
         this.solvency = solvency;
+        this.register = register;
     }
 
     @Override
@@ -91,6 +94,7 @@ public class CapitalAdequacyReport implements Report {
             rows, Map.of()));
         sections.add(thresholds(r.now(), r.set().factors()));
         sections.add(SolvencyReports.factorSection(r.set()));
+        sections.add(paidUpCapital(register.capital()));
 
         List<ReportFigure> figures = new ArrayList<>();
         figures.add(ClaimsReporting.ratio("ratio", "Capital adequacy ratio", r.now().ratio(),
@@ -139,6 +143,32 @@ public class CapitalAdequacyReport implements Report {
             rows.add(row);
         }
         return new ReportSection("Against the thresholds", columns, rows, Map.of());
+    }
+
+    /**
+     * The shareholders register's three checks (2026-11-14): today's position, whichever month is chosen -- the register
+     * keeps no month history, so the title says so.
+     */
+    static ReportSection paidUpCapital(ShareRegisterApi.CapitalView c) {
+        List<ReportColumn> columns = List.of(new ReportColumn("check", "Check", TEXT),
+            new ReportColumn("result", "Result", TEXT), new ReportColumn("figure", "Figure", TEXT));
+        List<Map<String, String>> rows = new ArrayList<>();
+        rows.add(check("Register agrees with the books", c.books(), "difference "));
+        rows.add(check("Tanzanian ownership (at least one-third)", c.tanzanian(), "held "));
+        rows.add(check("Minimum paid-up capital", c.minimum(), "short by "));
+        return new ReportSection("Paid-up capital today", columns, rows, Map.of());
+    }
+
+    private static Map<String, String> check(String label, ShareRegisterApi.CheckView v, String prefix) {
+        Map<String, String> row = new LinkedHashMap<>();
+        row.put("check", label);
+        row.put("result", switch (v.state()) {
+            case "MET" -> "Met";
+            case "NOT_SET" -> "Not set";
+            default -> "NOT met";
+        });
+        row.put("figure", v.figure() == null ? "" : prefix + v.figure());
+        return row;
     }
 
     /** How the required capital is built: each risk, the allowance for them not striking together, operations. */

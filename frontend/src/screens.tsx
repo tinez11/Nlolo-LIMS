@@ -44,6 +44,8 @@ import {
   Inbox,
   Coins,
   NotebookPen,
+  ChartPie,
+  BadgePercent,
   ChartColumn,
   ShieldCheck,
   UserCog,
@@ -154,6 +156,7 @@ import {
   ManualJournalsPage,
   ManualJournalEditorPage,
   ManualJournalDetailPage,
+  ShareholdersPage,
   JournalTemplatesPage,
   MonthEndPage,
   EnginePage,
@@ -407,6 +410,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   periods: ['ledger.view'], 'accounting-policies': ['ledger.view'], 'posting-rules': ['ledger.view'],
   'unposted-events': ['ledger.view'], 'manual-journals': ['ledger.view'], 'manual-journals/new': ['ledger.manage'],
   'manual-journals/:id': ['ledger.view'], 'manual-journals/:id/edit': ['ledger.manage'],
+  shareholders: ['ledger.view'],
   'journal-templates': ['ledger.view'],
   'month-end': ['ledger.view', 'ifrs17.view'], 'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
   'ifrs17-engine/allocations/:allocationId': ['ifrs17.view'], 'year-end': ['ifrs17.view'],
@@ -643,7 +647,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'commission-plans',
     element: <CommissionPlansPage />,
-    reach: { group: 'distribution', label: 'Commission plans', icon: Percent },
+    reach: { group: 'distribution', label: 'Commission plans', icon: BadgePercent },
   },
 
   // FIRST in the finance group, because it is the only screen in it that is WORK rather
@@ -783,6 +787,12 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'manual-journals/new', element: <ManualJournalEditorPage />, reach: 'drill-in' },
   { path: 'manual-journals/:id', element: <ManualJournalDetailPage />, reach: 'drill-in' },
   { path: 'manual-journals/:id/edit', element: <ManualJournalEditorPage />, reach: 'drill-in' },
+  // 2026-11-14: the shareholders register -- who owns the company, and the capital checks.
+  {
+    path: 'shareholders',
+    element: <ShareholdersPage />,
+    reach: { group: 'ledger', label: 'Shareholders', icon: ChartPie },
+  },
   {
     path: 'journal-templates',
     element: <JournalTemplatesPage />,
