@@ -1,5 +1,9 @@
 # Frontend Rebuild — Design Decisions & Implementation Plan
 
+> **Historical (2026-08).** This is the original design log and is not kept current: it describes four Keycloak
+> realms and 68 endpoints, and there has been one realm since 2026-11-06. `ARCHITECTURE.md` beside it is the
+> current description. It is kept because code comments and `PRODUCT.md` cite its sections by number.
+
 Status: **approved 2026-08-24**, 41 decisions settled. Supersedes the deleted
 `frontend/customer-portal` (Next.js + NextAuth).
 

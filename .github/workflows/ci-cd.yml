@@ -284,57 +284,6 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
 
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: build-image
-    if: github.ref == 'refs/heads/main'
-    environment: staging
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Flyway migrations against staging
-        env:
-          MIGRATE_JDBC_URL: ${{ secrets.STAGING_MIGRATE_JDBC_URL }}
-          MIGRATE_USER: ${{ secrets.STAGING_MIGRATE_USER }}
-          MIGRATE_PASSWORD: ${{ secrets.STAGING_MIGRATE_PASSWORD }}
-        run: ./scripts/migrate.sh staging
-      # EVERY post-migration script, in order, through the one installer every environment uses:
-      # partitions, the partition-controls check, then every pg_cron job. Idempotent, so it runs
-      # on every deploy. It refuses to run if the folder holds a script it does not list.
-      #
-      # This used to run two of the six. The billing sweep and the commission close were left out
-      # on purpose, pending a decision, because switching them on is a business-process activation:
-      # the billing sweep moves real invoices to IN_GRACE/OVERDUE and opens arrears cases, and the
-      # close makes commission payable. Decided 2026-09-25: install all of them everywhere.
-      - name: Install partitions and scheduled jobs (pg_partman, pg_cron)
-        env:
-          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
-        run: ./scripts/configure-db.sh staging
-      - name: Rolling deploy
-        run: ./scripts/deploy.sh staging ${{ github.sha }}
-
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: build-image
-    if: startsWith(github.ref, 'refs/tags/v')
-    environment: production   # GitHub Environment with required reviewers -- manual approval gate
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Flyway migrations against production
-        env:
-          MIGRATE_JDBC_URL: ${{ secrets.PRODUCTION_MIGRATE_JDBC_URL }}
-          MIGRATE_USER: ${{ secrets.PRODUCTION_MIGRATE_USER }}
-          MIGRATE_PASSWORD: ${{ secrets.PRODUCTION_MIGRATE_PASSWORD }}
-        run: ./scripts/migrate.sh production
-      # See the staging job's note: every post-migration script, through one installer.
-      - name: Install partitions and scheduled jobs (pg_partman, pg_cron)
-        env:
-          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
-        run: ./scripts/configure-db.sh production
-      - name: Rolling deploy
-        run: ./scripts/deploy.sh production ${{ github.ref_name }}
+  # No deploy jobs here (removed 2026-11-15). Releases are pushed from a developer's machine with
+  # deploy/release.sh (deploy/README.md), which backs up, migrates, configures the database and smoke-checks on the
+  # server. The two jobs that stood here called scripts/deploy.sh, a stub that only ever exited 1.
