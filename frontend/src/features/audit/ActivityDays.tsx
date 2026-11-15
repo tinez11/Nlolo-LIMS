@@ -14,7 +14,7 @@ import { byDay, dayWords } from './activityWords';
  */
 export function ActivityDays({
   lines,
-  openId,
+  openIds,
   onToggle,
   onPerson,
   showRecord = true,
@@ -22,7 +22,8 @@ export function ActivityDays({
   headingLevel = 2,
 }: {
   lines: readonly Line[];
-  openId: string | null;
+  /** The lines open; several at once, so two can be read side by side. */
+  openIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onPerson?: (subject: string) => void;
   showRecord?: boolean;
@@ -48,7 +49,7 @@ export function ActivityDays({
               <ActivityLine
                 key={line.id}
                 line={line}
-                open={openId === line.id}
+                open={openIds.has(line.id)}
                 onToggle={() => onToggle(line.id)}
                 showRecord={showRecord}
                 {...(onPerson ? { onPerson } : {})}

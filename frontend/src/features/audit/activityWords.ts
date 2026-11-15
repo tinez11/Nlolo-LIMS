@@ -3,18 +3,30 @@
  * tab say the same thing and the rules are tested once.
  */
 
-export type ActorKind = 'STAFF' | 'AGENT' | 'CUSTOMER' | 'SYSTEM';
+export type ActorKind = 'STAFF' | 'AGENT' | 'CUSTOMER' | 'SYSTEM' | 'UNRECORDED';
 export type Outcome = 'DONE' | 'REFUSED' | 'FAILED';
 
-const KIND: Record<Exclude<ActorKind, 'SYSTEM'>, string> = {
+const KIND: Record<Exclude<ActorKind, 'SYSTEM' | 'UNRECORDED'>, string> = {
   STAFF: 'staff',
   AGENT: 'agent',
   CUSTOMER: 'customer',
 };
 
-/** "Asha M. (staff)", or "System" for what the platform did by itself. */
+/** A line no person's recorded action raised: worded from its event type, not from a hand-written label. */
+export function isEventLine(line: { actorKind: ActorKind }): boolean {
+  return line.actorKind === 'SYSTEM' || line.actorKind === 'UNRECORDED';
+}
+
+/** Why "Not recorded" -- said where the words alone would leave an investigator guessing. */
+export const UNRECORDED_WHY = 'Who did this was not kept: it happened before the activity log began.';
+
+/**
+ * "Asha M. (staff)"; "System" for what the platform did by itself; "Not recorded" for an event from before the log
+ * began, when nobody can say who acted (2026-11-15 critique: those read as "System did it").
+ */
 export function actorWords(line: { actorName: string | null; actorKind: ActorKind }): string {
   if (line.actorKind === 'SYSTEM') return 'System';
+  if (line.actorKind === 'UNRECORDED') return 'Not recorded';
   return `${line.actorName?.trim() || 'Someone'} (${KIND[line.actorKind]})`;
 }
 

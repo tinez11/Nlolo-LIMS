@@ -13,7 +13,7 @@ vi.mock('@/api/activity');
 const approved: ActivityLine = {
   id: 'a-1', occurredAt: '2026-11-14T07:32:00Z', actorSubject: 'sub-asha', actorName: 'Asha M.', actorKind: 'STAFF',
   label: 'Approved the claim', kind: 'claims', recordType: 'claim', recordId: 'c-42', recordLabel: 'CLM-0042',
-  amount: { amount: '4500000.00', currencyCode: 'TZS' }, outcome: 'DONE', reason: null, eventCount: 1,
+  amount: { amount: '4500000.00', currencyCode: 'TZS' }, outcome: 'DONE', reason: null, eventCount: 1, actedAlone: false,
 };
 const refused: ActivityLine = {
   ...approved, id: 'a-2', label: 'Approved a payout', outcome: 'REFUSED', eventCount: 0, amount: null,
@@ -105,6 +105,68 @@ describe('ActivityLogPage', () => {
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     expect(screen.getByLabelText('From')).toBeInTheDocument();
     expect(screen.getByLabelText('To')).toBeInTheDocument();
+  });
+
+  it('says "Not recorded" for what happened before the log, and "Acted alone" on the action itself', async () => {
+    const before: ActivityLine = { ...lapsed, id: 'e-0', actorKind: 'UNRECORDED', label: 'claims.ClaimAssessed', recordLabel: null };
+    const alone: ActivityLine = { ...approved, id: 'a-9', label: 'Approved a withdrawal', actedAlone: true };
+    vi.mocked(api.listActivity).mockResolvedValue({ items: [alone, before], page: { page: 0, pageSize: 25, totalElements: 2 } });
+    render(<ActivityLogPage />, { route: '/staff/audit-log' });
+
+    expect(await screen.findByRole('button', { name: /Approved a withdrawal/ })).toHaveTextContent('Acted alone');
+    const old = screen.getByRole('button', { name: /Claim assessed/ });
+    expect(old).toHaveTextContent('Not recorded');
+    expect(old).not.toHaveTextContent('System');
+  });
+
+  it('opens several lines at once, and keeps them open across a filter change', async () => {
+    const user = userEvent.setup();
+    render(<ActivityLogPage />, { route: '/staff/audit-log' });
+
+    await user.click(await screen.findByRole('button', { name: /Approved the claim/ }));
+    await user.click(screen.getByRole('button', { name: /Approved a payout/ }));
+    expect(screen.getByRole('button', { name: /Approved the claim/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /Approved a payout/ })).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Refused' }));
+    await waitFor(() => expect(api.listActivity).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'REFUSED' }), 0));
+    expect(screen.getByRole('button', { name: /Approved a payout/ })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('names its chip groups, and a chip pressed again lets go', async () => {
+    const user = userEvent.setup();
+    render(<ActivityLogPage />, { route: '/staff/audit-log?outcome=REFUSED' });
+
+    const outcome = await screen.findByRole('group', { name: 'Outcome' });
+    expect(screen.getByRole('group', { name: 'Kind' })).toBeInTheDocument();
+    const refused = within(outcome).getByRole('button', { name: 'Refused', pressed: true });
+    await user.click(refused);
+    await waitFor(() => expect(api.listActivity).toHaveBeenLastCalledWith(expect.not.objectContaining({ outcome: expect.anything() }), 0));
+    expect(screen.queryByRole('button', { name: /All kinds|Any outcome/ })).not.toBeInTheDocument();
+  });
+
+  it('applies Record as it is typed, with no Find to press', async () => {
+    const user = userEvent.setup();
+    render(<ActivityLogPage />, { route: '/staff/audit-log' });
+
+    await user.type(await screen.findByRole('searchbox', { name: 'Record' }), 'CLM-0042');
+    await waitFor(() => expect(api.listActivity).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'CLM-0042' }), 0));
+    expect(screen.queryByRole('button', { name: 'Find' })).not.toBeInTheDocument();
+  });
+
+  it('pins the action a link names above the list, opened, and offers a link to any opened action', async () => {
+    const user = userEvent.setup();
+    render(<ActivityLogPage />, { route: '/staff/audit-log?line=a-1' });
+
+    const pinned = await screen.findByRole('list', { name: 'Linked action' });
+    expect(api.getActivity).toHaveBeenCalledWith('a-1');
+    const line = within(pinned).getByRole('button', { name: /Approved the claim/ });
+    expect(line).toHaveAttribute('aria-expanded', 'true');
+    expect(line).toHaveTextContent('2026'); // standing alone, it carries its date
+
+    expect(await within(pinned.parentElement!).findByRole('button', { name: 'Copy link to this action' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Linked action' })).not.toBeInTheDocument());
   });
 
   it('shows the refusal reason when a refused line is opened', async () => {

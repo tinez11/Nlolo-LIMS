@@ -1,6 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { downloadActivity, type ActivityFilters, type ActivityKind, type ActivityOutcome } from '@/api/activity';
+import {
+  downloadActivity,
+  type ActivityDetail,
+  type ActivityFilters,
+  type ActivityKind,
+  type ActivityOutcome,
+} from '@/api/activity';
 import { DatePicker } from '@/components/DatePicker';
 import { FilterChip } from '@/components/FilterChip';
 import { FormField } from '@/components/FormField';
@@ -12,9 +18,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDate, todayIso } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
-import { isInitialLoad } from '@/store/createResourceSlice';
+import { isInitialLoad, type Resource } from '@/store/createResourceSlice';
 import { useActivityStore } from '@/store/activityStore';
 import { ActivityDays } from './ActivityDays';
+import { ActivityLine } from './ActivityLine';
 
 const KINDS: { value: ActivityKind; label: string }[] = [
   { value: 'claims', label: 'Claims' },
@@ -91,8 +98,29 @@ export function ActivityLogPage() {
   const [choosing, setChoosing] = useState(false);
   const custom = choosing || !preset;
 
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [search, setSearch] = useState(q);
+  /** The action a link was sent for (`?line=`), pinned above the list whatever the filters and page. */
+  const linked = params.get('line');
+  const linkedDetail = useActivityStore((s) => (linked ? s.details[linked] : undefined));
+  const loadDetail = useActivityStore((s) => s.loadDetail);
+
+  /** Several lines open at once, so two actions can be read side by side; kept across a change of filter. */
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setOpenIds((now) => {
+      const next = new Set(now);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /**
+   * What is typed in Record, tied to the `q` it was typed against: Back or Forward changes `q`, and the box then
+   * shows the address's words again rather than stale ones (no effect needed -- derived on render).
+   */
+  const [draft, setDraft] = useState({ q, text: q });
+  const searchText = draft.q === q ? draft.text : q;
+  const typing = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -106,20 +134,39 @@ export function ActivityLogPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadList, person, q, kind, outcome, from, to, page]);
 
+  useEffect(() => {
+    if (linked) void loadDetail(linked);
+  }, [linked, loadDetail]);
+
+  useEffect(() => () => {
+    if (typing.current) clearTimeout(typing.current);
+  }, []);
+
+  /** Set or clear address keys; any filter change goes back to the first page. Built on the latest address, so a
+   *  search applied after a pause never undoes a chip pressed meanwhile. */
   function update(next: Record<string, string>) {
-    const merged = new URLSearchParams(params);
-    for (const [key, value] of Object.entries(next)) {
-      if (value === '') merged.delete(key);
-      else merged.set(key, value);
-    }
-    if (!('page' in next)) merged.delete('page');
-    setOpenId(null);
-    setParams(merged);
+    setParams((current) => {
+      const merged = new URLSearchParams(current);
+      for (const [key, value] of Object.entries(next)) {
+        if (value === '') merged.delete(key);
+        else merged.set(key, value);
+      }
+      if (!('page' in next) && !('line' in next)) merged.delete('page');
+      return merged;
+    });
   }
 
-  function find(event: FormEvent) {
+  /** Record applies as it is typed, after a short pause -- like every other filter here, with no Find to press. */
+  function search(text: string) {
+    setDraft({ q, text });
+    if (typing.current) clearTimeout(typing.current);
+    typing.current = setTimeout(() => update({ q: text.trim() }), 400);
+  }
+
+  function searchNow(event: FormEvent) {
     event.preventDefault();
-    update({ q: search.trim() });
+    if (typing.current) clearTimeout(typing.current);
+    update({ q: searchText.trim() });
   }
 
   async function download() {
@@ -172,7 +219,7 @@ export function ActivityLogPage() {
           {...(filtered
             ? {
                 action: (
-                  <Button size="sm" onClick={() => { setSearch(''); setParams(new URLSearchParams()); }}>
+                  <Button size="sm" onClick={() => { setDraft({ q: '', text: '' }); setParams(new URLSearchParams()); }}>
                     Clear filters
                   </Button>
                 ),
@@ -185,8 +232,8 @@ export function ActivityLogPage() {
       <>
         <ActivityDays
           lines={lines}
-          openId={openId}
-          onToggle={(id) => setOpenId(openId === id ? null : id)}
+          openIds={openIds}
+          onToggle={toggle}
           onPerson={(subject) => update({ person: subject })}
           stickyDays
         />
@@ -223,13 +270,10 @@ export function ActivityLogPage() {
                 ))}
               </select>
             </label>
-            <form onSubmit={find} className="flex flex-col gap-1 text-xs text-label">
+            <form onSubmit={searchNow} role="search" className="flex flex-col gap-1 text-xs text-label">
               <label htmlFor="activity-q">Record</label>
-              <div className="flex gap-1">
-                <Input id="activity-q" inputSize="sm" value={search} placeholder="Policy, claim or client"
-                  onChange={(e) => setSearch(e.target.value)} />
-                <Button size="sm" type="submit" variant="outline">Find</Button>
-              </div>
+              <Input id="activity-q" type="search" inputSize="sm" value={searchText} placeholder="Policy, claim or client"
+                onChange={(e) => search(e.target.value)} />
             </form>
             <div role="group" aria-labelledby="activity-when" className="flex flex-col gap-1">
               <span id="activity-when" className="text-xs text-label">When</span>
@@ -259,20 +303,68 @@ export function ActivityLogPage() {
               </>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
-            <FilterChip label="All kinds" active={!kind} onClick={() => update({ kind: '' })} />
-            {KINDS.map((k) => (
-              <FilterChip key={k.value} label={k.label} active={kind === k.value} onClick={() => update({ kind: k.value })} />
-            ))}
-            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-            <FilterChip label="Any outcome" active={!outcome} onClick={() => update({ outcome: '' })} />
-            {OUTCOMES.map((o) => (
-              <FilterChip key={o.value} label={o.label} active={outcome === o.value} onClick={() => update({ outcome: o.value })} />
-            ))}
+          {/* Two named groups; a chip pressed again lets go, so no "All kinds" / "Any outcome" chip is needed. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border px-3 py-2.5">
+            <div role="group" aria-labelledby="activity-kind" className="flex flex-wrap items-center gap-1.5">
+              <span id="activity-kind" className="mr-1 text-xs text-label">Kind</span>
+              {KINDS.map((k) => (
+                <FilterChip key={k.value} label={k.label} active={kind === k.value}
+                  onClick={() => update({ kind: kind === k.value ? '' : k.value })} />
+              ))}
+            </div>
+            <div role="group" aria-labelledby="activity-outcome" className="flex flex-wrap items-center gap-1.5">
+              <span id="activity-outcome" className="mr-1 text-xs text-label">Outcome</span>
+              {OUTCOMES.map((o) => (
+                <FilterChip key={o.value} label={o.label} active={outcome === o.value}
+                  onClick={() => update({ outcome: outcome === o.value ? '' : o.value })} />
+              ))}
+            </div>
           </div>
+          {linked && (
+            <LinkedLine
+              detail={linkedDetail}
+              onRetry={() => void loadDetail(linked)}
+              onClose={() => update({ line: '' })}
+              onPerson={(subject) => update({ person: subject, line: '' })}
+            />
+          )}
           {body()}
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The one action a shared link names (`?line=<id>`, 2026-11-15 critique: an audit finding is something people send
+ * each other). Pinned above the list and opened, whatever the filters and page -- the line may be on neither.
+ */
+function LinkedLine({
+  detail,
+  onRetry,
+  onClose,
+  onPerson,
+}: {
+  detail: Resource<ActivityDetail> | undefined;
+  onRetry: () => void;
+  onClose: () => void;
+  onPerson: (subject: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const line = detail?.data?.line;
+  return (
+    <section aria-labelledby="activity-linked" className="border-b-2 border-accent">
+      <div className="flex items-center justify-between gap-3 bg-surface-muted px-4 py-1.5">
+        <h2 id="activity-linked" className="text-xs font-semibold text-label">The action this link points to</h2>
+        <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+      </div>
+      {detail?.status === 'error' && !line && detail.error && <ErrorPanel error={detail.error} onRetry={onRetry} />}
+      {!line && detail?.status !== 'error' && <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>}
+      {line && (
+        <ul aria-label="Linked action">
+          <ActivityLine line={line} open={open} onToggle={() => setOpen(!open)} onPerson={onPerson} withDate />
+        </ul>
+      )}
+    </section>
   );
 }

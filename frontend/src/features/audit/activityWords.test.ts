@@ -8,6 +8,7 @@ describe('activity words', () => {
     expect(actorWords({ actorName: 'Neema', actorKind: 'AGENT' })).toBe('Neema (agent)');
     expect(actorWords({ actorName: null, actorKind: 'SYSTEM' })).toBe('System');
     expect(actorWords({ actorName: null, actorKind: 'STAFF' })).toBe('Someone (staff)');
+    expect(actorWords({ actorName: null, actorKind: 'UNRECORDED' })).toBe('Not recorded');
   });
 
   it('says why a line did not go through, and nothing for one that did', () => {

@@ -42,9 +42,15 @@ public class ActivityQueries {
         }
     }
 
+    /**
+     * One line. {@code actorKind} UNRECORDED: an event from before the activity log began, when who acted was not yet
+     * kept -- not the platform acting by itself, which is SYSTEM (2026-11-15 critique: 6,083 dev events
+     * from before the log read as "System did it"). {@code actedAlone}: the person approved their own work, which the
+     * line says rather than a separate "Acted alone" line beneath it.
+     */
     public record Line(UUID id, Instant occurredAt, String actorSubject, String actorName, String actorKind,
                        String label, String kind, String recordType, String recordId, String recordLabel, Money amount,
-                       String outcome, String reason, int eventCount) {}
+                       String outcome, String reason, int eventCount, boolean actedAlone) {}
 
     public record Page(List<Line> items, int page, int pageSize, long totalElements) {}
 
@@ -75,7 +81,10 @@ public class ActivityQueries {
         SELECT v.activity_id AS id, v.occurred_at, v.actor_subject, v.actor_name, v.actor_kind, v.label, v.kind,
                v.record_type, v.record_id, v.record_label, v.amount, v.currency, v.outcome, v.reason,
                (SELECT count(*) FROM audit.audit_log e WHERE e.action_id = v.activity_id
-                  AND e.occurred_at >= v.occurred_at - interval '1 minute') AS event_count
+                  AND e.occurred_at >= v.occurred_at - interval '1 minute') AS event_count,
+               EXISTS (SELECT 1 FROM audit.audit_log e WHERE e.action_id = v.activity_id
+                  AND e.event_type = 'access.ActedAlone'
+                  AND e.occurred_at >= v.occurred_at - interval '1 minute') AS acted_alone
         FROM audit.activity v
         WHERE v.tenant_id = :tenant AND v.occurred_at BETWEEN :from AND :to
           AND (:person = '' OR v.actor_subject = :person)
@@ -84,11 +93,34 @@ public class ActivityQueries {
           AND (:recordType = '' OR (v.record_type = :recordType AND v.record_id = :recordId))
           AND (:q = '' OR v.record_label ILIKE :qLike OR v.record_id ILIKE :qLike OR v.label ILIKE :qLike)""";
 
+    /**
+     * The record an event is about, from its payload, most specific first -- so a System line names it and opens it
+     * like an action does. Keys as the producers write them (audit.audit_log, 2026-11-15: 6,083 dev events, all but a
+     * handful carrying one of these).
+     */
+    private static final String EVENT_RECORD_TYPE = """
+        CASE WHEN a.payload->>'policyNumber' IS NOT NULL THEN 'policy'
+             WHEN a.payload->>'claimId' IS NOT NULL THEN 'claim'
+             WHEN a.payload->>'caseId' IS NOT NULL THEN 'underwriting case'
+             WHEN a.payload->>'agentId' IS NOT NULL THEN 'agent'
+             WHEN a.payload->>'partyId' IS NOT NULL THEN 'client' END""";
+    private static final String EVENT_RECORD_ID = """
+        coalesce(a.payload->>'policyNumber', a.payload->>'claimId', a.payload->>'caseId', a.payload->>'agentId',
+                 a.payload->>'partyId')""";
+
+    /**
+     * Before the activity log began recording (it merged and reached dev on 2026-11-15), who acted was not kept, so an
+     * event from then is UNRECORDED rather than SYSTEM. A fixed date, not "before the tenant's first action": a new
+     * tenant's scheduled runs before anyone has acted are still the platform acting by itself.
+     */
+    private static final String EVENT_ACTOR_KIND = """
+        CASE WHEN a.occurred_at < TIMESTAMPTZ '2026-11-15 00:00:00+03' THEN 'UNRECORDED' ELSE 'SYSTEM' END""";
+
     private static final String EVENTS = """
-        SELECT a.event_id AS id, a.occurred_at, NULL AS actor_subject, NULL AS actor_name, 'SYSTEM' AS actor_kind,
-               a.event_type AS label, %s AS kind, NULL AS record_type, NULL AS record_id,
+        SELECT a.event_id AS id, a.occurred_at, NULL AS actor_subject, NULL AS actor_name, %s AS actor_kind,
+               a.event_type AS label, %s AS kind, %s AS record_type, %s AS record_id,
                a.payload->>'policyNumber' AS record_label, NULL::numeric AS amount, NULL AS currency,
-               'DONE' AS outcome, NULL AS reason, 0 AS event_count
+               'DONE' AS outcome, NULL AS reason, 0 AS event_count, false AS acted_alone
         FROM audit.audit_log a
         WHERE a.tenant_id = :tenant AND a.action_id IS NULL AND a.occurred_at BETWEEN :from AND :to
           AND a.event_type NOT IN (:noise)
@@ -100,7 +132,8 @@ public class ActivityQueries {
                OR (:recordType = 'claim' AND a.payload->>'claimId' = :recordId)
                OR (:recordType = 'client' AND a.payload->>'partyId' = :recordId)
                OR (:recordType = 'agent' AND a.payload->>'agentId' = :recordId))
-          AND (:q = '' OR a.payload::text ILIKE :qLike)""".formatted(EVENT_KIND, EVENT_KIND);
+          AND (:q = '' OR a.payload::text ILIKE :qLike)""".formatted(
+        EVENT_ACTOR_KIND, EVENT_KIND, EVENT_RECORD_TYPE, EVENT_RECORD_ID, EVENT_KIND);
 
     private static final String LINES = "(" + ACTIONS + ") UNION ALL (" + EVENTS + ")";
 
@@ -150,19 +183,25 @@ public class ActivityQueries {
             WHERE v.tenant_id = :tenant AND v.activity_id = :id""", p);
         if (!action.isEmpty()) return Optional.of(actionDetail(action.get(0)));
         List<Map<String, Object>> event = jdbc.queryForList("""
-            SELECT a.event_id, a.event_type, a.occurred_at, a.payload::text AS payload_text FROM audit.audit_log a
-            WHERE a.tenant_id = :tenant AND a.event_id = :id AND a.action_id IS NULL LIMIT 1""", p);
+            SELECT a.event_id, a.event_type, a.occurred_at, a.payload::text AS payload_text,
+                   %s AS actor_kind, %s AS kind, %s AS record_type, %s AS record_id
+            FROM audit.audit_log a
+            WHERE a.tenant_id = :tenant AND a.event_id = :id AND a.action_id IS NULL LIMIT 1"""
+            .formatted(EVENT_ACTOR_KIND, EVENT_KIND, EVENT_RECORD_TYPE, EVENT_RECORD_ID), p);
         if (event.isEmpty()) return Optional.empty();
         Map<String, Object> e = event.get(0);
         JsonNode payload = read((String) e.get("payload_text"));
         Instant at = ((Timestamp) e.get("occurred_at")).toInstant();
         String type = (String) e.get("event_type");
-        Line line = new Line(id, at, null, null, "SYSTEM", type, null, null, null,
+        // kind as the list gives it: an opened System line used to answer null, which the contract does not allow.
+        Line line = new Line(id, at, null, null, (String) e.get("actor_kind"), type, (String) e.get("kind"),
+            (String) e.get("record_type"),
+            (String) e.get("record_id"),
             payload != null && payload.hasNonNull("policyNumber") ? payload.get("policyNumber").asText() : null,
-            null, "DONE", null, 0);
-        Event only = new Event(type, at, EventRefs.refs(payload), money(EventRefs.amount(payload)));
-        return Optional.of(new Detail(line, List.of(), List.of(only),
-            new Technical(null, null, null, (String) e.get("payload_text"))));
+            null, "DONE", null, 0, false);
+        Event only = new Event(type, at, maskedRefs(EventRefs.refs(payload)), money(EventRefs.amount(payload)));
+        return Optional.of(new Detail(masked(line), List.of(), List.of(only),
+            new Technical(null, null, null, maskedJson(payload, (String) e.get("payload_text")))));
     }
 
     private Detail actionDetail(Map<String, Object> row) {
@@ -179,15 +218,45 @@ public class ActivityQueries {
             ORDER BY occurred_at, recorded_at""", p, (rs, i) -> {
                 JsonNode payload = read(rs.getString("payload_text"));
                 return new Event(rs.getString("event_type"), rs.getTimestamp("occurred_at").toInstant(),
-                    EventRefs.refs(payload), money(EventRefs.amount(payload)));
+                    maskedRefs(EventRefs.refs(payload)), money(EventRefs.amount(payload)));
             });
+        boolean actedAlone = jdbc.query("""
+            SELECT event_type FROM audit.audit_log
+            WHERE tenant_id = :tenant AND action_id = :id AND occurred_at >= CAST(:at AS timestamptz) - interval '1 minute'
+              AND event_type = 'access.ActedAlone' LIMIT 1""", p, (rs, i) -> true).size() > 0;
         Line line = new Line(id, at, (String) row.get("actor_subject"), (String) row.get("actor_name"),
             (String) row.get("actor_kind"), (String) row.get("label"), (String) row.get("kind"), recordType, recordId,
             (String) row.get("record_label"), Money.of((BigDecimal) row.get("amount"), (String) row.get("currency")),
-            (String) row.get("outcome"), (String) row.get("reason"), events.size());
-        return new Detail(line, changes(read(bodyText), recordType, recordId, at), events,
+            (String) row.get("outcome"), (String) row.get("reason"), events.size(), actedAlone);
+        JsonNode body = read(bodyText);
+        return new Detail(masked(line), maskedChanges(changes(body, recordType, recordId, at)), events,
             new Technical((String) row.get("http_method"), (String) row.get("route"), (Integer) row.get("status_code"),
-                bodyText));
+                maskedJson(body, bodyText)));
+    }
+
+    /*
+     * Masking (2026-11-15, the user, reversing 2026-11-14's "full when opened"): a phone or ID number is shown by its
+     * last three everywhere in the log, the opened line included -- its changes, the events under it, and the body.
+     */
+
+    private static List<Change> maskedChanges(List<Change> changes) {
+        return changes.stream()
+            .map(c -> ActivityRedaction.personal(c.field())
+                ? new Change(c.field(), c.before() == null ? null : ActivityRedaction.mask(c.before()),
+                    c.after() == null ? null : ActivityRedaction.mask(c.after()))
+                : c)
+            .toList();
+    }
+
+    private static Map<String, String> maskedRefs(Map<String, String> refs) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        refs.forEach((k, v) -> out.put(k, ActivityRedaction.personal(k) && v != null ? ActivityRedaction.mask(v) : v));
+        return out;
+    }
+
+    /** The body with personal numbers masked; a body that is not JSON (an upload note is) kept as it came. */
+    private static String maskedJson(JsonNode parsed, String raw) {
+        return parsed == null ? raw : ActivityRedaction.masked(parsed).toString();
     }
 
     /**
@@ -264,13 +333,14 @@ public class ActivityQueries {
             rs.getString("actor_subject"), rs.getString("actor_name"), rs.getString("actor_kind"), rs.getString("label"),
             rs.getString("kind"), rs.getString("record_type"), rs.getString("record_id"), rs.getString("record_label"),
             Money.of(rs.getBigDecimal("amount"), rs.getString("currency")), rs.getString("outcome"),
-            rs.getString("reason"), rs.getInt("event_count"));
+            rs.getString("reason"), rs.getInt("event_count"), rs.getBoolean("acted_alone"));
     }
 
-    /** Masked copies, for the list and the CSV: a phone number or an ID number never shown whole there. */
+    /** Masked copies, for the list, the CSV and an opened line: a phone number or an ID number never shown whole. */
     public static Line masked(Line l) {
         return new Line(l.id(), l.occurredAt(), l.actorSubject(), l.actorName(), l.actorKind(), l.label(), l.kind(),
-            l.recordType(), l.recordId(), l.recordLabel(), l.amount(), l.outcome(), maskDigits(l.reason()), l.eventCount());
+            l.recordType(), l.recordId(), l.recordLabel(), l.amount(), l.outcome(), maskDigits(l.reason()), l.eventCount(),
+            l.actedAlone());
     }
 
     /** A run of nine or more digits in free text -- a phone or an ID number -- shown by its last three. */

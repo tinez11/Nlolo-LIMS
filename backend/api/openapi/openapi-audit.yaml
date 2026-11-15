@@ -234,8 +234,11 @@ components:
       type: string
       enum: [DONE, REFUSED, FAILED]
     ActivityActorKind:
+      description: >-
+        UNRECORDED: an event from before the activity log began recording (2026-11-15), when who acted was not yet
+        kept -- distinct from SYSTEM, the platform acting by itself.
       type: string
-      enum: [STAFF, AGENT, CUSTOMER, SYSTEM]
+      enum: [STAFF, AGENT, CUSTOMER, SYSTEM, UNRECORDED]
     ActivityPerson:
       type: object
       additionalProperties: false
@@ -250,7 +253,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, occurredAt, actorSubject, actorName, actorKind, label, kind, recordType, recordId, recordLabel,
-                 amount, outcome, reason, eventCount]
+                 amount, outcome, reason, eventCount, actedAlone]
       properties:
         id: { type: string, format: uuid }
         occurredAt: { type: string, format: date-time }
@@ -273,6 +276,9 @@ components:
           type: [string, 'null']
           description: The words the person saw, on a refused action.
         eventCount: { type: integer, minimum: 0 }
+        actedAlone:
+          type: boolean
+          description: The person approved their own work (an access.ActedAlone event under the action).
     ActivityPage:
       type: object
       additionalProperties: false

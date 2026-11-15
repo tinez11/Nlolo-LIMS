@@ -12,7 +12,14 @@ import { ActivityDays } from './ActivityDays';
  */
 export function RecordHistory({ recordType, recordId }: { recordType: string; recordId: string }) {
   const [page, setPage] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setOpenIds((now) => {
+      const next = new Set(now);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const history = useActivityStore((s) => s.histories[`${recordType}:${recordId}`]) ?? idle();
   const loadHistory = useActivityStore((s) => s.loadHistory);
 
@@ -32,8 +39,8 @@ export function RecordHistory({ recordType, recordId }: { recordType: string; re
     <div>
       <ActivityDays
         lines={data.items}
-        openId={openId}
-        onToggle={(id) => setOpenId(openId === id ? null : id)}
+        openIds={openIds}
+        onToggle={toggle}
         showRecord={false}
         headingLevel={3}
       />
