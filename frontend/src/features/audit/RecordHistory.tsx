@@ -3,7 +3,7 @@ import { Pager } from '@/components/DataTable';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { idle } from '@/store/createResourceSlice';
 import { useActivityStore } from '@/store/activityStore';
-import { ActivityLine } from './ActivityLine';
+import { ActivityDays } from './ActivityDays';
 
 /**
  * A record's Activity (2026-11-14): the activity log filtered to one policy, client, claim or agent, newest first,
@@ -12,7 +12,14 @@ import { ActivityLine } from './ActivityLine';
  */
 export function RecordHistory({ recordType, recordId }: { recordType: string; recordId: string }) {
   const [page, setPage] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setOpenIds((now) => {
+      const next = new Set(now);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const history = useActivityStore((s) => s.histories[`${recordType}:${recordId}`]) ?? idle();
   const loadHistory = useActivityStore((s) => s.loadHistory);
 
@@ -30,17 +37,13 @@ export function RecordHistory({ recordType, recordId }: { recordType: string; re
   }
   return (
     <div>
-      <ul className="divide-y divide-border" aria-label="Activity">
-        {data.items.map((line) => (
-          <ActivityLine
-            key={line.id}
-            line={line}
-            open={openId === line.id}
-            onToggle={() => setOpenId(openId === line.id ? null : line.id)}
-            showRecord={false}
-          />
-        ))}
-      </ul>
+      <ActivityDays
+        lines={data.items}
+        openIds={openIds}
+        onToggle={toggle}
+        showRecord={false}
+        headingLevel={3}
+      />
       <Pager page={data.page} busy={history.status === 'loading'} onPageChange={setPage} />
     </div>
   );

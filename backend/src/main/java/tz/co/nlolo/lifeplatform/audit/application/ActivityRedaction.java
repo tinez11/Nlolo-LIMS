@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * What the activity log never keeps, and what it shows only partly (2026-11-14, the user: secrets never kept; ID and
- * phone numbers masked in the line, full when the line is opened).
+ * phone numbers masked. 2026-11-15, the user: masked in an opened line too, not only in the list).
  */
 public final class ActivityRedaction {
 
@@ -22,7 +22,9 @@ public final class ActivityRedaction {
     private static final Set<String> SECRET_NAMES = Set.of("password", "code", "otp", "pin", "token", "secret",
         "authorization", "signincode", "verificationcode", "resetcode", "turnstiletoken", "visittoken");
     private static final String[] SECRET_ENDINGS = {"password", "token", "secret", "otp", "signincode", "pin"};
-    private static final String[] PERSONAL = {"phone", "msisdn", "nationalid", "idnumber", "accountnumber", "payee"};
+    /** "payer": a payerRef is the mobile-money number a premium came from. */
+    private static final String[] PERSONAL = {"phone", "msisdn", "nationalid", "idnumber", "accountnumber", "payee",
+        "payer"};
 
     public static boolean secret(String field) {
         String f = field.toLowerCase(Locale.ROOT);

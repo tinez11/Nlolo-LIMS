@@ -25,6 +25,11 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
+import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
+
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -71,6 +76,8 @@ class ActivityLogIntegrationTest {
     @Autowired private ObjectMapper json;
     @Autowired private ApplicationEventPublisher events;
     @Autowired private PlatformTransactionManager transactions;
+    @Autowired private AuditLogRepository auditLog;
+    @Autowired private JdbcTemplate jdbc;
     private final UUID tenant = UUID.randomUUID();
 
     @AfterEach
@@ -127,7 +134,13 @@ class ActivityLogIntegrationTest {
             .andReturn().getResponse().getContentAsString());
         assertThat(detail.get("events")).isNotEmpty();
         assertThat(detail.get("changes").findValuesAsText("field")).contains("legalName", "phone");
-        assertThat(detail.get("technical").get("body").asText()).as("opened, the line is in full").contains("211 0369");
+        // Masked opened too (2026-11-15, the user): the phone shows by its last three, in the body and in what changed.
+        assertThat(detail.get("technical").get("body").asText()).doesNotContain("211 0369").contains("369\"");
+        JsonNode phone = null;
+        for (JsonNode c : detail.get("changes")) if ("phone".equals(c.get("field").asText())) phone = c;
+        assertThat(phone).isNotNull();
+        assertThat(phone.get("after").asText()).doesNotContain("211").endsWith("369");
+        assertThat(detail.get("line").get("actedAlone").asBoolean()).isFalse();
 
         // The person filter, and the people who acted.
         assertThat(read(mockMvc.perform(get("/activity").param("person", "sub-asha").param("outcome", "REFUSED")
@@ -158,6 +171,64 @@ class ActivityLogIntegrationTest {
         assertThat(lines.get(0).get("actorKind").asText()).isEqualTo("SYSTEM");
         assertThat(lines.get(0).get("label").asText()).isEqualTo("policy.PolicyLapsed");
         assertThat(lines.get(0).get("recordLabel").asText()).isEqualTo("POL-SYS-1");
+        // Named and openable like an action (2026-11-15 critique: System lines had no record to open).
+        assertThat(lines.get(0).get("recordType").asText()).isEqualTo("policy");
+        assertThat(lines.get(0).get("recordId").asText()).isEqualTo("POL-SYS-1");
+    }
+
+    /**
+     * 2026-11-15 critique: every event from before the log began read as "System" did it -- 6,083 in dev -- and an
+     * approval of one's own work was a separate "Acted alone" line rather than said on the action.
+     */
+    @Test
+    void beforeTheLogNobodyCanSayWho_andActingAloneIsSaidOnTheAction() throws Exception {
+        UUID action = UUID.randomUUID();
+        Instant now = Instant.now();
+        TenantContext.set(tenant);
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            auditLog.save(new AuditLogEntry(UUID.randomUUID(), tenant, UUID.randomUUID(), "claims.ClaimAssessed", 1, null,
+                Instant.parse("2026-11-05T09:00:00Z"), Instant.parse("2026-11-05T09:00:00Z"),
+                "{\"claimId\":\"c-before\",\"fraudIndicator\":false}", null));
+            jdbc.update("""
+                INSERT INTO audit.activity (activity_id, tenant_id, occurred_at, actor_subject, actor_name, actor_kind,
+                    http_method, route, label, kind, record_type, record_id, outcome, status_code)
+                VALUES (?, ?, ?, 'sub-asha', 'Asha Admin', 'STAFF', 'POST', '/withdrawals/{id}/approve',
+                    'Approved a withdrawal', 'money', 'policy', 'POL-ALONE-1', 'DONE', 200)""",
+                action, tenant, java.sql.Timestamp.from(now));
+            auditLog.save(new AuditLogEntry(UUID.randomUUID(), tenant, UUID.randomUUID(), "access.ActedAlone", 1, null,
+                now, now, "{\"policyNumber\":\"POL-ALONE-1\",\"what\":\"withdrawal\"}", action));
+        });
+        TenantContext.clear();
+
+        JsonNode lines = read(mockMvc.perform(get("/activity").param("from", "2026-11-01T00:00:00Z")
+                .with(as("ADMIN", "sub-asha", "Asha Admin")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andReturn().getResponse().getContentAsString()).get("items");
+        assertThat(lines).hasSize(2);
+        JsonNode alone = lines.get(0);
+        JsonNode before = lines.get(1);
+
+        assertThat(alone.get("label").asText()).isEqualTo("Approved a withdrawal");
+        assertThat(alone.get("actedAlone").asBoolean()).as("said on the action").isTrue();
+        assertThat(alone.get("eventCount").asInt()).isEqualTo(1);
+
+        assertThat(before.get("actorKind").asText()).as("not 'System': nobody can say who").isEqualTo("UNRECORDED");
+        assertThat(before.get("recordType").asText()).isEqualTo("claim");
+        assertThat(before.get("recordId").asText()).isEqualTo("c-before");
+
+        JsonNode opened = read(mockMvc.perform(get("/activity/" + before.get("id").asText())
+                .with(as("ADMIN", "sub-asha", "Asha Admin")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andReturn().getResponse().getContentAsString());
+        assertThat(opened.get("line").get("actorKind").asText()).isEqualTo("UNRECORDED");
+        assertThat(opened.get("line").get("recordId").asText()).isEqualTo("c-before");
+
+        String csv = mockMvc.perform(get("/activity.csv").param("from", "2026-11-01T00:00:00Z")
+                .with(as("ADMIN", "sub-asha", "Asha Admin")))
+            .andReturn().getResponse().getContentAsString();
+        assertThat(csv).contains("Not recorded");
     }
 
     @Test

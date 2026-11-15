@@ -25,7 +25,7 @@ import java.util.UUID;
 
 /**
  * The activity log (2026-11-14, the user: who did what, when, to what, seen by admins). Holders of audit.view only.
- * A line masks personal numbers; an opened line does not -- it is where an admin looks closely.
+ * Personal numbers are masked everywhere, the opened line included (2026-11-15, the user, reversing "full when opened").
  */
 @RestController
 public class ActivityController {
@@ -99,6 +99,7 @@ public class ActivityController {
 
     private static String who(ActivityQueries.Line l) {
         if ("SYSTEM".equals(l.actorKind())) return "System";
+        if ("UNRECORDED".equals(l.actorKind())) return "Not recorded";
         String name = l.actorName() == null || l.actorName().isBlank() ? "Someone" : l.actorName();
         return name + " (" + KIND.getOrDefault(l.actorKind(), "staff") + ")";
     }

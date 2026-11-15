@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ActivityLine as Line } from '@/api/activity';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -8,7 +8,16 @@ import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { useActivityStore } from '@/store/activityStore';
 import { describeActivity } from '@/features/dashboard/activity';
-import { actorWords, changeWords, recordPath } from './activityWords';
+import { cn } from '@/lib/cn';
+import {
+  actorWords,
+  changeWords,
+  isEventLine,
+  reasonWords,
+  recordPath,
+  timeWords,
+  UNRECORDED_WHY,
+} from './activityWords';
 
 const RECORD_NOUN: Record<string, string> = {
   policy: 'policy',
@@ -27,9 +36,9 @@ function recordWords(line: Line): string | null {
   return null;
 }
 
-/** A SYSTEM line is an event no person raised: its label is the event type, worded the dashboards' way. */
+/** An event line (System, or from before the log) carries its event type as its label, worded the dashboards' way. */
 function labelWords(line: Line): string {
-  return line.actorKind === 'SYSTEM'
+  return isEventLine(line)
     ? describeActivity({ eventType: line.label, occurredAt: line.occurredAt, refs: {}, amount: line.amount }).text
     : line.label;
 }
@@ -44,6 +53,7 @@ export function ActivityLine({
   onToggle,
   onPerson,
   showRecord = true,
+  withDate = false,
 }: {
   line: Line;
   open: boolean;
@@ -51,28 +61,65 @@ export function ActivityLine({
   /** Filter to this line's person; absent where there is no filter (a record's History). */
   onPerson?: (subject: string) => void;
   showRecord?: boolean;
+  /** The full date and time, for a line standing alone rather than under its day's heading. */
+  withDate?: boolean;
 }) {
   const what = recordWords(line);
+  const reason = reasonWords(line);
   return (
     <li>
+      {/* Time, who, what (and why, when it did not go through), amount, outcome. The line sits under its day, so it
+          carries the time alone; the full instant is in `title` and `dateTime` for anyone who needs it. */}
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-hover sm:grid-cols-[9rem_minmax(0,0.8fr)_minmax(0,1.4fr)_7rem_6.5rem]"
+        className={cn(
+          'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-2.5 text-left hover:bg-hover',
+          withDate
+            ? 'sm:grid-cols-[9rem_minmax(0,12rem)_minmax(0,1fr)_8rem_6.5rem]'
+            : 'sm:grid-cols-[4.5rem_minmax(0,12rem)_minmax(0,1fr)_8rem_6.5rem]',
+        )}
       >
-        <span className="text-xs tabular-nums text-muted-foreground">{formatInstant(line.occurredAt)}</span>
-        <span className="min-w-0 truncate text-sm">{actorWords(line)}</span>
-        <span className="min-w-0 truncate text-sm font-medium">
-          {labelWords(line)}
-          {showRecord && what && <span className="ml-2 font-normal text-muted-foreground">{what}</span>}
-          {line.eventCount > 0 && (
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              · {line.eventCount} {line.eventCount === 1 ? 'thing' : 'things'} followed
+        <time
+          dateTime={line.occurredAt}
+          title={formatInstant(line.occurredAt)}
+          className="text-xs tabular-nums text-muted-foreground"
+        >
+          {withDate ? formatInstant(line.occurredAt) : timeWords(line.occurredAt)}
+        </time>
+        <span
+          className={cn(
+            'min-w-0 truncate text-right text-sm sm:text-left',
+            line.actorKind === 'UNRECORDED' && 'text-muted-foreground',
+          )}
+          {...(line.actorKind === 'UNRECORDED' ? { title: UNRECORDED_WHY } : {})}
+        >
+          {actorWords(line)}
+        </span>
+        <span className="col-span-2 min-w-0 sm:col-span-1">
+          <span className="block truncate text-sm font-medium">
+            {labelWords(line)}
+            {line.actedAlone && (
+              // Said on the action itself: approving one's own work is the thing an audit looks for.
+              <span className="ml-2 rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-fg">
+                Acted alone
+              </span>
+            )}
+            {showRecord && what && <span className="ml-2 font-normal text-muted-foreground">{what}</span>}
+            {line.eventCount > 0 && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                · {line.eventCount} {line.eventCount === 1 ? 'thing' : 'things'} followed
+              </span>
+            )}
+          </span>
+          {reason && (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={reason}>
+              {reason}
             </span>
           )}
         </span>
-        <span className="text-right text-sm tabular-nums">{line.amount ? formatMoney(line.amount) : ''}</span>
+        <span className="text-sm tabular-nums sm:text-right">{line.amount ? formatMoney(line.amount) : ''}</span>
         <span className="justify-self-end">
           <StatusBadge kind="activityOutcome" value={line.outcome} />
         </span>
@@ -95,16 +142,18 @@ function Opened({ line, onPerson }: { line: Line; onPerson: ((subject: string) =
 
   return (
     <div className="space-y-3 bg-surface-muted px-4 pb-4 pt-2 text-sm">
-      {line.outcome === 'REFUSED' && line.reason && (
+      {reasonWords(line) && (
+        // In full here: the line itself cuts a long reason to one line.
         <p>
-          <span className="text-label">Why it was refused:</span> {line.reason}
+          <span className="text-label">{line.outcome === 'FAILED' ? 'Why it failed:' : 'Why it was refused:'}</span>{' '}
+          {reasonWords(line)}
         </p>
       )}
 
       {detail?.status === 'error' && !data && detail.error && (
         <ErrorPanel error={detail.error} onRetry={() => void loadDetail(line.id)} />
       )}
-      {!data && detail?.status !== 'error' && <p className="text-muted-foreground">Loading…</p>}
+      {!data && detail?.status !== 'error' && <p role="status" className="text-muted-foreground">Loading…</p>}
 
       {data && data.changes.length > 0 && (
         <section>
@@ -145,6 +194,7 @@ function Opened({ line, onPerson }: { line: Line; onPerson: ((subject: string) =
             Only {line.actorName?.trim() || 'this person'}
           </Button>
         )}
+        <CopyLink id={line.id} />
       </div>
 
       {data && (
@@ -164,6 +214,39 @@ function Opened({ line, onPerson }: { line: Line; onPerson: ((subject: string) =
         </details>
       )}
     </div>
+  );
+}
+
+/** The address that opens this one action in the log, whatever filters the reader has. */
+function lineLink(id: string): string {
+  return `${window.location.origin}/staff/audit-log?line=${encodeURIComponent(id)}`;
+}
+
+/** "Copy link to this action": an audit finding is something people send each other (2026-11-15 critique). */
+function CopyLink({ id }: { id: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(lineLink(id));
+      setState('copied');
+    } catch {
+      setState('failed');
+    }
+  }
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={() => void copy()}>
+        {state === 'copied' ? 'Link copied' : 'Copy link to this action'}
+      </Button>
+      <span role="status" className="sr-only">
+        {state === 'copied' ? 'Link copied' : ''}
+      </span>
+      {state === 'failed' && (
+        <span className="self-center text-xs text-muted-foreground">
+          Could not copy. The link is {lineLink(id)}
+        </span>
+      )}
+    </>
   );
 }
 
