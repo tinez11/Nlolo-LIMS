@@ -83,6 +83,16 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'audit.aud
         p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
+-- The activity log (audit/V5, 2026-11-14): one row per person's write. Hand-written 2026-11 to 2027-03.
+IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'audit.activity') THEN
+    PERFORM partman.create_parent(
+        p_parent_table => 'audit.activity',
+        p_control => 'occurred_at',
+        p_interval => '1 month',
+        p_premake => 4,
+        p_start_partition => '2027-04-01'
+);
+END IF;
 
 -- Yearly, lower write-velocity, high row count.
 IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'billing.premium_invoice') THEN

@@ -20,8 +20,8 @@ export const DashboardPage = lazy(() =>
 export const PublicQuoteApp = lazy(() =>
   import('@/features/public/PublicQuoteApp').then((m) => ({ default: m.PublicQuoteApp })),
 );
-export const AuditLogPage = lazy(() =>
-  import('@/features/audit/AuditLogPage').then((m) => ({ default: m.AuditLogPage })),
+export const ActivityLogPage = lazy(() =>
+  import('@/features/audit/ActivityLogPage').then((m) => ({ default: m.ActivityLogPage })),
 );
 export const MessagesPage = lazy(() =>
   import('@/features/communications/MessagesPage').then((m) => ({ default: m.MessagesPage })),

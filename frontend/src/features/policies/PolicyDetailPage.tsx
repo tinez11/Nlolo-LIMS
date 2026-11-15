@@ -88,6 +88,7 @@ import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import type { ReactNode } from 'react';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
+import { RecordHistory } from '@/features/audit/RecordHistory';
 import { Input } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
@@ -688,6 +689,21 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <div className="pt-5">
             <Panel title="Reinsurance">
               <CessionsPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      });
+    }
+
+    // Who did what to this policy, and what the platform did by itself (2026-11-14, activity log).
+    if (isStaff && can('audit.view')) {
+      tabs.push({
+        value: 'activity',
+        label: 'Activity',
+        content: (
+          <div className="pt-5">
+            <Panel title="Activity">
+              <RecordHistory recordType="policy" recordId={policyNumber} />
             </Panel>
           </div>
         ),

@@ -7,9 +7,8 @@ import { cn } from '@/lib/cn';
  * Was nine private copies. Seven were byte-identical; the two that differed were
  * checked rather than assumed, and only one difference was real:
  *
- * - `AuditLogPage` renders event types (`policy.PolicyIssued`), which are code
- *   and read as code. That is what `mono` preserves — flattening it would have
- *   been a silent visual regression dressed up as a refactor.
+ * - The old event journal rendered event types (`policy.PolicyIssued`), which are code
+ *   and read as code. That is what `mono` was for; its successor, the activity log, uses words.
  * - `GroupSchemePage`'s copy was simply newer and inconsistent (a `children` API
  *   and a border instead of a ring). It was the outlier, not the improvement, so
  *   it conforms here.

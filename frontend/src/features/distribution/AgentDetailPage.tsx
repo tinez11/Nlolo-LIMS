@@ -17,6 +17,7 @@ import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
+import { RecordHistory } from '@/features/audit/RecordHistory';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -124,6 +125,13 @@ export function AgentDetailPage() {
         {canManage && agent && (
           <Panel title="Lifecycle">
             <LifecycleActions agentId={agentId} status={agent.licenseStatus} />
+          </Panel>
+        )}
+
+        {/* Who did what to this agent's record (2026-11-14, activity log). */}
+        {can('audit.view') && (
+          <Panel title="Activity">
+            <RecordHistory recordType="agent" recordId={agentId} />
           </Panel>
         )}
       </DetailLayout>

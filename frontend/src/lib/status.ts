@@ -186,6 +186,12 @@ export const STATUS_MAPS = {
     TODO: 'neutral',
     BLOCKED: 'danger',
   },
+  // audit ActivityLine.outcome (2026-11-14, activity log): how a person's action ended.
+  activityOutcome: {
+    DONE: 'success',
+    REFUSED: 'warning',
+    FAILED: 'danger',
+  },
   policyElection: {
     PROPOSED: 'pending',
     APPROVED: 'active',

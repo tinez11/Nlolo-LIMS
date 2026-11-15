@@ -57,12 +57,16 @@ public class DomainEventAuditListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
+        // Read here, on the request's own thread after its commit: the person's action that raised this event, if any
+        // (activity log, 2026-11-14). A scheduled run or a redelivery has none.
+        UUID actionId = tz.co.nlolo.lifeplatform.audit.application.ActivityContext.current();
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 String payloadJson = writePayloadJson(envelope);
                 auditLogRepository.save(new AuditLogEntry(
                     UUID.randomUUID(), envelope.tenantId(), envelope.eventId(), envelope.eventType(),
-                    envelope.schemaVersion(), envelope.sequenceNumber(), envelope.occurredAt(), Instant.now(), payloadJson));
+                    envelope.schemaVersion(), envelope.sequenceNumber(), envelope.occurredAt(), Instant.now(), payloadJson,
+                    actionId));
             });
         } catch (Exception e) {
             log.error("Failed to persist audit_log entry for event {}", envelope.eventType(), e);
