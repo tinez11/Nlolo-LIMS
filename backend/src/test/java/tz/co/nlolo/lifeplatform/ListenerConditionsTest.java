@@ -37,7 +37,9 @@ class ListenerConditionsTest {
     private static final Pattern ANNOTATION =
         Pattern.compile("@TransactionalEventListener\\(([^@]*?)\\)\\s*\\n\\s*(?:public|void|protected)");
     private static final Pattern EVENT_TYPE = Pattern.compile("\"([a-z]+\\.[A-Z][A-Za-z]+)\"");
-    private static final Pattern PREFIX = Pattern.compile("startsWith\\(\"([a-z]+\\.)\"\\)");
+    private static final Pattern SHARED_SET =
+        Pattern.compile("(?<![.\\w])([A-Z][A-Za-z]+)\\.([A-Z][A-Z_]+)\\.(?:contains|containsKey)\\(");
+    private static final Pattern PREFIX =Pattern.compile("startsWith\\(\"([a-z]+\\.)\"\\)");
 
     @Test
     void everyEventTypeAListenerHandlesIsInItsCondition() throws IOException {
@@ -63,6 +65,13 @@ class ListenerConditionsTest {
                     Matcher prefix = PREFIX.matcher(text);
                     while (prefix.find()) {
                         if (!args.contains("startsWith('" + prefix.group(1) + "')")) missing.add(prefix.group(1) + "*");
+                    }
+                    // A set of types kept in another class (bonus reads StatusRecorder.STATUS_AFTER): the literals
+                    // are not in this file, so the condition must name the set itself.
+                    Matcher shared = SHARED_SET.matcher(text);
+                    while (shared.find()) {
+                        if (!args.contains(shared.group(1) + ")." + shared.group(2) + "."))
+                            missing.add(shared.group(1) + "." + shared.group(2));
                     }
                     // A type the file only publishes is harmless to leave out -- but it cannot be told apart here, so
                     // it is listed too: one more row per event is cheap; a handled type left out is lost.

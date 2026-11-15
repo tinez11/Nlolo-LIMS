@@ -30,7 +30,7 @@ import java.util.UUID;
 public class StatusRecorder {
 
     /** Event type -> the status the policy is in afterwards (policy.domain.Policy's own strings). */
-    static final Map<String, String> STATUS_AFTER = Map.ofEntries(
+    public static final Map<String, String> STATUS_AFTER = Map.ofEntries(
         Map.entry("policy.PolicyActivated", "ACTIVE"),
         Map.entry("policy.PolicySuspended", "SUSPENDED"),
         Map.entry("policy.PolicyResumed", "ACTIVE"),
