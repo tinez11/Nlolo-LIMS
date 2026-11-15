@@ -42,7 +42,8 @@ public class EngineReinsuranceGroups {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'reinsurance.BordereauPosted', 'reinsurance.RecoveryCalculated', 'reinsurance.StatementApproved'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String[] source = SOURCES.get(envelope.eventType());
         if (source == null || !(envelope.payload() instanceof Map<?, ?> payload)) {

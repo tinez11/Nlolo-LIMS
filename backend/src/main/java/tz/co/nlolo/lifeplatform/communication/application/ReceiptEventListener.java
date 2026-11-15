@@ -51,7 +51,8 @@ public class ReceiptEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.FieldReceiptCaptured', 'billing.PremiumReminderSent', 'payment.ReceiptIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = envelope.payload() instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();

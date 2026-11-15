@@ -23,7 +23,8 @@ public class PolicyEventListener {
         this.api = api;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.PolicyCancelledFreeLook', 'policy.PolicyIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if ("policy.PolicyCancelledFreeLook".equals(type)) {

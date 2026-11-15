@@ -138,7 +138,8 @@ public class PaymentEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'claims.ClaimSettled', 'payment.DisbursementCompleted', 'payment.DisbursementFailed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted" -> withTenant(envelope, this::handleCompleted);

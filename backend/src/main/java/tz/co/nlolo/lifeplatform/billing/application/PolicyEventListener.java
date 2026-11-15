@@ -43,7 +43,8 @@ public class PolicyEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityVested', 'policy.EnrolmentAccepted', 'policy.GroupMemberExited', 'policy.PolicyCancelledFreeLook', 'policy.PolicyEndorsed', 'policy.PolicyExpired', 'policy.PolicyIssued', 'policy.PolicyMadePaidUp', 'policy.PolicyMatured', 'policy.PolicyResumed', 'policy.PolicySurrendered', 'policy.PolicySuspended', 'policy.PremiumPayingTermRestated', 'policy.PremiumRestated', 'policy.PremiumsEnded'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> withTenant(envelope, this::handlePolicyIssued);

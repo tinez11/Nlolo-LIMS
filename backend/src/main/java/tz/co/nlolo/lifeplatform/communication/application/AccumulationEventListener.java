@@ -45,7 +45,8 @@ public class AccumulationEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'accumulation.MaturityPayoutRedirected', 'accumulation.StatementIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if ("accumulation.MaturityPayoutRedirected".equals(envelope.eventType())) {
             maturityPayoutRedirected(envelope);

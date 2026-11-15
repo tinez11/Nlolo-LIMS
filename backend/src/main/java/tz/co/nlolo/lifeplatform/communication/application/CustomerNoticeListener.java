@@ -47,7 +47,8 @@ class CustomerNoticeListener {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'benefitpayout.PayoutPaid', 'claims.ClaimApproved', 'claims.ClaimRegistered', 'claims.ClaimRejected', 'claims.ClaimSettled', 'policy.PolicyActivated', 'policy.PolicyIssued', 'policy.PolicyLapsed', 'policy.PolicyReinstated', 'policy.PolicyholderChanged', 'policy.SurrenderPaid', 'policyloan.LoanDisbursed', 'policyloan.LoanOriginated'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             // Remembering who is who.

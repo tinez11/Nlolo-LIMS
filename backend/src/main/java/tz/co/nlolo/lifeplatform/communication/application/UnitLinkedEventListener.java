@@ -38,7 +38,8 @@ public class UnitLinkedEventListener {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'unitlinked.FundExhausted', 'unitlinked.LowFund', 'unitlinked.ProceedsReady', 'unitlinked.StatementIssued', 'unitlinked.UnitsAllocated'}.contains(#p0.eventType()) or #p0.eventType().startsWith('unitlinked.')")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!type.startsWith("unitlinked.")) {

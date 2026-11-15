@@ -58,7 +58,8 @@ public class EnginePolicySnapshots {
     private static final List<String> LIVES = List.of("policy.CoveredLifeAdded", "policy.CoveredLifeEnded",
         "policy.GroupMemberAdded", "policy.GroupMemberExited");
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityEnded', 'policy.CoveredLifeAdded', 'policy.CoveredLifeEnded', 'policy.GroupMemberAdded', 'policy.GroupMemberExited', 'policy.PolicyActivated', 'policy.PolicyCancelledFreeLook', 'policy.PolicyExpired', 'policy.PolicyLapsed', 'policy.PolicyMadePaidUp', 'policy.PolicyMatured', 'policy.PolicyReinstated', 'policy.PolicySurrendered'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!"policy.PolicyActivated".equals(type) && !STATUS.containsKey(type) && !LIVES.contains(type)) {

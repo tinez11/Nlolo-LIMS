@@ -23,7 +23,8 @@ public class ClaimEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'claims.ClaimApproved'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"claims.ClaimApproved".equals(envelope.eventType())) {
             return;

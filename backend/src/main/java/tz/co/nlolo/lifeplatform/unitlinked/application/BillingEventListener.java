@@ -29,7 +29,8 @@ class BillingEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.AgentCashBanked', 'billing.PremiumCollected'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         // Agent cash (2026-11-11, the user): the premium is paid -- cover on, no dunning -- the moment the agent records
         // it, but units are bought only when the money reaches the company. Undone after 14 days, nothing was invested.

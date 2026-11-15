@@ -59,7 +59,8 @@ public class PolicyClassificationEventListener {
     }
 
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityVested', 'policy.PolicyIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> withTenant(envelope, this::onIssued);

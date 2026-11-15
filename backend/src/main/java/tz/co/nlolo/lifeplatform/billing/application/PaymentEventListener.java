@@ -59,7 +59,8 @@ public class PaymentEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.DisbursementFailed', 'payment.PaymentConfirmed', 'payment.PaymentFailed', 'policyloan.LoanOverpaid'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             // The ledger posts the money's arrival on the day a recorded receipt says it came (finding 89, 2026-11-13).

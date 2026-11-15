@@ -110,6 +110,21 @@ class DurableEventsIntegrationTest {
         assertThat(open()).as("delivered, so no longer open").isZero();
     }
 
+    @Test
+    void anEventIsRecordedOnlyForTheListenersWhoseConditionTakesIt() {
+        new TransactionTemplate(transactions).executeWithoutResult(status ->
+            events.publishEvent(DomainEventEnvelope.of("test.NobodyListensForThis", UUID.randomUUID(), Map.of())));
+
+        java.util.List<String> listeners = jdbc.queryForList("SELECT listener_id FROM event_publication"
+            + " WHERE serialized_event LIKE '%test.NobodyListensForThis%'", String.class);
+        // The audit journal, the ledger and reporting read every event, and so does this test's probe; the fifty
+        // listeners that name their events are not recorded at all.
+        assertThat(listeners).hasSize(4)
+            .anySatisfy(id -> assertThat(id).contains("DomainEventAuditListener"))
+            .anySatisfy(id -> assertThat(id).contains("LedgerEventListener"))
+            .anySatisfy(id -> assertThat(id).contains("ReportingEventListener"));
+    }
+
     private long open() {
         Long n = jdbc.queryForObject("SELECT count(*) FROM event_publication WHERE completion_date IS NULL"
             + " AND serialized_event LIKE '%test.DurableProbe%'", Long.class);

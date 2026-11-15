@@ -36,7 +36,8 @@ public class FuneralEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.CoveredLifeAdded', 'policy.CoveredLifeEnded', 'policy.PremiumRestated'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!"policy.CoveredLifeAdded".equals(type) && !"policy.CoveredLifeEnded".equals(type)

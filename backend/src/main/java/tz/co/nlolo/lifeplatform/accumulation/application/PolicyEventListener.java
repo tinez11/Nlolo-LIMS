@@ -24,7 +24,8 @@ public class PolicyEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AccountSurrenderApproved', 'policy.PolicyCancelledFreeLook', 'policy.PolicyIssued', 'policy.PolicyReinstated'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> runner.run(envelope, p -> api.openIfAccountVersion(

@@ -31,7 +31,8 @@ class PolicyEventListener {
         this.clock = clock;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.PolicyCancelledFreeLook', 'policy.PolicyIssued', 'policy.PolicyLapsed', 'policy.UnitLinkedSurrenderApproved'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> runner.run(envelope, p -> allocations.recordAtIssue((String) p.get("policyNumber")));

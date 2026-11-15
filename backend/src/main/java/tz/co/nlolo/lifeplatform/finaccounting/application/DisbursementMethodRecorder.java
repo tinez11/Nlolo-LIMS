@@ -39,7 +39,8 @@ class DisbursementMethodRecorder {
     }
 
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"payment.DisbursementCompleted".equals(envelope.eventType())) {
             return;
