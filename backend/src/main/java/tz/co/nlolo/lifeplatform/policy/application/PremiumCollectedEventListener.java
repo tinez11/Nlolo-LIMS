@@ -52,7 +52,8 @@ public class PremiumCollectedEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.PremiumCollected'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"billing.PremiumCollected".equals(envelope.eventType())) {
             return;
@@ -80,6 +81,7 @@ public class PremiumCollectedEventListener {
             // logged loudly rather than swallowed, and the next premium on the same policy will
             // activate it: activateOnFirstPremium is idempotent precisely so that retry is safe.
             log.error("Failed to start cover for policy {} after its premium was collected", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

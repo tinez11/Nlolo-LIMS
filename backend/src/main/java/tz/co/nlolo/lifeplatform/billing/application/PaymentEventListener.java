@@ -59,7 +59,8 @@ public class PaymentEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.DisbursementFailed', 'payment.PaymentConfirmed', 'payment.PaymentFailed', 'policyloan.LoanOverpaid'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             // The ledger posts the money's arrival on the day a recorded receipt says it came (finding 89, 2026-11-13).
@@ -128,6 +129,7 @@ public class PaymentEventListener {
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
             log.error("billing failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

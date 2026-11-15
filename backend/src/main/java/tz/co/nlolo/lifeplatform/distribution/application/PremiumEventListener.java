@@ -74,7 +74,8 @@ public class PremiumEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.PremiumCollected', 'billing.PremiumCollectionReversed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "billing.PremiumCollected" -> withTenant(envelope, this::handlePremiumCollected);
@@ -128,6 +129,7 @@ public class PremiumEventListener {
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
             log.error("distribution failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

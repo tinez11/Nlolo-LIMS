@@ -31,7 +31,8 @@ class SettlementPaymentListener {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.DisbursementFailed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"payment.DisbursementCompleted".equals(envelope.eventType())
                 && !"payment.DisbursementFailed".equals(envelope.eventType())) {
@@ -51,6 +52,7 @@ class SettlementPaymentListener {
         } catch (Exception e) {
             log.error("reinsurance failed to record the outcome of settlement payout {} for tenant {}", p.get("sourceRef"),
                 envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

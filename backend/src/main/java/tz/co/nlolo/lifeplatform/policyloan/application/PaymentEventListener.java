@@ -57,7 +57,8 @@ public class PaymentEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.DisbursementFailed', 'payment.PaymentConfirmed', 'payment.PaymentFailed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted" -> withTenant(envelope, this::handleCompleted);
@@ -77,6 +78,7 @@ public class PaymentEventListener {
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
             log.error("policyloan failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

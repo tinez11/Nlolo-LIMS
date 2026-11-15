@@ -59,7 +59,8 @@ public class PolicyClassificationEventListener {
     }
 
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityVested', 'policy.PolicyIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> withTenant(envelope, this::onIssued);
@@ -82,6 +83,7 @@ public class PolicyClassificationEventListener {
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("finaccounting failed to classify on {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

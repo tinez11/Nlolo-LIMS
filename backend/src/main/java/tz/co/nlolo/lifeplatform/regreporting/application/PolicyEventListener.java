@@ -84,7 +84,8 @@ public class PolicyEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.GroupMemberAdded', 'policy.GroupMemberEvidenceGranted', 'policy.GroupMemberExited', 'policy.GroupSchemeFreeCoverLimitAmended', 'policy.PolicyActivated', 'policy.PolicyCancelledFreeLook', 'policy.PolicyLapsed', 'policy.PolicyMatured', 'policy.PolicyReinstated', 'policy.PolicySurrendered'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             // PolicyActivated, not PolicyIssued. PolicyIssued now means "the contract record
@@ -135,6 +136,7 @@ public class PolicyEventListener {
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("regreporting failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

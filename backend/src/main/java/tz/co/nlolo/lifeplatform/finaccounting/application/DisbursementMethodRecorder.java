@@ -39,7 +39,8 @@ class DisbursementMethodRecorder {
     }
 
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"payment.DisbursementCompleted".equals(envelope.eventType())) {
             return;
@@ -57,6 +58,7 @@ class DisbursementMethodRecorder {
         } catch (Exception e) {
             // Without it the payout is posted as mobile money: wrong account if it went by bank, never lost.
             log.error("finaccounting could not record the rail of disbursement {}", envelope.payload(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

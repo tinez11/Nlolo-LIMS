@@ -42,7 +42,8 @@ public class EngineReinsuranceGroups {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'reinsurance.BordereauPosted', 'reinsurance.RecoveryCalculated', 'reinsurance.StatementApproved'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String[] source = SOURCES.get(envelope.eventType());
         if (source == null || !(envelope.payload() instanceof Map<?, ?> payload)) {
@@ -61,6 +62,7 @@ public class EngineReinsuranceGroups {
                 group.toString()));
         } catch (RuntimeException e) {
             log.error("Could not map {} {} to its reinsurance group", source[1], reference, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

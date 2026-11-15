@@ -45,7 +45,8 @@ public class AccumulationEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'accumulation.MaturityPayoutRedirected', 'accumulation.StatementIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if ("accumulation.MaturityPayoutRedirected".equals(envelope.eventType())) {
             maturityPayoutRedirected(envelope);
@@ -76,6 +77,7 @@ public class AccumulationEventListener {
             // The statement is filed either way; rolling that back to save an SMS would be backwards.
             // Logged loudly; the dispatch row records the failure for the desk.
             log.error("Failed to send the annual statement summary for policy {}", payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);
@@ -107,6 +109,7 @@ public class AccumulationEventListener {
                             maturity.getYear()))));
         } catch (Exception e) {
             log.error("Failed to tell the client of the maturity payout redirect on policy {}", payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

@@ -30,7 +30,8 @@ class ClaimEventListener {
         this.clock = clock;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'claims.ClaimApproved', 'claims.ClaimRegistered', 'claims.ClaimRejected'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!"claims.ClaimRegistered".equals(type) && !"claims.ClaimApproved".equals(type)

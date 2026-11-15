@@ -73,6 +73,12 @@ class ActuatorExposureTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
+    /** No module schema, but the event publication registry the application reads at start-up (durable events). */
+    @org.junit.jupiter.api.BeforeAll
+    static void eventRegistry() throws Exception {
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    }
+
     /** Endpoints that must never be reachable on EITHER port with the current allow-list.
      * {@code env} would disclose SPRING_DATASOURCE_PASSWORD and every Keycloak/MinIO credential;
      * {@code heapdump} would disclose live JWTs and decrypted row data; {@code loggers} is

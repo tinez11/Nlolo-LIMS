@@ -1125,7 +1125,9 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public void redirectAnnuityStream(String policyNumber, LocalDate fromDate, LocalDate untilDate, String payeeRef) {
         PayoutStream s = streams.findAnnuityStream(policyNumber)
             .orElseThrow(() -> new PayoutStateException("Policy " + policyNumber + " has no annuity stream"));
-        s.redirect(fromDate, untilDate, mobileMoneyPayee(payeeRef));
+        // No beneficiary number on record is allowed: the stream waits for one at review (PayoutStream.redirect). Only a
+        // number given is checked -- refusing here left a dead annuitant's stream paying (2026-11-14).
+        s.redirect(fromDate, untilDate, payeeRef == null || payeeRef.isBlank() ? null : mobileMoneyPayee(payeeRef));
         streams.save(s);
         for (PayoutInstalment i : instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId())) {
             if (i.getDueDate().isAfter(untilDate) && i.cancel("Nothing is owed after the guarantee ends on " + untilDate)) {

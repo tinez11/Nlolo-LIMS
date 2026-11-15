@@ -293,7 +293,8 @@ public class UnderwritingDecisionEventListener {
         }
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'underwriting.UnderwritingDecisionMade'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"underwriting.UnderwritingDecisionMade".equals(envelope.eventType())) {
             return;

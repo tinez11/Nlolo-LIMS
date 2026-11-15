@@ -24,7 +24,8 @@ public class PolicyEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityEnded', 'policy.PolicyCancelledFreeLook', 'policy.PolicyIssued', 'policy.PolicyNotTakenUp', 'policy.PolicySurrendered'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if ("policy.PolicyIssued".equals(type)) {

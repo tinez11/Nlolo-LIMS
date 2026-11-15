@@ -51,7 +51,8 @@ public class ReceiptEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.FieldReceiptCaptured', 'billing.PremiumReminderSent', 'payment.ReceiptIssued'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = envelope.payload() instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
@@ -91,6 +92,7 @@ public class ReceiptEventListener {
             // The money is recorded either way -- its module has committed, and rolling that back to save a message
             // would be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
             log.error("Failed to send {} on policy {}", templateKey, payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

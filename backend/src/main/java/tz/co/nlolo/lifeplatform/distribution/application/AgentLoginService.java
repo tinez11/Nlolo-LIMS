@@ -144,7 +144,8 @@ public class AgentLoginService {
     }
 
     /** Suspending an agent closes their login; reactivating opens one the suspension closed. After the agent commits. */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'distribution.AgentReactivated', 'distribution.AgentSuspended'}.contains(#p0.eventType())")
     public void onAgentStatus(DomainEventEnvelope<?> envelope) {
         boolean suspended = "distribution.AgentSuspended".equals(envelope.eventType());
         boolean reactivated = "distribution.AgentReactivated".equals(envelope.eventType());

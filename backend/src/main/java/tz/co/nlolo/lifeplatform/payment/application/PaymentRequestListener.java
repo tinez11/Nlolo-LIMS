@@ -111,7 +111,8 @@ public class PaymentRequestListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'accumulation.PayoutRequested', 'accumulation.TopUpRequested', 'benefitpayout.PayoutRequested', 'billing.BalanceWithdrawalPayoutRequested', 'billing.DepositReversed', 'billing.PaymentRequested', 'billing.PremiumRefundPayoutRequested', 'claims.ClaimSettlementRequested', 'distribution.CommissionPayoutRequested', 'policy.SurrenderPayoutRequested', 'policyloan.LoanDisbursementRequested', 'policyloan.RepaymentRequested', 'reinsurance.SettlementPayoutRequested', 'unitlinked.PayoutRequested', 'unitlinked.TopUpRequested'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policyloan.LoanDisbursementRequested" -> withTenant(envelope, this::handleLoanDisbursement);

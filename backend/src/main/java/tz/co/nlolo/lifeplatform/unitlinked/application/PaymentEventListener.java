@@ -34,7 +34,8 @@ class PaymentEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.PaymentConfirmed', 'payment.PaymentFailed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         // A top-up's collection (U2, plan D6): its purpose decides, before anything is read.
         if ("payment.PaymentConfirmed".equals(envelope.eventType()) || "payment.PaymentFailed".equals(envelope.eventType())) {

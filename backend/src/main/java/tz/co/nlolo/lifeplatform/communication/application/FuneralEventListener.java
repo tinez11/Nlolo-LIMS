@@ -36,7 +36,8 @@ public class FuneralEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.CoveredLifeAdded', 'policy.CoveredLifeEnded', 'policy.PremiumRestated'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!"policy.CoveredLifeAdded".equals(type) && !"policy.CoveredLifeEnded".equals(type)
@@ -73,6 +74,7 @@ public class FuneralEventListener {
         } catch (Exception e) {
             // The dispatch row records any failure for the desk; the policy change itself stands.
             log.error("Failed to send the {} notice for policy {}", type, payload.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

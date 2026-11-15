@@ -22,7 +22,8 @@ public class ClaimEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'claims.ClaimApproved', 'claims.ClaimRegistered', 'claims.ClaimRejected'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         // A death reported before vesting holds the vesting until it is decided (D2, plan R6).

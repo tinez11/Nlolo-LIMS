@@ -41,7 +41,8 @@ public class CashValueEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.PremiumCollected'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"billing.PremiumCollected".equals(envelope.eventType())) {
             return;
@@ -65,6 +66,7 @@ public class CashValueEventListener {
             // to recompute is recomputed on the next premium (the operation is idempotent), so it is
             // logged rather than allowed to poison the collection.
             log.error("Failed to recompute cash value for policy {} after a premium was collected", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

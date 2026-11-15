@@ -43,7 +43,8 @@ public class PolicyEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityVested', 'policy.EnrolmentAccepted', 'policy.GroupMemberExited', 'policy.PolicyCancelledFreeLook', 'policy.PolicyEndorsed', 'policy.PolicyExpired', 'policy.PolicyIssued', 'policy.PolicyMadePaidUp', 'policy.PolicyMatured', 'policy.PolicyResumed', 'policy.PolicySurrendered', 'policy.PolicySuspended', 'policy.PremiumPayingTermRestated', 'policy.PremiumRestated', 'policy.PremiumsEnded'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "policy.PolicyIssued" -> withTenant(envelope, this::handlePolicyIssued);
@@ -79,6 +80,7 @@ public class PolicyEventListener {
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
             log.error("billing failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

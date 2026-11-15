@@ -58,7 +58,8 @@ public class EnginePolicySnapshots {
     private static final List<String> LIVES = List.of("policy.CoveredLifeAdded", "policy.CoveredLifeEnded",
         "policy.GroupMemberAdded", "policy.GroupMemberExited");
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'policy.AnnuityEnded', 'policy.CoveredLifeAdded', 'policy.CoveredLifeEnded', 'policy.GroupMemberAdded', 'policy.GroupMemberExited', 'policy.PolicyActivated', 'policy.PolicyCancelledFreeLook', 'policy.PolicyExpired', 'policy.PolicyLapsed', 'policy.PolicyMadePaidUp', 'policy.PolicyMatured', 'policy.PolicyReinstated', 'policy.PolicySurrendered'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!"policy.PolicyActivated".equals(type) && !STATUS.containsKey(type) && !LIVES.contains(type)) {
@@ -90,6 +91,7 @@ public class EnginePolicySnapshots {
             });
         } catch (RuntimeException e) {
             log.error("Could not keep the engine's snapshot of {} on {}", p.get("policyNumber"), type, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) TenantContext.set(previous); else TenantContext.clear();
         }

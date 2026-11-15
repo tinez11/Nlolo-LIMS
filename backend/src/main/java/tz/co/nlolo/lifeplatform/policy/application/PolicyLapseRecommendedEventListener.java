@@ -46,7 +46,8 @@ public class PolicyLapseRecommendedEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'billing.PolicyLapseRecommended'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"billing.PolicyLapseRecommended".equals(envelope.eventType())) {
             return;
@@ -94,6 +95,7 @@ public class PolicyLapseRecommendedEventListener {
             });
         } catch (Exception e) {
             log.error("Automatic lapse failed for policy {} following billing's recommendation", policyNumber, e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

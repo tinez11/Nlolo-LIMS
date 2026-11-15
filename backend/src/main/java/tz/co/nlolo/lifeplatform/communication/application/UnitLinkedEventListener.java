@@ -38,7 +38,8 @@ public class UnitLinkedEventListener {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'unitlinked.FundExhausted', 'unitlinked.LowFund', 'unitlinked.ProceedsReady', 'unitlinked.StatementIssued', 'unitlinked.UnitsAllocated'}.contains(#p0.eventType()) or #p0.eventType().startsWith('unitlinked.')")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
         if (!type.startsWith("unitlinked.")) {
@@ -80,6 +81,7 @@ public class UnitLinkedEventListener {
         } catch (Exception e) {
             // The dispatch row records any failure for the desk; the unit movement itself stands.
             log.error("Failed to send the {} notice for policy {}", template, p.get("policyNumber"), e);
+            tz.co.nlolo.lifeplatform.ListenerFailures.retryUnlessRefused(e);
         } finally {
             if (previous != null) {
                 TenantContext.set(previous);

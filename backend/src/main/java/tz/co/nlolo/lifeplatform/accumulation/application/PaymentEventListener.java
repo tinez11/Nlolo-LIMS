@@ -25,7 +25,8 @@ public class PaymentEventListener {
         this.runner = runner;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT,
+        condition = "{'payment.DisbursementCompleted', 'payment.DisbursementFailed', 'payment.PaymentConfirmed', 'payment.PaymentFailed'}.contains(#p0.eventType())")
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> runner.run(envelope, p -> {
