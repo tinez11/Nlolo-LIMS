@@ -89,6 +89,12 @@ class OptimisticLockingConflictContractTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
+    /** No module schema, but the event publication registry the application reads at start-up (durable events). */
+    @org.junit.jupiter.api.BeforeAll
+    static void eventRegistry() throws Exception {
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    }
+
     @Autowired private MockMvc mockMvc;
 
     @MockBean private PolicyLoanApi policyLoanApi;

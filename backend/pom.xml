@@ -239,6 +239,11 @@
             <!-- Staff permissions read from the token's roles (iam AccessService): tests sign requests with synthetic
                  roles and most apply no iam schema. AccessIntegrationTest opts back into the platform source. -->
             <app.access.source>token</app.access.source>
+            <!-- Durable events: no automatic redelivery in tests. One database outlives many application starts here,
+                 and listeners whose tables a test did not create fail for good, so every start and every ten-minute
+                 tick re-ran all of them (the suite slowed ninefold, 2026-11-14). EventRedelivery says more. -->
+            <spring.modulith.republish-outstanding-events-on-restart>false</spring.modulith.republish-outstanding-events-on-restart>
+            <app.events.redelivery-enabled>false</app.events.redelivery-enabled>
           </systemPropertyVariables>
         </configuration>
       </plugin>

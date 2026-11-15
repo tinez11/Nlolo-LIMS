@@ -42,9 +42,19 @@ public class EventRedelivery {
             .register(meters);
     }
 
+    /**
+     * Off only in the test run (pom.xml surefire), with republish-on-restart: there one database outlives many
+     * application starts, and listeners whose tables a test did not create fail for good -- each start and each tick
+     * re-ran every one of them, and the suite slowed ninefold (2026-11-14). DurableEventsIntegrationTest resubmits by
+     * hand instead.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.events.redelivery-enabled:true}")
+    boolean enabled = true;
+
     @Scheduled(fixedDelayString = "${app.events.redelivery-interval-ms:600000}",
         initialDelayString = "${app.events.redelivery-interval-ms:600000}")
     public void redeliver() {
+        if (!enabled) return;
         long waiting = waitingOverFiveMinutes();
         if (waiting == 0) return;
         log.warn("Delivering {} unfinished event deliveries again", waiting);
