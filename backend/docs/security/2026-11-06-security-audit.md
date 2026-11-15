@@ -12,13 +12,13 @@ Severity: **High** — exploitable from the internet or puts money/data at direc
 
 | # | Finding | Severity | Effort |
 |---|---|---|---|
-| H1 | Keycloak's `master` realm (the admin's own login) is reachable from the internet, with no lockout | **High** | Small |
+| H1 | Keycloak's `master` realm (the admin's own login) is reachable from the internet, with no lockout — **closed 2026-11-14** (bootstrap admin kept, tunnel only) | **High** | Small |
 | H2 | The mobile-money rail is a mock with no authentication, and it is in the production compose file | **High** (before real money) | Large (real integration) |
 | M1 | No Content-Security-Policy on the console | Medium | Small–medium |
 | M2 | No rate limiting at the edge | Medium | Medium |
 | M3 | Off-site backups are not encrypted by the platform | Medium | Small |
 | M4 | Three high-severity advisories in the console's runtime dependencies | Medium | Small |
-| M5 | No second factor for staff | Medium | Medium |
+| M5 | No second factor for staff — **closed 2026-11-14** (a texted code on every staff sign-in) | Medium | Medium |
 | M6 | Refresh-token rotation is off | Medium | Small |
 | M7 | Keycloak is pinned at 26.0.7 | Medium | Small–medium |
 | L1 | Four unit-linked child tables carry no `tenant_id` and no row-level security | Low | Small |

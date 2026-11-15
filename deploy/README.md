@@ -182,8 +182,8 @@ ssh deploy@SERVER 'cd platform && sed -i "s/^SMS_GATEWAY_ALLOWED_RECIPIENTS=.*/S
 - **One backend instance.** The scheduled jobs have no cluster lock; a second instance would duplicate them.
 - **Mobile money is a mock.** Its callbacks are signed with the mock's own secret, so payments through that rail
   may not confirm. Record premiums as cash or field receipts until a real rail is integrated.
-- **No two-factor login.** The realm carries a password policy and brute-force lockout; a second factor is a realm
-  setting away when you want it.
+- **A second factor for staff only.** Every staff sign-in asks for a texted code (2026-11-14); agents and customers
+  sign in on a password, with the realm's password policy and brute-force lockout.
 - **No Grafana, no alerting, no JSON logs, no tracing.** The uptime monitor and `status.sh` are the pilot's
   whole observability story.
 - **No staging server.** The dress rehearsal (running this stack locally) stands in for one.

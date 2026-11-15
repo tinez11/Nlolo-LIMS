@@ -19,7 +19,7 @@ and group funeral; group life and credit life schemes. Every product charge is o
 | `backend/db-migrations/<module>/` | Flyway migrations, one history per module (`backend/scripts/migrate.sh`). Postgres with row-level security per tenant. |
 | `backend/api/openapi/` | One OpenAPI spec per module -- the contract the console's types are generated from. |
 | `backend/infra/` | Docker Compose for the local stack: Postgres, Keycloak 26, SeaweedFS, Redis, Mailpit, mobile-money and SMS stubs. |
-| `backend/keycloak/` | The four realms (staff, agents, customers, regulators) and the login theme. |
+| `backend/keycloak/` | The one realm, `lifeplatform` (staff, agents, customers and regulators are workspaces inside it), and the login theme. |
 | `backend/docs/` | Architecture (01-08, design-era -- see the notes at the top of each), runbooks (09, 10), and `superpowers/specs` + `plans` for every feature since. |
 | `frontend/` | The console: Vite + React + TypeScript, one SPA serving the staff, agents and customers consoles. |
 | `deploy/` | The single-server deployment (Caddy, Compose, release and bootstrap scripts). |
