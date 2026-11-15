@@ -1,18 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { downloadActivity, type ActivityFilters, type ActivityKind, type ActivityOutcome } from '@/api/activity';
+import { DatePicker } from '@/components/DatePicker';
 import { FilterChip } from '@/components/FilterChip';
+import { FormField } from '@/components/FormField';
 import { Pager } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { todayIso } from '@/lib/dates';
+import { formatDate, todayIso } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useActivityStore } from '@/store/activityStore';
-import { ActivityLine } from './ActivityLine';
+import { ActivityDays } from './ActivityDays';
 
 const KINDS: { value: ActivityKind; label: string }[] = [
   { value: 'claims', label: 'Claims' },
@@ -29,7 +31,17 @@ const OUTCOMES: { value: ActivityOutcome; label: string }[] = [
   { value: 'FAILED', label: 'Failed' },
 ];
 
+/** The spans an investigator reaches for, as days back from today (today counts as one). */
+const RANGES = [
+  { days: 0, label: 'Today' },
+  { days: 6, label: 'Last 7 days' },
+  { days: 29, label: 'Last 30 days' },
+] as const;
+
 const SELECT = 'h-8 rounded-md border border-border-strong bg-surface px-2 text-xs';
+
+/** Midnight of a `YYYY-MM-DD` day, local, for the date picker's bounds. */
+const asDate = (day: string) => new Date(`${day}T00:00:00`);
 
 /** "2026-11-14" moved by whole days, on the calendar rather than the clock. */
 function shiftDay(day: string, days: number): string {
@@ -73,6 +85,11 @@ export function ActivityLogPage() {
   const people = useActivityStore((s) => s.people);
   const loadList = useActivityStore((s) => s.loadList);
   const loadPeople = useActivityStore((s) => s.loadPeople);
+
+  const preset = RANGES.find((r) => to === today && from === shiftDay(today, -r.days));
+  /** Own dates chosen: shown when no preset matches the address, or when asked for by "Choose dates". */
+  const [choosing, setChoosing] = useState(false);
+  const custom = choosing || !preset;
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState(q);
@@ -123,8 +140,19 @@ export function ActivityLogPage() {
     label: 'actions and events',
     value: total,
     pending: isInitialLoad(list),
-    hint: list.status === 'error' && total === null ? 'could not load' : `${from} to ${to}`,
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : from === to
+          ? formatDate(from)
+          : `${formatDate(from)} to ${formatDate(to)}`,
   };
+
+  function pickRange(days: number) {
+    setChoosing(false);
+    // The default (last 7 days) is the bare address, so a shared link without dates stays "the last week".
+    update(days === 6 ? { from: '', to: '' } : { from: shiftDay(today, -days), to: today });
+  }
 
   function body() {
     if (isInitialLoad(list)) return <TableSkeleton columns={5} />;
@@ -135,8 +163,12 @@ export function ActivityLogPage() {
     if (lines.length === 0) {
       return (
         <EmptyState
-          title="Nothing matches these filters"
-          description="Try other dates, or clear the filters."
+          title={
+            person || q || kind || outcome
+              ? 'Nothing matches these filters'
+              : `Nothing was done ${from === to ? `on ${formatDate(from)}` : `between ${formatDate(from)} and ${formatDate(to)}`}`
+          }
+          description={person || q || kind || outcome ? 'Try other dates, or clear the filters.' : 'Try a longer range.'}
           {...(filtered
             ? {
                 action: (
@@ -151,17 +183,13 @@ export function ActivityLogPage() {
     }
     return (
       <>
-        <ul className="divide-y divide-border" aria-label="Activity">
-          {lines.map((line) => (
-            <ActivityLine
-              key={line.id}
-              line={line}
-              open={openId === line.id}
-              onToggle={() => setOpenId(openId === line.id ? null : line.id)}
-              onPerson={(subject) => update({ person: subject })}
-            />
-          ))}
-        </ul>
+        <ActivityDays
+          lines={lines}
+          openId={openId}
+          onToggle={(id) => setOpenId(openId === id ? null : id)}
+          onPerson={(subject) => update({ person: subject })}
+          stickyDays
+        />
         {list.data && (
           <Pager page={list.data.page} busy={list.status === 'loading'} onPageChange={(next) => update({ page: String(next) })} />
         )}
@@ -203,14 +231,33 @@ export function ActivityLogPage() {
                 <Button size="sm" type="submit" variant="outline">Find</Button>
               </div>
             </form>
-            <label className="flex flex-col gap-1 text-xs text-label" htmlFor="activity-from">
-              From
-              <Input id="activity-from" type="date" inputSize="sm" value={from} max={to} onChange={(e) => update({ from: e.target.value })} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-label" htmlFor="activity-to">
-              To
-              <Input id="activity-to" type="date" inputSize="sm" value={to} min={from} max={today} onChange={(e) => update({ to: e.target.value })} />
-            </label>
+            <div role="group" aria-labelledby="activity-when" className="flex flex-col gap-1">
+              <span id="activity-when" className="text-xs text-label">When</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {RANGES.map((r) => (
+                  <FilterChip key={r.days} label={r.label} active={!custom && preset === r} onClick={() => pickRange(r.days)} />
+                ))}
+                <FilterChip label="Choose dates" active={custom} onClick={() => setChoosing(true)} />
+              </div>
+            </div>
+            {custom && (
+              <>
+                <FormField label="From">
+                  <DatePicker
+                    value={from}
+                    disabled={{ after: asDate(to) }}
+                    onChange={(iso) => iso && update({ from: iso, to })}
+                  />
+                </FormField>
+                <FormField label="To">
+                  <DatePicker
+                    value={to}
+                    disabled={{ before: asDate(from), after: asDate(today) }}
+                    onChange={(iso) => iso && update({ from, to: iso })}
+                  />
+                </FormField>
+              </>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             <FilterChip label="All kinds" active={!kind} onClick={() => update({ kind: '' })} />

@@ -1,4 +1,5 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import { todayIso } from '@/lib/dates';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '@/api/activity';
@@ -65,6 +66,45 @@ describe('ActivityLogPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Only Asha M.' }));
     await waitFor(() => expect(api.listActivity).toHaveBeenLastCalledWith(expect.objectContaining({ person: 'sub-asha' }), 0));
+  });
+
+  it('says why a line was refused on the line itself, before it is opened', async () => {
+    render(<ActivityLogPage />, { route: '/staff/audit-log' });
+
+    const line = await screen.findByRole('button', { name: /Approved a payout/ });
+    expect(line).toHaveAttribute('aria-expanded', 'false');
+    expect(line).toHaveTextContent('You cannot approve your own payout');
+    expect(screen.getByRole('button', { name: /Approved the claim/ })).not.toHaveTextContent('approve your own');
+  });
+
+  it('reads as a timeline: one heading per day, each line carrying only its time', async () => {
+    const yesterday: ActivityLine = { ...approved, id: 'a-0', occurredAt: '2026-11-13T09:00:00Z', label: 'Closed the case' };
+    vi.mocked(api.listActivity).mockResolvedValue({ items: [approved, yesterday], page: { page: 0, pageSize: 25, totalElements: 2 } });
+    render(<ActivityLogPage />, { route: '/staff/audit-log?from=2026-11-01&to=2026-11-14' });
+
+    const log = await screen.findByRole('list', { name: 'Activity' });
+    expect(within(log).getAllByRole('heading', { level: 2 })).toHaveLength(2);
+    const line = within(log).getByRole('button', { name: /Approved the claim/ });
+    expect(line.querySelector('time')).toHaveAttribute('dateTime', approved.occurredAt);
+    expect(line).not.toHaveTextContent('2026');
+  });
+
+  it('offers ranges, and own dates only when asked or when the address names them', async () => {
+    const user = userEvent.setup();
+    render(<ActivityLogPage />, { route: '/staff/audit-log' });
+
+    expect(await screen.findByRole('button', { name: 'Last 7 days', pressed: true })).toBeInTheDocument();
+    expect(screen.queryByLabelText('From')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() =>
+      expect(api.listActivity).toHaveBeenLastCalledWith(
+        expect.objectContaining({ from: expect.stringMatching(new RegExp(`^${todayIso()}T00`)) }), 0),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    expect(screen.getByLabelText('From')).toBeInTheDocument();
+    expect(screen.getByLabelText('To')).toBeInTheDocument();
   });
 
   it('shows the refusal reason when a refused line is opened', async () => {

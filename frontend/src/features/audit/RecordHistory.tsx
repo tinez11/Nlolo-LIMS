@@ -3,7 +3,7 @@ import { Pager } from '@/components/DataTable';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { idle } from '@/store/createResourceSlice';
 import { useActivityStore } from '@/store/activityStore';
-import { ActivityLine } from './ActivityLine';
+import { ActivityDays } from './ActivityDays';
 
 /**
  * A record's Activity (2026-11-14): the activity log filtered to one policy, client, claim or agent, newest first,
@@ -30,17 +30,13 @@ export function RecordHistory({ recordType, recordId }: { recordType: string; re
   }
   return (
     <div>
-      <ul className="divide-y divide-border" aria-label="Activity">
-        {data.items.map((line) => (
-          <ActivityLine
-            key={line.id}
-            line={line}
-            open={openId === line.id}
-            onToggle={() => setOpenId(openId === line.id ? null : line.id)}
-            showRecord={false}
-          />
-        ))}
-      </ul>
+      <ActivityDays
+        lines={data.items}
+        openId={openId}
+        onToggle={(id) => setOpenId(openId === id ? null : id)}
+        showRecord={false}
+        headingLevel={3}
+      />
       <Pager page={data.page} busy={history.status === 'loading'} onPageChange={setPage} />
     </div>
   );

@@ -8,7 +8,7 @@ import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { useActivityStore } from '@/store/activityStore';
 import { describeActivity } from '@/features/dashboard/activity';
-import { actorWords, changeWords, recordPath } from './activityWords';
+import { actorWords, changeWords, reasonWords, recordPath, timeWords } from './activityWords';
 
 const RECORD_NOUN: Record<string, string> = {
   policy: 'policy',
@@ -53,26 +53,42 @@ export function ActivityLine({
   showRecord?: boolean;
 }) {
   const what = recordWords(line);
+  const reason = reasonWords(line);
   return (
     <li>
+      {/* Time, who, what (and why, when it did not go through), amount, outcome. The line sits under its day, so it
+          carries the time alone; the full instant is in `title` and `dateTime` for anyone who needs it. */}
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-hover sm:grid-cols-[9rem_minmax(0,0.8fr)_minmax(0,1.4fr)_7rem_6.5rem]"
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-2.5 text-left hover:bg-hover sm:grid-cols-[4.5rem_minmax(0,12rem)_minmax(0,1fr)_8rem_6.5rem]"
       >
-        <span className="text-xs tabular-nums text-muted-foreground">{formatInstant(line.occurredAt)}</span>
-        <span className="min-w-0 truncate text-sm">{actorWords(line)}</span>
-        <span className="min-w-0 truncate text-sm font-medium">
-          {labelWords(line)}
-          {showRecord && what && <span className="ml-2 font-normal text-muted-foreground">{what}</span>}
-          {line.eventCount > 0 && (
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              · {line.eventCount} {line.eventCount === 1 ? 'thing' : 'things'} followed
+        <time
+          dateTime={line.occurredAt}
+          title={formatInstant(line.occurredAt)}
+          className="text-xs tabular-nums text-muted-foreground"
+        >
+          {timeWords(line.occurredAt)}
+        </time>
+        <span className="min-w-0 truncate text-right text-sm sm:text-left">{actorWords(line)}</span>
+        <span className="col-span-2 min-w-0 sm:col-span-1">
+          <span className="block truncate text-sm font-medium">
+            {labelWords(line)}
+            {showRecord && what && <span className="ml-2 font-normal text-muted-foreground">{what}</span>}
+            {line.eventCount > 0 && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                · {line.eventCount} {line.eventCount === 1 ? 'thing' : 'things'} followed
+              </span>
+            )}
+          </span>
+          {reason && (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={reason}>
+              {reason}
             </span>
           )}
         </span>
-        <span className="text-right text-sm tabular-nums">{line.amount ? formatMoney(line.amount) : ''}</span>
+        <span className="text-sm tabular-nums sm:text-right">{line.amount ? formatMoney(line.amount) : ''}</span>
         <span className="justify-self-end">
           <StatusBadge kind="activityOutcome" value={line.outcome} />
         </span>
@@ -95,9 +111,11 @@ function Opened({ line, onPerson }: { line: Line; onPerson: ((subject: string) =
 
   return (
     <div className="space-y-3 bg-surface-muted px-4 pb-4 pt-2 text-sm">
-      {line.outcome === 'REFUSED' && line.reason && (
+      {reasonWords(line) && (
+        // In full here: the line itself cuts a long reason to one line.
         <p>
-          <span className="text-label">Why it was refused:</span> {line.reason}
+          <span className="text-label">{line.outcome === 'FAILED' ? 'Why it failed:' : 'Why it was refused:'}</span>{' '}
+          {reasonWords(line)}
         </p>
       )}
 
