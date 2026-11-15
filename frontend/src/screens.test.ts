@@ -146,17 +146,17 @@ describe('screen manifest', () => {
     }
   });
 
-  it('shows the Event journal to whoever holds audit.view, whatever their job', () => {
+  it('shows the Activity log to whoever holds audit.view, whatever their job', () => {
     grantAccess('audit.view');
     const items = navFor('staff', superuser).flatMap((g) => g.items.map((i) => i.label));
-    expect(items).toContain('Event journal');
+    expect(items).toContain('Activity log');
   });
 
   it('gives both realms that can read clients a way to reach them', () => {
     // `GET /parties` is REALM_STAFF or REALM_AGENTS, and force-scopes an agent to
     // parties it registered. So both realms get an entry, and the Clients group is
     // ungated -- the same "nav must not be stricter than the endpoint" rule the
-    // Event journal broke when it was first filed under a finance-gated group.
+    // old Event journal broke when it was first filed under a finance-gated group.
     //
     // Staff get TWO entries, because the register is two working areas: a natural
     // person and an organisation are reviewed by different people against different

@@ -43,6 +43,7 @@ import { PortalAccessPanel } from './PortalAccessPanel';
 import { PolicyProduct } from '@/components/PolicyProduct';
 import { KycDecisionPanel, KycFilingPanel } from './KycPanel';
 import { ClientOverview } from './ClientOverview';
+import { RecordHistory } from '@/features/audit/RecordHistory';
 
 /**
  * One client's whole record: who they are, what they hold, and what is outstanding.
@@ -520,6 +521,19 @@ function clientTabs({
       content: (
         <Panel title="Customer portal">
           <PortalAccessPanel partyId={partyId} />
+        </Panel>
+      ),
+    });
+  }
+
+  // Who did what to this client (2026-11-14, activity log).
+  if (isStaff && can('audit.view')) {
+    tabs.push({
+      value: 'activity',
+      label: 'Activity',
+      content: (
+        <Panel title="Activity">
+          <RecordHistory recordType="client" recordId={partyId} />
         </Panel>
       ),
     });

@@ -87,7 +87,7 @@ import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { dashboardsFor } from '@/features/dashboard/dashboards';
 import {
-  AuditLogPage,
+  ActivityLogPage,
   MessagesPage,
   TemplatesPage,
   FollowUpPage,
@@ -308,13 +308,8 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // Its own group, after the finance jobs and before Records: reports read across every area above, and
     // A finance approver sees it without seeing the finance groups: reports.view, not ledger.manage.
     { id: 'reports', label: 'Reports' },
-    // UNGATED, to match its endpoint. `GET /audit-log` is `hasRole('REALM_STAFF')`
-    // -- any staff member may read it -- so putting the journal in a
-    // finance-gated group would make the nav stricter than the API and hide a
-    // screen most staff are authorised to see. Named "Records" rather than
-    // "Compliance" on purpose: it is an event journal, and five of the six
-    // columns a compliance register needs exist nowhere on this platform, so a
-    // group called Compliance would promise what the data cannot deliver.
+    // The Activity log (2026-11-14): who did what, when, to what. The group is ungated; the page is gated on
+    // audit.view (STAFF_PERMISSION below), matching its endpoints.
     { id: 'records', label: 'Records' },
     // Its own group rather than two items scattered into Records and Configuration. What the
     // platform says to customers is one operational area: the wording and the evidence it was
@@ -519,8 +514,8 @@ const STAFF_SCREENS: Screen[] = [
 
   {
     path: 'audit-log',
-    element: <AuditLogPage />,
-    reach: { group: 'records', label: 'Event journal', icon: History },
+    element: <ActivityLogPage />,
+    reach: { group: 'records', label: 'Activity log', icon: History },
   },
 
   // Ungated beyond REALM_STAFF, matching both endpoints. Reading what the platform says to

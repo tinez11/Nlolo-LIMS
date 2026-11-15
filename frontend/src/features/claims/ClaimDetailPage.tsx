@@ -110,6 +110,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
     ? claimSections({
         claim, claimId, roles, canAssess, canDecide, canReopen, canSeeReinsurance,
         canAttachEvidence: realm === 'staff',
+        canSeeActivity: realm === 'staff' && can('audit.view'),
       })
     : [];
 

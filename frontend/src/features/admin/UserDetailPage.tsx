@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { can } from '@/auth/access';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { DetailLayout } from '@/components/DetailLayout';
@@ -108,7 +108,17 @@ export function UserDetailPage() {
         breadcrumb={[{ label: 'Users', to: '/staff/users' }]}
         title={user.displayName ?? user.username}
         description={user.roles[0]?.name ?? 'No role'}
-        actions={<StatusBadge kind="staffUser" value={staffUserStatus(user)} />}
+        actions={
+          <div className="flex items-center gap-2">
+            {/* The user id is their sign-in subject, which is how the activity log names who acted (2026-11-14). */}
+            {can('audit.view') && (
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/staff/audit-log?person=${encodeURIComponent(user.userId)}`}>What they did</Link>
+              </Button>
+            )}
+            <StatusBadge kind="staffUser" value={staffUserStatus(user)} />
+          </div>
+        }
       />
 
       <DetailLayout record={renderRecord()}>

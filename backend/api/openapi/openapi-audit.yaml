@@ -83,7 +83,136 @@ paths:
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /activity:
+    get:
+      summary: The activity log -- who did what, when, to what, and how it ended (paged, newest first)
+      description: >-
+        2026-11-14. One line per write a signed-in person made, and one `SYSTEM` line per business event no person's
+        action raised (scheduled runs, and everything recorded before the log existed). Events an action raised are
+        not lines of their own: they are counted on its line and listed when it is opened. Personal numbers in a
+        line are masked. Holders of `audit.view` only. Dates default to the last seven days.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityPerson'
+        - $ref: '#/components/parameters/ActivityRecordType'
+        - $ref: '#/components/parameters/ActivityRecordId'
+        - $ref: '#/components/parameters/ActivityQ'
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '#/components/parameters/ActivityOutcome'
+        - $ref: '#/components/parameters/ActivityFrom'
+        - $ref: '#/components/parameters/ActivityTo'
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityPage' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /activity/people:
+    get:
+      summary: Everyone who has acted in this tenant, for the person filter
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ActivityPerson' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /activity/{activityId}:
+    get:
+      summary: One line opened -- what changed, what followed, and the technical detail
+      description: >-
+        The line, unmasked; each field sent, with the value it had before where an earlier change to the same record
+        carried it; the business events the action raised; and the route, status and body as recorded (secrets are
+        never recorded).
+      security:
+        - staffAuth: []
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityDetail' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /activity.csv:
+    get:
+      summary: The filtered activity log as a CSV file (at most 10,000 lines)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityPerson'
+        - $ref: '#/components/parameters/ActivityRecordType'
+        - $ref: '#/components/parameters/ActivityRecordId'
+        - $ref: '#/components/parameters/ActivityQ'
+        - $ref: '#/components/parameters/ActivityKind'
+        - $ref: '#/components/parameters/ActivityOutcome'
+        - $ref: '#/components/parameters/ActivityFrom'
+        - $ref: '#/components/parameters/ActivityTo'
+      responses:
+        '200':
+          description: 'Columns: When, Who, Did, Record, Amount, Outcome, Reason. Personal numbers masked.'
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 components:
+  parameters:
+    ActivityPerson:
+      name: person
+      in: query
+      description: The subject of the person who acted, or `SYSTEM`.
+      schema: { type: string }
+    ActivityRecordType:
+      name: recordType
+      in: query
+      description: 'policy, client, claim, agent, scheme, staff user, product, underwriting case, ... Needs recordId.'
+      schema: { type: string }
+    ActivityRecordId:
+      name: recordId
+      in: query
+      schema: { type: string }
+    ActivityQ:
+      name: q
+      in: query
+      description: Words to find in the record's name or number, or the action.
+      schema: { type: string }
+    ActivityKind:
+      name: kind
+      in: query
+      schema: { $ref: '#/components/schemas/ActivityKind' }
+    ActivityOutcome:
+      name: outcome
+      in: query
+      schema: { $ref: '#/components/schemas/ActivityOutcome' }
+    ActivityFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+    ActivityTo:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
   securitySchemes:
     customersAuth:
       type: openIdConnect
@@ -98,6 +227,110 @@ components:
       type: openIdConnect
       openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
   schemas:
+    ActivityKind:
+      type: string
+      enum: [claims, money, policies, people, products, settings, other]
+    ActivityOutcome:
+      type: string
+      enum: [DONE, REFUSED, FAILED]
+    ActivityActorKind:
+      type: string
+      enum: [STAFF, AGENT, CUSTOMER, SYSTEM]
+    ActivityPerson:
+      type: object
+      additionalProperties: false
+      required: [subject, name]
+      properties:
+        subject: { type: string }
+        name: { type: [string, 'null'] }
+    ActivityLine:
+      description: >-
+        One action, or one business event no action raised (actorKind SYSTEM, label = the event type, id = the
+        event's id, eventCount 0).
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, actorSubject, actorName, actorKind, label, kind, recordType, recordId, recordLabel,
+                 amount, outcome, reason, eventCount]
+      properties:
+        id: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        actorSubject:
+          type: [string, 'null']
+          description: Who acted, as the person filter takes it; null on a SYSTEM line.
+        actorName: { type: [string, 'null'] }
+        actorKind: { $ref: '#/components/schemas/ActivityActorKind' }
+        label: { type: string }
+        kind: { $ref: '#/components/schemas/ActivityKind' }
+        recordType: { type: [string, 'null'] }
+        recordId: { type: [string, 'null'] }
+        recordLabel: { type: [string, 'null'] }
+        amount:
+          anyOf:
+            - type: 'null'
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+        outcome: { $ref: '#/components/schemas/ActivityOutcome' }
+        reason:
+          type: [string, 'null']
+          description: The words the person saw, on a refused action.
+        eventCount: { type: integer, minimum: 0 }
+    ActivityPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityLine' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+    ActivityChange:
+      type: object
+      additionalProperties: false
+      required: [field, before, after]
+      properties:
+        field: { type: string }
+        before:
+          type: [string, 'null']
+          description: Null when no earlier change to this record carried the field.
+        after: { type: [string, 'null'] }
+    ActivityEvent:
+      description: A business event the action raised -- the same shape a dashboard's recent activity uses.
+      type: object
+      additionalProperties: false
+      required: [eventType, occurredAt, refs, amount]
+      properties:
+        eventType: { type: string }
+        occurredAt: { type: string, format: date-time }
+        refs:
+          type: object
+          additionalProperties: { type: string }
+        amount:
+          anyOf:
+            - type: 'null'
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+    ActivityTechnical:
+      type: object
+      additionalProperties: false
+      required: [method, route, statusCode, body]
+      properties:
+        method: { type: [string, 'null'] }
+        route: { type: [string, 'null'] }
+        statusCode: { type: [integer, 'null'] }
+        body:
+          type: [string, 'null']
+          description: The body as recorded (secrets never are), or a SYSTEM line's event payload.
+    ActivityDetail:
+      type: object
+      additionalProperties: false
+      required: [line, changes, events, technical]
+      properties:
+        line: { $ref: '#/components/schemas/ActivityLine' }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityChange' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityEvent' }
+        technical: { $ref: '#/components/schemas/ActivityTechnical' }
     AuditEntryView:
       description: >-
         One recorded domain event. Note what is absent: no actor, no before/after, no

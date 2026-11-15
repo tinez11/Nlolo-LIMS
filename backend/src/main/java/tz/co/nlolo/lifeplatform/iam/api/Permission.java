@@ -152,7 +152,7 @@ public enum Permission {
     COMMUNICATIONS_TEMPLATES("communications.templates", Area.COMMUNICATIONS, "Edit message templates",
         "Change what the platform's messages say."),
 
-    AUDIT_VIEW("audit.view", Area.AUDIT, "See the event journal", "Every recorded event."),
+    AUDIT_VIEW("audit.view", Area.AUDIT, "See the activity log", "Who did what, when, and every recorded event."),
 
     USERS_VIEW("users.view", Area.ADMINISTRATION, "See users and roles", "Staff users, roles and the history of changes."),
     USERS_MANAGE("users.manage", Area.ADMINISTRATION, "Manage users",

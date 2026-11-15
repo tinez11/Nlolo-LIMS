@@ -11,6 +11,7 @@ import { ClaimSettlementPanel } from './ClaimSettlementPanel';
 import { DocumentRequestsPanel } from './DocumentRequestsPanel';
 import { EvidencePanel } from './EvidencePanel';
 import { RecoveriesPanel } from '@/features/reinsurance/RecoveriesPanel';
+import { RecordHistory } from '@/features/audit/RecordHistory';
 
 /** One section of the claim record: its tab, and the panel the tab shows. */
 export interface Section {
@@ -37,6 +38,7 @@ export function claimSections({
   canReopen,
   canSeeReinsurance,
   canAttachEvidence = true,
+  canSeeActivity = false,
 }: {
   claim: ClaimView;
   claimId: string;
@@ -47,6 +49,8 @@ export function claimSections({
   canSeeReinsurance: boolean;
   /** False for an agent (2026-10-27): they read a claim on their book, and add nothing to it. */
   canAttachEvidence?: boolean;
+  /** Staff holding audit.view: the claim's Activity tab. */
+  canSeeActivity?: boolean;
 }): Section[] {
   const sections: Section[] = [];
 
@@ -198,6 +202,19 @@ export function claimSections({
           title="Reinsurance"
         >
           <RecoveriesPanel claimId={claimId} />
+        </Panel>
+      ),
+    });
+  }
+
+  // Who did what to this claim (2026-11-14, activity log). "Activity", since History is the assessments' tab.
+  if (canSeeActivity) {
+    sections.push({
+      id: 'activity',
+      label: 'Activity',
+      content: (
+        <Panel id="activity" title="Activity">
+          <RecordHistory recordType="claim" recordId={claimId} />
         </Panel>
       ),
     });

@@ -48,7 +48,17 @@ public class AuditLogEntry {
     @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
     private String payload;
 
+    /** The person's action that raised this event (audit.activity), or null for scheduled runs (2026-11-14). */
+    @Column(name = "action_id")
+    private UUID actionId;
+
     protected AuditLogEntry() {}
+
+    public AuditLogEntry(UUID auditLogId, UUID tenantId, UUID eventId, String eventType, int schemaVersion,
+                          Long sequenceNumber, Instant occurredAt, Instant recordedAt, String payload, UUID actionId) {
+        this(auditLogId, tenantId, eventId, eventType, schemaVersion, sequenceNumber, occurredAt, recordedAt, payload);
+        this.actionId = actionId;
+    }
 
     public AuditLogEntry(UUID auditLogId, UUID tenantId, UUID eventId, String eventType, int schemaVersion,
                           Long sequenceNumber, Instant occurredAt, Instant recordedAt, String payload) {

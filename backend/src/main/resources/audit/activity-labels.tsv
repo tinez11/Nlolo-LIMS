@@ -1,0 +1,276 @@
+# METHOD	pattern	kind	label   -- drafted by scripts/draft-activity-labels.mjs, edited by hand, reviewed by the user
+POST	/products/{productId}/rate-declarations	money	Proposed a declared rate
+POST	/rate-declarations/{declarationId}/approve	money	Approved a proposed rate
+POST	/rate-declarations/{declarationId}/withdraw	money	Withdrew a proposal
+POST	/products/{productId}/versions/{versionId}/savings-quote	money	Priced a savings product before any policy exists
+POST	/policies/{policyNumber}/account/statements	money	Filed a statement as a PDF
+POST	/policies/{policyNumber}/account/withdrawals	money	Requested a partial withdrawal
+POST	/account-withdrawals/{withdrawalId}/approve	money	Approved a withdrawal
+POST	/account-withdrawals/{withdrawalId}/reject	money	Refused a withdrawal
+POST	/policies/{policyNumber}/account/top-ups/received	money	Recorded money already received for the account
+POST	/policies/{policyNumber}/account/top-ups	money	Requested a top-up
+POST	/policies/{policyNumber}/account/transfers-in	money	Recorded money received from another scheme
+POST	/policies/{policyNumber}/account/adjustments	money	Proposed a correction
+POST	/account-adjustments/{adjustmentId}/approve	money	Approved an adjustment
+POST	/account-adjustments/{adjustmentId}/reject	money	Rejected an adjustment
+POST	/policies/{policyNumber}/account/deposit/maturity-instruction	money	Recorded the client's choice for the end of the running term
+POST	/policies/{policyNumber}/account/deposit/payout	money	Paid a matured deposit to a payee finance records
+POST	/policies/{policyNumber}/account/term-account/payout	money	Paid a matured term account to a payee finance records
+POST	/annuity-quotes	money	Priced an annuity purchase without storing anything
+PUT	/policies/{policyNumber}/annuity/vesting/instruction	money	Recorded when and into what a pension vests
+POST	/policies/{policyNumber}/annuity/vesting/reconfirm-age	money	Re-confirmed proof of age after the party record changed
+POST	/payouts/{instalmentId}/review	claims	Reviewed a due payout
+POST	/payouts/{instalmentId}/approve	claims	Approved a reviewed payout
+POST	/payouts/{instalmentId}/retry	claims	Tried a failed payment again
+POST	/policies/{policyNumber}/free-look-cancellation	claims	Prepared a free-look cancellation
+POST	/free-look-cancellations/{cancellationId}/approve	claims	Approved a cancellation
+POST	/payment-runs/{paymentRunId}/approve	claims	Approved a prepared run
+POST	/payout-streams/{streamId}/proof-of-life	claims	Recorded proof of life on an income stream
+POST	/withholding-rules	claims	Proposed a tax-withholding rule
+POST	/withholding-rules/{ruleId}/approve	claims	Approved a proposed withholding rule
+POST	/withholding-rules/{ruleId}/end	claims	Ended an approved withholding rule on its last day
+POST	/withholding-rules/{ruleId}/withdraw	claims	Withdrew a proposed withholding rule
+POST	/invoices/{invoiceId}/waiver	money	Waived an invoice
+POST	/invoices/{invoiceId}/waiver/undo	money	Undid a waiver
+POST	/invoices/{invoiceId}/payment-request	money	Requested collection of an invoice's premium through payment
+POST	/collections/actions/calls	money	Recorded a call about a premium still owed
+POST	/collections/actions/reminders	money	Sent the client a reminder about a premium still owed
+POST	/agents/{agentId}/field-receipts	money	Recorded cash the agent collected from a customer
+POST	/agents/{agentId}/field-receipts/banked	money	Marked agent collections as paid in
+POST	/policies/{policyNumber}/balance/withdrawals	money	Asked for money back off the policy's balance
+POST	/balance-withdrawals/{withdrawalId}/payee	money	Named who receives a withdrawal the platform raised when the policy ended
+POST	/balance-withdrawals/{withdrawalId}/approve	money	Approved a balance withdrawal
+POST	/balance-withdrawals/{withdrawalId}/reject	money	Refused a withdrawal
+POST	/deposits/{paymentId}/reversal	money	Asked to reverse a deposit whose money never really arrived
+POST	/deposit-reversals/{reversalId}/confirm	money	Confirmed a deposit reversal
+POST	/deposit-reversals/{reversalId}/reject	money	Refused the reversal
+POST	/lender-refunds/{creditId}/approve	money	Released a credit-life lender's premium refund to the bank-transfer queue
+POST	/lender-refunds/{creditId}/reject	money	Refused a lender's premium refund
+POST	/products/{productId}/bonus-declarations	money	Proposed a bonus declaration
+POST	/bonus-declarations/{declarationId}/approve	money	Approved a proposed declaration
+POST	/bonus-declarations/{declarationId}/withdraw	money	Withdrew a proposed declaration
+POST	/claims	claims	Registered a new claim
+POST	/claims/{claimId}/assessments	claims	Submitted a claim assessment
+PUT	/claims/{claimId}/accidental	claims	Recorded whether a funeral claim's death was accidental
+POST	/claims/{claimId}/settlement-decision	claims	Approved or rejected the claim
+POST	/claims/{claimId}/reopen	claims	Reopened a rejected or settled claim
+POST	/claims/{claimId}/evidence	claims	Attached evidence to a claim
+POST	/claims/{claimId}/document-requests	claims	Asked the claimant for a document
+POST	/claims/{claimId}/document-requests/{requestId}/withdrawal	claims	Withdrew an open document request
+POST	/notifications/templates/{templateId}/test	settings	Sent one template
+POST	/notifications/dispatches/{dispatchId}/resend	settings	Sent again a message that failed or was not sent
+PUT	/notifications/templates/{templateId}	settings	Reworded one template
+POST	/agents	people	Onboarded an agent
+PUT	/agents/{agentId}/placement	people	Changed the channel an agent sells through and the branch it sells from
+POST	/agents/{agentId}/login	people	Gave the agent a login
+DELETE	/agents/{agentId}/login	people	Closed the agent's login and signed them out everywhere
+POST	/agents/{agentId}/login/password	people	Sent an open login a new password
+POST	/agents/{agentId}/suspend	people	Suspended an active agent's license
+POST	/agents/{agentId}/reactivate	people	Reactivated a suspended agent's license back to active
+PUT	/agents/{agentId}/commission-rate	people	Set the percentage of premium this agent earns
+POST	/commission-accruals/{accrualId}/correction	people	Corrected a commission booked at the wrong amount
+POST	/agents/{agentId}/commission-statements/{statementId}/payout	people	Requested payout of a closed commission statement
+POST	/commission-statements/{statementId}/payout-approval	people	Released a commission payout
+POST	/commission-statements/{statementId}/payout-refusal	people	Refused a commission payout
+POST	/commission-plans/{planId}/approval	people	Approved a proposed plan or agent rate
+POST	/commission-plans/{planId}/rejection	people	Rejected a proposed plan or agent rate
+POST	/commission-plans	people	Wrote a commission plan for a product
+POST	/chart-of-accounts	money	Created a chart-of-account row
+PUT	/chart-of-accounts/{accountCode}	money	Updated a chart-of-account row
+DELETE	/chart-of-accounts/{accountCode}	money	Deleted a chart-of-account row
+POST	/chart-of-accounts/{accountCode}/activate	money	Returned a retired account to service
+POST	/chart-of-accounts/{accountCode}/deactivate	money	Retired an account from new postings
+POST	/finance/periods/{period}/closing	money	Started closing an open period
+POST	/finance/periods/{period}/lock	money	Locked a closing period
+POST	/finance/periods/{period}/reopen-request	money	Asked for a locked period to be reopened
+POST	/finance/periods/{period}/reopen-approval	money	Approved reopening a period
+POST	/finance/accounting-policies	money	Proposed an election
+POST	/finance/accounting-policies/baseline-sign-off/finance	money	Signed off the accounting baseline as finance
+POST	/finance/accounting-policies/baseline-sign-off/actuary	money	Signed off the accounting baseline as the actuary
+POST	/finance/share-register/shareholders	money	Registered a shareholder
+PUT	/finance/share-register/shareholders/{shareholderId}	money	Changed a shareholder's details
+PUT	/finance/share-register/classes/{classCode}	money	Set a class's nominal value per share
+POST	/finance/share-register/issues	money	Recorded an issue of shares for cash
+POST	/finance/share-register/issues/{issueId}/withdrawal	money	Withdrew a share issue
+POST	/finance/share-register/issues/{issueId}/approval	money	Approved a share issue
+POST	/finance/share-register/issues/{issueId}/rejection	money	Rejected a share issue
+PUT	/finance/share-register/capital/minimum	money	Set the minimum paid-up capital from TIRA
+POST	/finance/accounting-policies/{electionId}/approval	money	Approved an accounting policy election
+POST	/finance/accounting-policies/{electionId}/rejection	money	Rejected an accounting policy election
+POST	/finance/unposted-events/{id}/retry	money	Posted a queued event with the rules in force now
+POST	/finance/unposted-events/{id}/dismissal	money	Asked to close a queued event without posting it
+POST	/finance/unposted-events/{id}/dismissal/confirmation	money	Confirmed a dismissal asked for
+POST	/finance/unposted-events/{id}/dismissal/refusal	money	Refused a dismissal asked for
+POST	/finance/manual-journals	money	Prepared a manual journal
+PUT	/finance/manual-journals/{id}	money	Changed a draft
+POST	/finance/manual-journals/{id}/submission	money	Submitted a draft for approval
+POST	/finance/manual-journals/{id}/withdrawal	money	Withdrew a submitted journal back to draft
+POST	/finance/manual-journals/{id}/approval	money	Approved and posted a submitted journal
+POST	/finance/manual-journals/{id}/rejection	money	Rejected a submitted journal
+POST	/finance/manual-journals/{id}/reversal	money	Drafted the reversal of a posted journal
+POST	/finance/manual-journals/{id}/documents	money	Attached a supporting document to a draft
+DELETE	/finance/manual-journals/{id}/documents/{documentRef}	money	Removed a document from a draft
+POST	/finance/manual-journals/{id}/lines	money	Replaced a draft's lines from a CSV or Excel file
+POST	/finance/journal-templates	money	Saved a recurring template
+POST	/ifrs17/periods/{period}/extracts	money	Made the period's extract for the IFRS 17 engine
+POST	/ifrs17/engine-runs	money	Uploaded an engine's results
+POST	/ifrs17/engine-runs/{id}/approval	money	Approved an IFRS 17 engine run
+POST	/ifrs17/engine-runs/{id}/rejection	money	Rejected with a reason
+POST	/ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/explanation	money	Explained a difference between the ledger and the engine
+POST	/ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/acceptance	money	Accepted an explained difference
+POST	/ifrs17/periods/{period}/expense-allocations	money	Prepared the month's expense allocation
+POST	/ifrs17/expense-allocations/{id}/approval	money	Approved an expense allocation
+POST	/ifrs17/expense-allocations/{id}/rejection	money	Rejected with a reason
+POST	/ifrs17/year-end/{year}/closes	money	Prepared the close of the year
+POST	/ifrs17/year-end-closes/{id}/approval	money	Approved the year-end close
+POST	/ifrs17/year-end-closes/{id}/rejection	money	Rejected with a reason
+POST	/access/roles	people	Created a role of the administrator's own
+PUT	/access/roles/{roleId}	people	Changed a role's name
+POST	/access/users	people	Added a staff user
+PUT	/access/users/{userId}/access	people	Set a user's roles and single permissions
+PUT	/access/users/{userId}/active	people	Deactivated or reactivated a user
+PUT	/access/users/{userId}/contact	people	Set the phone a staff member's sign-in code goes to
+POST	/access/users/{userId}/password-reset	people	Sent a user a new password
+POST	/access/changes/{changeId}/approval	people	Approved a pending change
+POST	/access/changes/{changeId}/rejection	people	Rejected a pending change
+POST	/quotations/scheme/pdf	policies	Made a group funeral scheme quotation
+POST	/quotations/pdf	policies	Made a quotation
+POST	/agent-quotations	policies	Recorded that the customer agreed to a quotation
+DELETE	/agent-quotations/{quotationId}	policies	Recorded that the customer did not go ahead
+POST	/agent-quotations/{quotationId}/proposal	policies	Submitted the saved quotation as a proposal to the underwriter
+POST	/parties/{partyId}/portal-access	policies	Invited a client to the customer portal
+DELETE	/parties/{partyId}/portal-access	policies	Revoked a client's portal access
+POST	/parties/{partyId}/portal-access/resend	policies	Sent the set-your-password link again
+POST	/customer/policies/{policyNumber}/withdrawals	policies	Asked for money back off the policy's balance
+POST	/customer/products/{productId}/quote	policies	Asked for a price
+POST	/public/visits	policies	Opened the public quote link
+POST	/public/products/{productId}/quote	policies	Asked for a price on the public quote link
+POST	/public/phone-codes	policies	Asked for a phone code
+POST	/public/phone-codes/check	policies	Checked a phone code
+POST	/public/applications	policies	Applied on the public quote link
+POST	/customer/applications	policies	Asked for a product
+POST	/customer/messages/{messageId}/read	policies	Marked a message read
+PUT	/organisation/profile	settings	Saved the company's profile
+PUT	/organisation/branding	settings	Saved the branding and document layout
+POST	/organisation/logo	settings	Uploaded the logo
+DELETE	/organisation/logo	settings	Removed the logo
+POST	/organisation/signatories	settings	Added a signatory
+PUT	/organisation/signatories/{signatoryId}	settings	Changed a signatory
+POST	/organisation/signatories/{signatoryId}/signature	settings	Uploaded a signatory's signature image
+PUT	/organisation/branches/{code}	settings	Added or changed a branch
+POST	/organisation/preview	settings	Previewed a sample receipt
+POST	/parties/individuals	people	Registered an individual
+PUT	/parties/individuals/{partyId}	people	Corrected a person's recorded details
+PUT	/parties/corporates/{partyId}	people	Corrected a company's recorded details
+POST	/parties/corporates	people	Registered a corporate
+PUT	/parties/{partyId}/language	people	Changed a client's language
+POST	/parties/{partyId}/documents	people	Filed a document on a client
+POST	/parties/{partyId}/kyc-evidence	people	Uploaded a KYC evidence file
+POST	/parties/{partyId}/kyc	people	Submitted KYC evidence and updated verification status
+POST	/parties/{partyId}/groups/{groupId}/members	people	Added a group member
+POST	/receipts	money	Recorded a receipt for premium the gateway did not pull
+POST	/receipts/{receiptId}/approval	money	Confirmed a receipt someone else recorded
+POST	/receipts/{receiptId}/rejection	money	Refused a receipt someone else recorded
+POST	/disbursements/{disbursementId}/eft-execution	money	Recorded that finance executed an EFT in the bank
+POST	/webhooks/mobile-money-callback	money	Mobile money result received
+POST	/policies/manual-issue	policies	Issued a policy by hand
+POST	/policies/{policyNumber}/endorsements	policies	Applied an endorsement
+PUT	/policies/{policyNumber}/beneficiaries	policies	Replaced the beneficiary designation set
+POST	/policies/{policyNumber}/suspend	policies	Suspended an active policy
+POST	/policies/{policyNumber}/resume	policies	Resumed a suspended policy back to active
+POST	/policies/{policyNumber}/reinstate	policies	Reinstated a lapsed policy
+POST	/policies/{policyNumber}/paid-up	policies	Made a savings policy paid-up
+POST	/policies/{policyNumber}/surrender	policies	Requested a customer surrender
+POST	/surrender-requests/{surrenderRequestId}/approve	policies	Approved a surrender
+POST	/policies/{policyNumber}/covered-lives	policies	Added a life to an in-force funeral policy
+POST	/policies/{policyNumber}/covered-lives/{coveredLifeId}/promotion	policies	Promoted a name-only covered life to a registered party at claim
+POST	/policies/{policyNumber}/takeover	policies	Spouse took over a funeral policy
+POST	/policies/{policyNumber}/covered-lives/{coveredLifeId}/removal	policies	Took a dependant off a funeral policy at the next premium date
+POST	/group-schemes/{policyNumber}/families	policies	Added a family to a group funeral scheme
+POST	/group-schemes/{policyNumber}/funeral-joiners	policies	Added families from the association's file
+POST	/group-schemes/{policyNumber}/members/{policyMemberId}/lives	policies	Added a life to a member's family
+POST	/group-schemes/{policyNumber}/covered-lives/{coveredLifeId}/removal	policies	Removed a dependant from a member's family
+POST	/group-schemes/{policyNumber}/members/{policyMemberId}/departure	policies	Removed a member and their family
+POST	/group-schemes	policies	Issued a master group policy with its opening member schedule
+POST	/group-schemes/{policyNumber}/agreements	policies	Added a year's agreement
+POST	/group-schemes/{policyNumber}/agent-of-record	policies	Corrected who earns commission on a scheme
+POST	/group-schemes/{policyNumber}/members	policies	Added one life to an existing scheme
+POST	/credit-life-schemes/{policyNumber}/enrolments	policies	Submitted a lender's enrolment schedule
+POST	/credit-life-schemes/{policyNumber}/exits	policies	Submitted a lender's monthly exits file
+POST	/credit-life-schemes/{policyNumber}/exits/{submissionId}/acceptance	policies	Approved credit life exits
+POST	/credit-life-schemes/{policyNumber}/exits/{submissionId}/withdrawal	policies	Withdrew a submission nobody should accept
+POST	/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/acceptance	policies	Approved credit life enrolments
+POST	/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/withdrawal	policies	Withdrew a credit life enrolment file
+PUT	/group-schemes/{policyNumber}/free-cover-limit	policies	Changed a scheme's free cover limit
+POST	/policies/{policyNumber}/loans	money	Originated a new policy loan
+POST	/loans/{loanId}/forced-lapse-evaluation	money	Ran the forced-lapse shortfall test for one loan
+POST	/loans/{loanId}/payout-approval	money	Released a loan's payout
+POST	/loans/{loanId}/payout-refusal	money	Refused a loan's payout
+POST	/loans/{loanId}/payment-request	money	Asked the payer's phone for a loan repayment
+POST	/products	products	Created a new product definition
+PUT	/products/{productId}/portfolio	products	Corrected a draft product's IFRS 17 portfolio
+POST	/account-charges	products	Created an account charge
+POST	/account-charges/{chargeId}/withdrawal	products	Stopped offering an account charge
+POST	/account-charges/{chargeId}/reinstatement	products	Offered an account charge again
+PUT	/account-charges/setting	products	Set the organisation's rule
+PUT	/products/{productId}/description	products	Changed a product's description
+PUT	/products/{productId}/online-listing	products	Offered the product online or not
+POST	/products/{productId}/versions	products	Published a new product version
+POST	/products/{productId}/premium-quote	products	Priced a product for one applicant
+POST	/products/{productId}/versions/{versionId}/group-funeral-quote	products	Priced a group funeral scheme and check every family against the plan
+POST	/products/{productId}/versions/{versionId}/funeral-quote	products	Priced a family on one funeral plan
+PUT	/products/{productId}/versions/{versionId}/exclusion-periods	products	Set or clear a version's policy-term exclusion windows
+POST	/regulatory-returns	settings	Generated a return for a period
+POST	/reinsurance-statements/{id}/settlements	products	Recorded a settlement of an approved statement
+POST	/reinsurance-settlements/{settlementId}/approval	products	Confirmed a settlement
+POST	/reinsurance-settlements/{settlementId}/refusal	products	Refused a settlement
+POST	/treaties	products	Wrote a reinsurance treaty
+POST	/treaties/{treatyId}/approval	products	Approved a proposed treaty
+POST	/treaties/{treatyId}/rejection	products	Rejected a proposed treaty with a reason
+POST	/treaties/{treatyId}/end	products	Ended a treaty early
+POST	/treaties/{treatyId}/statements	products	Prepared a quarter's statement
+PUT	/reinsurance-statements/{statementId}	products	Entered a reinsurer's statement
+POST	/reinsurance-statements/{statementId}/documents	products	Attached the reinsurer's statement
+POST	/reinsurance-statements/{statementId}/submission	products	Submitted for approval
+POST	/reinsurance-statements/{statementId}/withdrawal	products	Sent a reinsurer's statement back to draft
+POST	/reinsurance-statements/{statementId}/approval	products	Approved a reinsurer's statement
+POST	/reinsurance-statements/{statementId}/rejection	products	Rejected with a reason
+POST	/reports/settings/solvency-factors	settings	Published a new version of the solvency factors
+POST	/reports/rebuild	settings	Rebuilt this tenant's reporting data from the audit journal
+POST	/underwriting/cases	policies	Submitted a new business application for underwriting
+POST	/underwriting/cases/group	policies	Proposed a group scheme
+POST	/underwriting/cases/{caseId}/assessments	policies	Submitted a risk assessment
+POST	/underwriting/cases/{caseId}/decision	policies	Recorded the underwriting decision
+PUT	/underwriting/cases/{caseId}/annuity-choice	policies	Recorded or changed an annuity case's choice
+PUT	/underwriting/cases/{caseId}/deferred-annuity-choice	policies	Recorded or changed a deferred annuity case's retirement age
+PUT	/underwriting/cases/{caseId}/funeral-application	policies	Recorded or replaced a funeral case's plan and dependants
+PUT	/underwriting/cases/{caseId}/unit-linked-choice	policies	Recorded or replaced a unit-linked case's choice
+POST	/underwriting/cases/{caseId}/group-schedule	policies	Replaced a group funeral proposal's members and families from a CSV file
+POST	/underwriting/group-schedule/reading	policies	Checked a group funeral schedule file
+PUT	/underwriting/cases/{caseId}/sale	policies	Recorded the channel the sale came through and the branch it belongs to
+PUT	/underwriting/cases/{caseId}/account-charges	policies	Chose the account charges on a proposal
+POST	/underwriting/cases/{caseId}/referral	policies	Referred a borderline case to a senior underwriter
+POST	/underwriting/cases/{caseId}/return	policies	Returned the proposal to the agent for amendment
+PUT	/underwriting/cases/{caseId}/terms	policies	Amended the terms on a returned proposal
+PUT	/underwriting/cases/{caseId}/applicant	policies	Corrected the client's details on a returned proposal
+POST	/underwriting/cases/{caseId}/resubmit	policies	Resubmitted a returned proposal
+POST	/underwriting/cases/{caseId}/disclosures	policies	Recorded what the applicant declared on the proposal form
+POST	/funds	money	Proposed a fund for the register
+POST	/funds/{code}/approval	money	Approved a proposed fund
+POST	/funds/{code}/rejection	money	Rejected a proposed fund with a reason
+POST	/funds/{code}/closure	money	Closed a fund to new money
+POST	/fund-prices	money	Proposed a price for a fund and valuation date
+POST	/fund-prices/csv	money	Proposed fund prices from a CSV file
+POST	/fund-prices/{priceId}/approval	money	Approved a proposed price
+POST	/fund-prices/{priceId}/withdrawal	money	Withdrew a proposed price that was wrong
+POST	/fund-prices/{priceId}/correction	money	Proposed a corrected price for an approved one
+POST	/price-adjustments/{adjustmentId}/settlement	money	Paid an adjustment owed to the customer
+POST	/price-adjustments/{adjustmentId}/waiver	money	Waived an adjustment
+POST	/policies/{policyNumber}/units/payee	money	Named the payee of a maturity or lapse payout
+PUT	/policies/{policyNumber}/premium-split	money	Redirected future premiums to a new split
+POST	/policies/{policyNumber}/switches	money	Switched units between funds
+POST	/policies/{policyNumber}/withdrawals	money	Requested a partial withdrawal
+POST	/withdrawals/{withdrawalId}/approval	money	Approved a partial withdrawal
+POST	/policies/{policyNumber}/top-ups	money	Collected a top-up
+POST	/policies/{policyNumber}/top-ups/received	money	Recorded a top-up already received by hand
+POST	/policies/{policyNumber}/statements	money	Filed an on-demand unit statement for any period

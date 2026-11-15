@@ -20,6 +20,7 @@ public final class MigrationTestSupport {
     private MigrationTestSupport() {}
 
     static final String EVENT_PUBLICATION = "db-migrations/audit/V4__event_publication.sql";
+    static final String ACTIVITY = "db-migrations/audit/V5__activity.sql";
 
     public static void applyMigration(String jdbcUrl, String username, String password, String... migrationPaths)
             throws IOException, SQLException {
@@ -45,6 +46,20 @@ public final class MigrationTestSupport {
             // after-commit delivery there, so every test database needs it, whichever modules it migrates. Re-runnable.
             try (Statement statement = connection.createStatement()) {
                 statement.execute(Files.readString(Path.of(EVENT_PUBLICATION)));
+            }
+            // The activity log (2026-11-14): AuditLogEntry maps audit_log.action_id, so wherever a test creates the audit
+            // schema it gets audit/V5 too -- once, since V5 creates a table.
+            try (Statement statement = connection.createStatement();
+                 var exists = statement.executeQuery("SELECT to_regclass('audit.audit_log') IS NOT NULL,"
+                     + " to_regclass('audit.activity') IS NOT NULL")) {
+                exists.next();
+                boolean audit = exists.getBoolean(1);
+                boolean activity = exists.getBoolean(2);
+                if (audit && !activity) {
+                    try (Statement v5 = connection.createStatement()) {
+                        v5.execute(Files.readString(Path.of(ACTIVITY)));
+                    }
+                }
             }
         }
     }
