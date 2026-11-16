@@ -26,13 +26,15 @@ test.describe('staff communications', () => {
 
     // The four messages of the offer lifecycle. Grouped by key, so each appears once as a panel
     // heading regardless of how many channel/language variants sit under it.
-    for (const message of ['Offer made', 'Offer closing', 'Cover started', 'Offer expired']) {
+    for (const message of ['Offer made', 'Offer closing', 'Cover started', 'Offer closed unpaid']) {
       await expect(page.getByRole('heading', { name: message })).toBeVisible();
     }
 
     // The placeholders an editor must not delete. Rendered as chips precisely so somebody
     // rewriting the wording can see which tokens are real before they remove one.
-    await expect(page.getByText('{{expiryDate}}').first()).toBeVisible();
+    // The card reads as the customer sees it (sample values); the tokens show once a wording is opened to edit.
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    await expect(page.getByTitle(/Inserts \{\{expiryDate\}\}/).first()).toBeVisible();
   });
 
   test('the outbox is reachable and honest about what it does not know', async ({ page }) => {
@@ -43,8 +45,8 @@ test.describe('staff communications', () => {
     // Either a populated outbox or an honest empty state -- never a spinner that never resolves.
     // Same idiom the other list screens use, and it keeps this independent of whether anything
     // happens to have been sent in this tenant today.
-    const table = page.getByRole('table', { name: 'Messages sent to customers' });
-    const empty = page.getByText('Nothing sent yet');
+    const table = page.getByRole('list', { name: 'Messages' });
+    const empty = page.getByText('No messages', { exact: true });
     await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
 
     // The status filter round-trips through the URL, like every other list here.

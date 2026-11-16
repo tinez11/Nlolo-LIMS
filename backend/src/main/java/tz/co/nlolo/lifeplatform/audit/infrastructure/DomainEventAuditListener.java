@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.audit.infrastructure;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
+import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
 import tz.co.nlolo.lifeplatform.audit.domain.FailedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,6 +61,19 @@ public class DomainEventAuditListener {
         // Read here, on the request's own thread after its commit: the person's action that raised this event, if any
         // (activity log, 2026-11-14). A scheduled run or a redelivery has none.
         UUID actionId = tz.co.nlolo.lifeplatform.audit.application.ActivityContext.current();
+        // The event's own tenant, not the thread's (2026-11-16): a redelivery runs on the scheduler thread, where no
+        // tenant is set, and row-level security refused both the row and its dead letter -- the swallowed error then
+        // marked the delivery complete, so the line was lost for good. Every other listener does the same.
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(envelope.tenantId());
+        try {
+            write(envelope, actionId);
+        } finally {
+            if (previousTenant != null) TenantContext.set(previousTenant); else TenantContext.clear();
+        }
+    }
+
+    private void write(DomainEventEnvelope<?> envelope, UUID actionId) {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 String payloadJson = writePayloadJson(envelope);

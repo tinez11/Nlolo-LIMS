@@ -19,7 +19,20 @@ import java.util.Map;
 @Component
 public class ActivityLabels {
 
-    public record Label(String kind, String text) {}
+    /**
+     * The kind that marks a route the log leaves out (the user, 2026-11-16: quoting stores nothing anywhere, not even
+     * the prospect's name in this log). Two sorts: a route that only works something out -- a price, a quotation PDF,
+     * a preview, a file read back -- and changes nothing, as viewing is not recorded either; and an agent's quotation
+     * confirmed or discarded before it reaches the underwriter, which is deleted when discarded (2026-10-20) and must
+     * leave nothing behind. Submitting it as a proposal is recorded.
+     */
+    public static final String UNRECORDED = "unrecorded";
+
+    public record Label(String kind, String text) {
+        public boolean recorded() {
+            return !UNRECORDED.equals(kind);
+        }
+    }
 
     private final Map<String, Label> labels = new HashMap<>();
 

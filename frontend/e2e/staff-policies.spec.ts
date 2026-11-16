@@ -150,9 +150,11 @@ test.describe('staff policies', () => {
       }
     });
 
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Life Platform' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /staff/i })).toBeVisible();
+    // The realm picker went with the universal login (2026-11-06): '/' now opens a signed-in person's console. The
+    // public quote link is the unauthenticated route, opened here by a staff session that holds a token.
+    const publicCall = page.waitForResponse((r) => r.url().includes('/api/public/'), { timeout: 30_000 });
+    await page.goto('/quote');
+    await publicCall;
 
     expect(authorizedRequests).toEqual([]);
   });

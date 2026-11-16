@@ -2,7 +2,7 @@
 POST	/products/{productId}/rate-declarations	money	Proposed a declared rate
 POST	/rate-declarations/{declarationId}/approve	money	Approved a proposed rate
 POST	/rate-declarations/{declarationId}/withdraw	money	Withdrew a proposal
-POST	/products/{productId}/versions/{versionId}/savings-quote	money	Priced a savings product before any policy exists
+POST	/products/{productId}/versions/{versionId}/savings-quote	unrecorded	Priced a savings product before any policy exists
 POST	/policies/{policyNumber}/account/statements	money	Filed a statement as a PDF
 POST	/policies/{policyNumber}/account/withdrawals	money	Requested a partial withdrawal
 POST	/account-withdrawals/{withdrawalId}/approve	money	Approved a withdrawal
@@ -16,7 +16,7 @@ POST	/account-adjustments/{adjustmentId}/reject	money	Rejected an adjustment
 POST	/policies/{policyNumber}/account/deposit/maturity-instruction	money	Recorded the client's choice for the end of the running term
 POST	/policies/{policyNumber}/account/deposit/payout	money	Paid a matured deposit to a payee finance records
 POST	/policies/{policyNumber}/account/term-account/payout	money	Paid a matured term account to a payee finance records
-POST	/annuity-quotes	money	Priced an annuity purchase without storing anything
+POST	/annuity-quotes	unrecorded	Priced an annuity purchase without storing anything
 PUT	/policies/{policyNumber}/annuity/vesting/instruction	money	Recorded when and into what a pension vests
 POST	/policies/{policyNumber}/annuity/vesting/reconfirm-age	money	Re-confirmed proof of age after the party record changed
 POST	/payouts/{instalmentId}/review	claims	Reviewed a due payout
@@ -133,16 +133,16 @@ PUT	/access/users/{userId}/contact	people	Set the phone a staff member's sign-in
 POST	/access/users/{userId}/password-reset	people	Sent a user a new password
 POST	/access/changes/{changeId}/approval	people	Approved a pending change
 POST	/access/changes/{changeId}/rejection	people	Rejected a pending change
-POST	/quotations/scheme/pdf	policies	Made a group funeral scheme quotation
-POST	/quotations/pdf	policies	Made a quotation
-POST	/agent-quotations	policies	Recorded that the customer agreed to a quotation
-DELETE	/agent-quotations/{quotationId}	policies	Recorded that the customer did not go ahead
+POST	/quotations/scheme/pdf	unrecorded	Made a group funeral scheme quotation
+POST	/quotations/pdf	unrecorded	Made a quotation
+POST	/agent-quotations	unrecorded	Recorded that the customer agreed to a quotation
+DELETE	/agent-quotations/{quotationId}	unrecorded	Recorded that the customer did not go ahead
 POST	/agent-quotations/{quotationId}/proposal	policies	Submitted the saved quotation as a proposal to the underwriter
 POST	/parties/{partyId}/portal-access	policies	Invited a client to the customer portal
 DELETE	/parties/{partyId}/portal-access	policies	Revoked a client's portal access
 POST	/parties/{partyId}/portal-access/resend	policies	Sent the set-your-password link again
 POST	/customer/policies/{policyNumber}/withdrawals	policies	Asked for money back off the policy's balance
-POST	/customer/products/{productId}/quote	policies	Asked for a price
+POST	/customer/products/{productId}/quote	unrecorded	Asked for a price
 POST	/public/visits	policies	Opened the public quote link
 POST	/public/products/{productId}/quote	policies	Asked for a price on the public quote link
 POST	/public/phone-codes	policies	Asked for a phone code
@@ -158,7 +158,7 @@ POST	/organisation/signatories	settings	Added a signatory
 PUT	/organisation/signatories/{signatoryId}	settings	Changed a signatory
 POST	/organisation/signatories/{signatoryId}/signature	settings	Uploaded a signatory's signature image
 PUT	/organisation/branches/{code}	settings	Added or changed a branch
-POST	/organisation/preview	settings	Previewed a sample receipt
+POST	/organisation/preview	unrecorded	Previewed a sample receipt
 POST	/parties/individuals	people	Registered an individual
 PUT	/parties/individuals/{partyId}	people	Corrected a person's recorded details
 PUT	/parties/corporates/{partyId}	people	Corrected a company's recorded details
@@ -216,9 +216,9 @@ PUT	/account-charges/setting	products	Set the organisation's rule
 PUT	/products/{productId}/description	products	Changed a product's description
 PUT	/products/{productId}/online-listing	products	Offered the product online or not
 POST	/products/{productId}/versions	products	Published a new product version
-POST	/products/{productId}/premium-quote	products	Priced a product for one applicant
-POST	/products/{productId}/versions/{versionId}/group-funeral-quote	products	Priced a group funeral scheme and check every family against the plan
-POST	/products/{productId}/versions/{versionId}/funeral-quote	products	Priced a family on one funeral plan
+POST	/products/{productId}/premium-quote	unrecorded	Priced a product for one applicant
+POST	/products/{productId}/versions/{versionId}/group-funeral-quote	unrecorded	Priced a group funeral scheme and check every family against the plan
+POST	/products/{productId}/versions/{versionId}/funeral-quote	unrecorded	Priced a family on one funeral plan
 PUT	/products/{productId}/versions/{versionId}/exclusion-periods	products	Set or clear a version's policy-term exclusion windows
 POST	/regulatory-returns	settings	Generated a return for a period
 POST	/reinsurance-statements/{id}/settlements	products	Recorded a settlement of an approved statement
@@ -246,7 +246,7 @@ PUT	/underwriting/cases/{caseId}/deferred-annuity-choice	policies	Recorded or ch
 PUT	/underwriting/cases/{caseId}/funeral-application	policies	Recorded or replaced a funeral case's plan and dependants
 PUT	/underwriting/cases/{caseId}/unit-linked-choice	policies	Recorded or replaced a unit-linked case's choice
 POST	/underwriting/cases/{caseId}/group-schedule	policies	Replaced a group funeral proposal's members and families from a CSV file
-POST	/underwriting/group-schedule/reading	policies	Checked a group funeral schedule file
+POST	/underwriting/group-schedule/reading	unrecorded	Checked a group funeral schedule file
 PUT	/underwriting/cases/{caseId}/sale	policies	Recorded the channel the sale came through and the branch it belongs to
 PUT	/underwriting/cases/{caseId}/account-charges	policies	Chose the account charges on a proposal
 POST	/underwriting/cases/{caseId}/referral	policies	Referred a borderline case to a senior underwriter
