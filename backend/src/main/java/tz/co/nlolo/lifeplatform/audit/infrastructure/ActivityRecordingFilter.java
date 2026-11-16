@@ -100,6 +100,7 @@ public class ActivityRecordingFilter extends OncePerRequestFilter {
         if (pattern == null || unrecorded(pattern)) return;   // never reached a controller, or not a person's act
         Map<String, String> vars = (Map<String, String>) req.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
         ActivityLabels.Label label = labels.find(req.getMethod(), pattern);
+        if (label != null && !label.recorded()) return;   // a calculation, or a prospect quotation before the underwriter: kept nowhere
         JsonNode body = readJson(req.getContentAsByteArray(), req.getContentType());
         JsonNode answer = readJson(res.getContentAsByteArray(), res.getContentType());
         RecordRefs.Ref ref = RecordRefs.of(vars, pattern);

@@ -31,7 +31,9 @@ function tzs(cents: number): string {
 async function ensureWithholdingRule(page: Page, financePage: Page, today: string): Promise<void> {
   await financePage.goto('/staff/withholding-rules');
   const list = financePage.getByRole('list', { name: 'Withholding rules' });
-  const approved = list.getByRole('listitem').filter({ hasText: '10% from Annuity income' }).filter({ hasText: /approved by/ });
+  // In force only: a rule past its last day reads Ended and withholds nothing (2026-11-10), so it cannot be reused.
+  const approved = list.getByRole('listitem').filter({ hasText: '10% from Annuity income' }).filter({ hasText: /approved by/ })
+    .filter({ hasNotText: /Ended/ });
   // A second rule overlapping an approved one is refused at approval, so a rerun reuses the first
   // run's rule rather than ending it: ending is today-or-later, and today's instalment must still be
   // withheld at 10% for the figures below.
@@ -57,7 +59,7 @@ async function ensureWithholdingRule(page: Page, financePage: Page, today: strin
   await toApprove.first().getByRole('button', { name: 'Approve rule' }).click();
   await expect(
     page.getByRole('list', { name: 'Withholding rules' }).getByRole('listitem')
-      .filter({ hasText: '10% from Annuity income' }).filter({ hasText: /approved by/ }).first(),
+      .filter({ hasText: '10% from Annuity income' }).filter({ hasText: /approved by/ }).filter({ hasNotText: /Ended/ }).first(),
   ).toBeVisible({ timeout: 15_000 });
 }
 

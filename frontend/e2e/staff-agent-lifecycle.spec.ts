@@ -44,7 +44,8 @@ test.describe('staff agent lifecycle', () => {
   /** An onboarded agent can sign in only once staff give them a login (2026-10-28); the login follows the agent. */
   test('gives a new agent a login, which closes while they are suspended and opens again after', async ({ page }) => {
     await onboardRealAgent(page);
-    const login = page.getByRole('region', { name: 'Agent login' });
+    // The panel is a titled section, not a named region: found by its heading.
+    const login = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Agent login' }) });
     await expect(page.getByText('No login yet — this agent cannot sign in')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Give a login' }).click();

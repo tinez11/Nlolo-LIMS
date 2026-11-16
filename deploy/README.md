@@ -1,6 +1,8 @@
 # Running the platform on a server
 
 The pilot deployment: one Linux server, Docker Compose, releases pushed from a developer's machine.
+**Doing it for the first time? Follow `DEPLOYMENT-GUIDE.md`** -- step by step, with why and how to check each step.
+This file is the short reference.
 Design: `backend/docs/superpowers/specs/2026-10-13-deployment-pilot-design.md`.
 
 Hostnames are **settings**, never spelled out in code or config. `APP_DOMAIN` is the console and the API;
