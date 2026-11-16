@@ -6,7 +6,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.UUID;
 
 /**
@@ -89,19 +89,21 @@ final class ProjectionSupport {
     }
 
     /** For a date-time business field, e.g. {@code PolicyLapsedPayload.lapsedAt} or {@code
-     * ClaimSettledPayload.settledAt}. Interpreted in UTC: this platform has no per-tenant reporting
-     * timezone, and every {@code occurredAt}-shaped instant elsewhere on it is read the same way. */
+     * ClaimSettledPayload.settledAt}. Read as the civil day in Tanzania (2026-11-15): read in UTC, an event in
+     * the first three hours of a quarter landed in the quarter before. Still a pure function of the instant. */
     static String quarterOfInstant(String isoInstant) {
-        return quarterOf(Instant.parse(isoInstant).atZone(ZoneOffset.UTC).toLocalDate());
+        return quarterOf(Instant.parse(isoInstant).atZone(CIVIL_ZONE).toLocalDate());
     }
+
+    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
 
     /** For an event whose payload carries no business timestamp at all -- verified against
      * asyncapi-events.yaml for {@code ClaimApproved}, {@code ClaimRejected} and {@code
-     * CessionRecorded} -- the envelope's own {@code occurredAt()}, in UTC. Replaces the former
+     * CessionRecorded} -- the envelope's own {@code occurredAt()}, on its civil day. Replaces the former
      * {@code currentQuarter()} ({@code LocalDate.now()}, JVM default zone), which was
      * replay-unsafe: see this class's javadoc. */
     static String quarterOfOccurrence(Instant occurredAt) {
-        return quarterOf(occurredAt.atZone(ZoneOffset.UTC).toLocalDate());
+        return quarterOf(occurredAt.atZone(CIVIL_ZONE).toLocalDate());
     }
 
     /**

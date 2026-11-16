@@ -17,7 +17,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -128,7 +127,7 @@ public class ClaimsEventListener {
             claimDimensionRepository.save(new ClaimDimension(tenantId, claimId, claimType, policyNumber));
         }
 
-        String period = ProjectionSupport.quarterOf(occurredAt.atZone(ZoneOffset.UTC).toLocalDate());
+        String period = ProjectionSupport.quarterOfOccurrence(occurredAt);
         ClaimsMovement movement = claimsMovementRepository
             .findByTenantIdAndPeriodAndClaimType(tenantId, period, claimType)
             .orElseGet(() -> new ClaimsMovement(tenantId, period, claimType, ProjectionSupport.UNKNOWN_CURRENCY));
