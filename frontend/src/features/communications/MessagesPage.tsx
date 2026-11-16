@@ -13,6 +13,7 @@ import { Input, Select } from '@/components/ui/input';
 import type { ApiError } from '@/lib/apiError';
 import { formatInstant } from '@/lib/dates';
 import { ChannelStatusBar } from './ChannelStatusBar';
+import { emailInUse, useChannels } from './useChannels';
 import { DispatchStatusBadge } from './DispatchStatusBadge';
 import { messageName } from './messageCatalog';
 
@@ -54,6 +55,9 @@ export function MessagesPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [policyText, setPolicyText] = useState(policy);
   const [open, setOpen] = useState<string | null>(null);
+  const channels = useChannels();
+  // With email not in use there is one channel, and nothing to choose between (2026-11-16).
+  const withEmail = emailInUse(channels);
 
   const load = useCallback(() => {
     searchDispatches({ sinceDays: days, status, channel, templateKey, policyNumber: policy, limit: PAGE })
@@ -78,7 +82,7 @@ export function MessagesPage() {
     <>
       <PageHeader title="Messages sent" description="What customers were told, and whether it reached them." />
       <div className="space-y-4 px-6 pb-8">
-        <ChannelStatusBar />
+        <ChannelStatusBar channels={channels} />
         {summary && <Summary summary={summary} onShow={(s) => set('status', s)} />}
 
         <div className="rounded-xl border border-border bg-surface shadow-card">
@@ -89,14 +93,16 @@ export function MessagesPage() {
             <div className="flex flex-wrap gap-1.5" aria-label="Status">
               {STATUS_FILTERS.map((s) => <FilterChip key={s.value} label={s.label} active={status === s.value} onClick={() => set('status', s.value)} />)}
             </div>
-            <label className="text-xs text-label">
-              Channel
-              <Select className="mt-1" value={channel} onChange={(e) => set('channel', e.target.value)}>
-                <option value="">SMS and email</option>
-                <option value="SMS">SMS</option>
-                <option value="EMAIL">Email</option>
-              </Select>
-            </label>
+            {withEmail && (
+              <label className="text-xs text-label">
+                Channel
+                <Select className="mt-1" value={channel} onChange={(e) => set('channel', e.target.value)}>
+                  <option value="">SMS and email</option>
+                  <option value="SMS">SMS</option>
+                  <option value="EMAIL">Email</option>
+                </Select>
+              </label>
+            )}
             <label className="text-xs text-label">
               Message
               <Select className="mt-1" value={templateKey} onChange={(e) => set('message', e.target.value)}>

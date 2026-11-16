@@ -69,8 +69,18 @@ export function buildRealm(realm) {
   r.waitIncrementSeconds = 60;
   r.maxFailureWaitSeconds = 900;
 
-  // Self-service reset needs mail to exist; until MAIL_ENABLED is true an admin resets a password instead.
-  r.resetPasswordAllowed = '$(env:MAIL_ENABLED)';
+  // Refresh-token rotation (2026-11-16, security audit M6): each refresh token works once, so a stolen one stops
+  // working the moment the real session refreshes, and the thief's use ends the real session -- which is noticed.
+  r.revokeRefreshToken = true;
+  r.refreshTokenMaxReuse = 0;
+
+  // Self-service reset is ON whatever MAIL_ENABLED says (2026-11-16). It used to follow MAIL_ENABLED, from before the
+  // reset by text existed -- which, with email off, took "Forgot your password?" off the sign-in page and left agents
+  // and customers no way back in. The reset flow texts a code through the platform; staff are sent nothing.
+  r.resetPasswordAllowed = true;
+  // Sign in by username, and the pages say "username", while email is not in use (2026-11-16, the user: "the email is
+  // not used"); the login theme also words the reset as text-only on this setting.
+  r.loginWithEmailAllowed = '$(env:MAIL_ENABLED)';
   r.smtpServer = {
     host: '$(env:MAIL_HOST)',
     port: '$(env:MAIL_PORT)',

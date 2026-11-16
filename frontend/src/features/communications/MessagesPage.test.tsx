@@ -36,7 +36,11 @@ describe('MessagesPage', () => {
     render(<MessagesPage />, { route: '/staff/notifications/messages' });
 
     expect(await screen.findByText('1,240')).toBeInTheDocument();
-    expect(screen.getByText(/Email:/).parentElement).toHaveTextContent('not in use — customers are reached by SMS');
+    // Email not in use is not shown at all (2026-11-16): not as a channel, and not as a filter.
+    const channels = await screen.findByRole('status', { name: 'How messages reach customers' });
+    expect(channels).toHaveTextContent('SMS: live — reaching customers');
+    expect(channels).not.toHaveTextContent('Email');
+    expect(screen.queryByLabelText('Channel')).not.toBeInTheDocument();
     expect(api.searchDispatches).toHaveBeenCalledWith(expect.objectContaining({ sinceDays: 7, limit: 200 }));
 
     await user.click(await screen.findByRole('button', { name: /Cover started/ }));

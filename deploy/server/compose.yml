@@ -9,12 +9,19 @@ x-logging: &logging
     max-size: "10m"
     max-file: "5"
 
+# No process in any container may gain privileges it did not start with (2026-11-16, security audit L2): a setuid
+# binary inside an image cannot be used to climb to root. Every image here starts as the user it needs, or drops
+# privileges itself, which this still allows (the Postgres image was started this way and accepted connections).
+x-hardening: &hardening
+  - no-new-privileges:true
+
 services:
 
   postgres:
     image: ${IMAGE_PREFIX}-postgres:${RELEASE}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     environment:
       POSTGRES_DB: lifeplatform
       POSTGRES_USER: postgres
@@ -37,6 +44,7 @@ services:
     image: chrislusf/seaweedfs:${SEAWEEDFS_VERSION}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     command: ["server", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data"]
     volumes:
       - objectdata:/data
@@ -55,6 +63,7 @@ services:
     image: wiremock/wiremock:${WIREMOCK_VERSION}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     command: ["--global-response-templating"]
     volumes:
       - ./mock-mobile-money:/home/wiremock:ro
@@ -63,6 +72,7 @@ services:
     image: ${IMAGE_PREFIX}-auth:${RELEASE}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -131,6 +141,7 @@ services:
     image: ${IMAGE_PREFIX}-backend:${RELEASE}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     # EXACTLY ONE. The platform runs 32 @Scheduled jobs with no cluster lock: a second instance would send every
     # reminder twice and run the bordereau and statement jobs concurrently.
     mem_limit: 2500m
@@ -185,6 +196,7 @@ services:
     image: ${IMAGE_PREFIX}-web:${RELEASE}
     restart: unless-stopped
     logging: *logging
+    security_opt: *hardening
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
       AUTH_DOMAIN: ${AUTH_DOMAIN}

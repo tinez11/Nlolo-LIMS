@@ -9,6 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 set -a; . ./.env; . ./versions.env; set +a
+. ./offsite.sh
 
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
 # Git Bash (the dress rehearsal runs this on Windows) rewrites arguments that look like absolute paths, turning the
@@ -32,20 +33,12 @@ echo "${RELEASE:-unknown}" > "$DIR/RELEASE"
 # Seven here; the off-server copies below are the ones that matter for losing the machine.
 ls -1d backups/*/ 2>/dev/null | sort | head -n -7 | xargs -r rm -rf
 
-if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
-  rc() {
-    docker run --rm -v "$PWD/backups:/data:ro" \
-      -e RCLONE_CONFIG_OFF_TYPE=s3 \
-      -e RCLONE_CONFIG_OFF_PROVIDER=Other \
-      -e RCLONE_CONFIG_OFF_ENDPOINT="$BACKUP_S3_ENDPOINT" \
-      -e RCLONE_CONFIG_OFF_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY" \
-      -e RCLONE_CONFIG_OFF_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_KEY" \
-      "rclone/rclone:$RCLONE_VERSION" "$@"
-  }
-  rc copy "/data/$STAMP" "off:$BACKUP_S3_BUCKET/daily/$STAMP"
-  [ "$(date +%u)" = "7" ] && rc copy "/data/$STAMP" "off:$BACKUP_S3_BUCKET/weekly/$STAMP"
-  rc delete --min-age 15d "off:$BACKUP_S3_BUCKET/daily" || true
-  rc delete --min-age 57d "off:$BACKUP_S3_BUCKET/weekly" || true
+if offsite_configured; then
+  # Encrypted on the way out (offsite.sh); fetch-backup.sh brings one back.
+  rc copy "/data/$STAMP" "safe:daily/$STAMP"
+  if [ "$(date +%u)" = "7" ]; then rc copy "/data/$STAMP" "safe:weekly/$STAMP"; fi
+  rc delete --min-age 15d "safe:daily" || true
+  rc delete --min-age 57d "safe:weekly" || true
 else
   echo "WARNING: BACKUP_S3_ENDPOINT is empty -- this backup exists only on this server, so it survives a bad" >&2
   echo "         release and not a lost machine. Fill the BACKUP_S3_* settings in .env." >&2

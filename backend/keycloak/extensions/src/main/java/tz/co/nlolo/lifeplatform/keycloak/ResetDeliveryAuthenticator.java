@@ -147,7 +147,10 @@ final class ResetDeliveryAuthenticator implements Authenticator {
             context.getEvent().clone().event(EventType.SEND_RESET_PASSWORD).user(user).error("too_many_reset_requests");
             return;
         }
-        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+        // Only where the realm has a mail server (2026-11-16): with email not in use, production leaves the SMTP host
+        // empty, and trying it anyway only logged a failure on every reset.
+        String mailHost = context.getRealm().getSmtpConfig() == null ? null : context.getRealm().getSmtpConfig().get("host");
+        if (user.getEmail() != null && !user.getEmail().isBlank() && mailHost != null && !mailHost.isBlank()) {
             emailLink(context, user);
         }
         String party = user.getFirstAttribute("party_id");

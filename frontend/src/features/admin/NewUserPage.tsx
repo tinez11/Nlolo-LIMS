@@ -64,7 +64,7 @@ export function NewUserPage() {
       <PageHeader
         breadcrumb={[{ label: 'Users', to: '/staff/users' }]}
         title="Add a user"
-        description="With an email they are sent a link to set their password; without one, you are given a one-time password to hand over."
+        description="Their first password is texted to the phone given here; without a phone, you are given a one-time password to hand over."
       />
       <FormLayout formId="new-user-form" outlineLabel="User sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>

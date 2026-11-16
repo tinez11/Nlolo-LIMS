@@ -259,7 +259,7 @@ const en = {
       notRequested: 'The payment was not requested',
     },
     messages: {
-      title: 'Messages', lead: 'What we have sent you by SMS and email.',
+      title: 'Messages', lead: 'What we have sent you by SMS.',
       none: 'No messages', noneLead: 'Messages about your policies and payments appear here.',
       notKept: 'The text of this message was not kept. Contact us if you need it again.', fresh: 'New',
     },
@@ -532,7 +532,7 @@ const sw: Words = {
       notRequested: 'Ombi la malipo halikutumwa',
     },
     messages: {
-      title: 'Ujumbe', lead: 'Tulichokutumia kwa SMS na barua pepe.',
+      title: 'Ujumbe', lead: 'Tulichokutumia kwa SMS.',
       none: 'Hakuna ujumbe', noneLead: 'Ujumbe kuhusu sera na malipo yako utaonekana hapa.',
       notKept: 'Maandishi ya ujumbe huu hayakuhifadhiwa. Wasiliana nasi ukiyahitaji tena.', fresh: 'Mpya',
     },

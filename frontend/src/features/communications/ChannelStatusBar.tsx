@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { getChannels } from '@/api/communications';
+import { emailInUse } from './useChannels';
 import type { ChannelStatus } from '@/api/types';
 
 const WORDS: Record<string, Record<string, { label: string; tone: 'ok' | 'warn' | 'off' }>> = {
@@ -27,15 +26,13 @@ const TONE = {
  * Whether customers are actually reached (2026-11-08). Before this, an SMS switched off showed as hundreds of
  * failures and nothing said that no customer was being told anything.
  */
-export function ChannelStatusBar() {
-  const [channels, setChannels] = useState<ChannelStatus[] | null>(null);
-  useEffect(() => {
-    getChannels().then(setChannels, () => setChannels([]));
-  }, []);
-  if (!channels || channels.length === 0) return null;
+export function ChannelStatusBar({ channels }: { channels: ChannelStatus[] | null }) {
+  // Email that is not in use is not a channel at all here (2026-11-16): nothing to report about it.
+  const shown = (channels ?? []).filter((c) => c.channel !== 'EMAIL' || emailInUse(channels));
+  if (shown.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2" role="status" aria-label="How messages reach customers">
-      {channels.map((c) => {
+      {shown.map((c) => {
         const w = WORDS[c.channel]?.[c.mode] ?? { label: c.mode, tone: 'warn' as const };
         return (
           <span key={c.channel} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${TONE[w.tone]}`}>

@@ -221,7 +221,7 @@ export function UserDetailPage() {
                   heading={confirm === 'password' ? 'Send a new password?' : confirm === 'deactivate'
                     ? `Deactivate ${user.displayName ?? user.username}?` : `Reactivate ${user.displayName ?? user.username}?`}
                   consequence={confirm === 'password'
-                    ? 'Their current password stops working. With an email they are sent a link; without one you are given a one-time password to hand over.'
+                    ? 'Their current password stops working. The new one is texted to their phone; without a phone you are given a one-time password to hand over.'
                     : confirm === 'deactivate'
                       ? 'Their login closes and every session they have open ends now. They keep their roles, unused.'
                       : 'Their login opens again with the roles they had.'}

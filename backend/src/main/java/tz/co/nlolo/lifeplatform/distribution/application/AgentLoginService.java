@@ -104,7 +104,7 @@ public class AgentLoginService {
                 + " instead, or close it first");
         }
         if (login == null) {
-            String username = email != null ? email.toLowerCase(Locale.ROOT) : phone;
+            String username = usernameFor(email, phone, emailEnabled);
             String userId = accounts.create(username, email, party.displayName(), tenantId, agent.partyId());
             login = new AgentLogin(tenantId, agentId, agent.partyId(), userId, username, delivery, by);
         } else {
@@ -184,6 +184,17 @@ public class AgentLoginService {
     static AgentLogin.Delivery deliveryFor(String email, String phone, boolean emailEnabled) {
         if (phone != null) return AgentLogin.Delivery.SMS_PASSWORD;
         return email != null && emailEnabled ? AgentLogin.Delivery.EMAIL_LINK : AgentLogin.Delivery.TEMPORARY_PASSWORD;
+    }
+
+    /**
+     * The new login's username: the phone number the password is texted to while email is switched off (2026-11-16,
+     * the user: "the email is not used"), the email only where there is no phone; with email on, the email as before.
+     */
+    static String usernameFor(String email, String phone, boolean emailEnabled) {
+        if (phone != null && (!emailEnabled || email == null)) {
+            return phone;
+        }
+        return email.toLowerCase(Locale.ROOT);
     }
 
     private AgentLoginIssued firstPassword(AgentLogin login, PartyDetailView party, AgentLogin.Delivery delivery) {

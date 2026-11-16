@@ -85,6 +85,20 @@ ssh deploy@SERVER 'cd platform && ./restore.sh backups/STAMP'            # REPLA
 **Run the `--scratch` restore before go-live and once a month.** A backup nobody has restored is a file, not a
 backup.
 
+**The off-server copy is encrypted** (2026-11-16) with `BACKUP_CRYPT_PASSWORD`, which `bootstrap-server.sh` generates:
+file contents and names, before they leave the server. **Keep a copy of that password off the server** (a password
+manager, the company safe). The off-server copy is for the day the server is lost, and the `.env` is lost with it;
+without the password no off-server backup can be read. `backup.sh` refuses to send anything off the server while
+`BACKUP_S3_*` is filled and the password is empty.
+
+To bring an off-server backup back (a new server, or a backup older than the seven kept on this one):
+
+```bash
+ssh deploy@SERVER 'cd platform && ./fetch-backup.sh'                       # lists daily/... and weekly/...
+ssh deploy@SERVER 'cd platform && ./fetch-backup.sh daily/STAMP'           # decrypts it into backups/STAMP
+ssh deploy@SERVER 'cd platform && ./restore.sh backups/STAMP --scratch'
+```
+
 ## 6. Adding a staff, agent or regulator login
 
 ```bash
@@ -136,8 +150,11 @@ can be deleted from the admin console. Their users are not moved: there were no 
 
 ## 8. Switching email on
 
-Email is off in the pilot: portal invites go by SMS, and Keycloak's self-service password reset is off.
-Turning it on needs no code change and no new release of the images:
+Email is not in use (`MAIL_ENABLED=false`): every first password and every reset goes by SMS, and nothing shows email
+as a way of sending. Agents and customers sign in with their phone number as the username, the sign-in page asks for
+"Your username", and "Forgot your password?" texts a six-digit code (staff are sent nothing; an administrator resets
+theirs). Email addresses may still be recorded on clients, branches and the letterhead as contact details.
+Turning email on needs no code change and no new release of the images:
 
 1. Open an account with a transactional email provider (Brevo, Mailgun, SES, Zoho).
 2. Add their SPF and DKIM records to the domain.
@@ -180,8 +197,13 @@ ssh deploy@SERVER 'cd platform && sed -i "s/^SMS_GATEWAY_ALLOWED_RECIPIENTS=.*/S
 ## 12. Known limits of the pilot
 
 - **One backend instance.** The scheduled jobs have no cluster lock; a second instance would duplicate them.
-- **Mobile money is a mock.** Its callbacks are signed with the mock's own secret, so payments through that rail
-  may not confirm. Record premiums as cash or field receipts until a real rail is integrated.
+- **Mobile money is a mock.** The mock answers every request ACCEPTED, so a payout sent by mobile money is recorded
+  as paid although no money moved, and a mobile-money collection waits for finance's approval as if the money had
+  come. Record premiums as cash, bank or field receipts, and pay out by bank transfer or cash, until a real rail is
+  integrated.
+- **No rate limiting at the edge.** Keycloak locks an account after 5 wrong passwords and the reset sends at most
+  3 codes an hour, but nothing limits one address trying many accounts. Putting Cloudflare (free tier) in front of
+  both hostnames is the least work; it also absorbs floods.
 - **A second factor for staff only.** Every staff sign-in asks for a texted code (2026-11-14); agents and customers
   sign in on a password, with the realm's password policy and brute-force lockout.
 - **No Grafana, no alerting, no JSON logs, no tracing.** The uptime monitor and `status.sh` are the pilot's
@@ -197,3 +219,9 @@ ssh deploy@SERVER 'cd platform && sed -i "s/^SMS_GATEWAY_ALLOWED_RECIPIENTS=.*/S
 - [ ] Uptime monitor on both hostnames
 - [ ] `SMS_GATEWAY_ALLOWED_RECIPIENTS` set for the pilot
 - [ ] `BACKUP_S3_*` filled in, and one nightly backup seen in the off-server bucket
+- [ ] `BACKUP_CRYPT_PASSWORD` copied somewhere off the server, and `./fetch-backup.sh daily/STAMP` then
+      `./restore.sh backups/STAMP --scratch` run once, proving the off-server copy can be read back
+- [ ] Signed in through a browser on each workspace (staff with the texted code, an agent, a customer) and opened a
+      document: the console's Content-Security-Policy is enforced, and anything it blocks shows in the browser console
+- [ ] "Forgot your password?" tried once for an agent or customer login: the code arrives by SMS
+- [ ] `deploy/release.sh --rollback` to the previous release tried once, then forward again

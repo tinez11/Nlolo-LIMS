@@ -6,13 +6,17 @@
 
   Two forms: the code, and a separate "send a new code" -- separate so pressing Enter in the code field can never
   quietly ask for another text instead.
+
+  2026-11-16: where email is not in use (production sets loginWithEmailAllowed from MAIL_ENABLED), only a code is sent,
+  and the page says so -- no link, no inbox, no spam folder.
 -->
+<#assign textOnly = !realm.loginWithEmailAllowed>
 <@layout.registrationLayout hideUsername=true; section>
     <#if section = "header">
-        ${msg("lpResetCodeTitle")}
+        <#if textOnly>${msg("lpResetCodeTitleText")}<#else>${msg("lpResetCodeTitle")}</#if>
 
     <#elseif section = "form">
-        <p class="instruction">${msg("lpResetCodeIntro", lpResetCodeDigits, lpResetMinutes)}</p>
+        <p class="instruction"><#if textOnly>${msg("lpResetCodeIntroText", lpResetCodeDigits, lpResetMinutes)}<#else>${msg("lpResetCodeIntro", lpResetCodeDigits, lpResetMinutes)}</#if></p>
 
         <form id="lp-reset-code-form" class="lp-form" action="${url.loginAction}" method="post" data-guard-submit>
             <div class="lp-group">
@@ -39,7 +43,7 @@
             </div>
         </form>
 
-        <p class="lp-hint">${msg("lpResetHelp")}</p>
+        <p class="lp-hint"><#if textOnly>${msg("lpResetHelpText")}<#else>${msg("lpResetHelp")}</#if></p>
 
         <div class="lp-options">
             <a class="lp-link" href="${url.loginRestartFlowUrl}">${msg("backToLogin")}</a>
