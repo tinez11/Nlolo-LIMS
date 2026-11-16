@@ -38,6 +38,7 @@ import { getFuneralTerms } from '@/api/funeral';
 import type { FuneralTermsView } from '@/api/types';
 import { FuneralLivesFields } from './FuneralLivesFields';
 import { QuotationPreview } from './QuotationPreview';
+import type { QuoteState } from './pricingBasis';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
 import { useTermAccountTerms } from './useTermAccountTerms';
@@ -287,6 +288,10 @@ export function OpenUnderwritingCasePage() {
   // A savings product that keeps an account (SAV, PEN, DANN): the account charges its policy will carry (2026-10-09).
   const keepsAccount = ['SAV', 'PEN', 'DANN'].includes(selectedProduct?.portfolioCode ?? '');
   const [chargeIds, setChargeIds] = useState<string[]>([]);
+  // Where the quotation panel's answer stands (2026-11-15). A refused quotation -- a term the product does not offer,
+  // say -- used to leave "Open case" live, so a case could be opened on terms the panel had just said no to.
+  const [quoteState, setQuoteState] = useState<QuoteState>('incomplete');
+  const quoteRefused = quoteState === 'refused';
 
   async function onSubmit(values: OpenCaseFormValues) {
     await openCase({ ...toApiRequest(values), ...(keepsAccount && chargeIds.length > 0 ? { accountChargeIds: chargeIds } : {}) });
@@ -772,6 +777,7 @@ export function OpenUnderwritingCasePage() {
           portfolioCode={selectedProduct?.portfolioCode}
           productVersionId={productVersionId}
           applicantPartyId={applicantPartyId}
+          onQuoteState={setQuoteState}
           // A funeral plan is priced from the plan and the family, not from a sum assured: the panel asks for its
           // price with the same rows the family fields above collect.
           funeral={
@@ -805,8 +811,19 @@ export function OpenUnderwritingCasePage() {
           <InlineError error={opening.error} />
         )}
 
+        {quoteRefused && (
+          <p role="status" className="text-sm text-status-danger-fg">
+            This case cannot be opened: the quotation above was refused. Change what it names and try again.
+          </p>
+        )}
+
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" pending={opening.status === 'loading'}>
+          <Button
+            type="submit"
+            variant="primary"
+            pending={opening.status === 'loading'}
+            disabled={quoteRefused}
+          >
             Open case
           </Button>
           <Button asChild variant="ghost">

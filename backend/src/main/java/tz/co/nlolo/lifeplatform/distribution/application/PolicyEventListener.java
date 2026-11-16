@@ -26,7 +26,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -307,7 +306,9 @@ public class PolicyEventListener {
         policyProjectionRepository.save(projection);
 
         int windowMonths = Integer.parseInt(referenceDataApi.getValue("TZ_COMMISSION_CLAWBACK_MONTHS", "TZ"));
-        LocalDate lapseDate = lapsedAt.atZone(ZoneOffset.UTC).toLocalDate();
+        // The civil day of the lapse (2026-11-15): its UTC day was a day early from 00:00 to 03:00, which could put a
+        // lapse on the last day of the clawback window inside it or outside it wrongly.
+        LocalDate lapseDate = lapsedAt.atZone(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toLocalDate();
         long monthsSinceIssue = Period.between(projection.getIssueDate(), lapseDate).toTotalMonths();
         if (monthsSinceIssue > windowMonths) {
             log.info("Policy {} lapsed {} months after issue, outside the {}-month clawback window (TZ_COMMISSION_CLAWBACK_MONTHS) "

@@ -43,7 +43,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -1353,7 +1352,7 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " must be LAPSED to be REINSTATED (current: " + policy.getStatus() + ")");
         }
         int windowMonths = Integer.parseInt(referenceDataApi.getValue("TZ_REINSTATEMENT_WINDOW_MONTHS", "TZ"));
-        long monthsSinceLapse = Period.between(policy.getLapsedAt().atZone(ZoneOffset.UTC).toLocalDate(), LocalDate.now()).toTotalMonths();
+        long monthsSinceLapse = Period.between(policy.getLapsedAt().atZone(CIVIL_ZONE).toLocalDate(), LocalDate.now(CIVIL_ZONE)).toTotalMonths();
         if (monthsSinceLapse > windowMonths) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " lapsed " + monthsSinceLapse
                 + " months ago, exceeding the " + windowMonths + "-month reinstatement window (TZ_REINSTATEMENT_WINDOW_MONTHS, a PLACEHOLDER pending B1 sign-off)");

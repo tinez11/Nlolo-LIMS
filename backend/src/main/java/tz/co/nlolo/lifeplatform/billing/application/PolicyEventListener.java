@@ -15,7 +15,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -261,8 +260,8 @@ public class PolicyEventListener {
         // clock. ux_premium_invoice_per_submission must include due_date because
         // premium_invoice is partitioned on it, so the guarantee against double-charging on a
         // redelivered event holds only if a redelivery recomputes the identical date.
-        LocalDate acceptedOn = Instant.parse((String) payload.get("acceptedAt"))
-            .atZone(ZoneOffset.UTC).toLocalDate();
+        // The civil day (2026-11-15), still a pure function of acceptedAt: its UTC day was a day early from 00:00 to 03:00.
+        LocalDate acceptedOn = civilDate(payload.get("acceptedAt"));
 
         // Each borrower's cover, as policy stated it: passed through to the invoice event for the ledger (IFRS 17 I3a).
         @SuppressWarnings("unchecked")
