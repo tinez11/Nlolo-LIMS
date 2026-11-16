@@ -5,19 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Life Platform Console</title>
-    <script>
-      // Applied before first paint so a dark-mode reload never flashes white.
-      // Wrapped because storage access itself throws in some privacy modes.
-      try {
-        const stored = localStorage.getItem('lifeplatform.theme');
-        const dark =
-          stored === 'dark' ||
-          (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add('dark');
-      } catch {
-        /* no stored preference reachable; fall through to the light default */
-      }
-    </script>
+    <!-- Before first paint, so a dark-mode reload never flashes white (public/boot-theme.js). -->
+    <script src="/boot-theme.js"></script>
     <!-- The sign-in screen before the app has loaded (2026-10-28): the same centred mark SessionSplash draws, so the
          first frame is that screen and not a white page. Plain CSS, as the app's own has not arrived yet; React
          replaces it on mount. Colours are the console's Background, Accent and Muted ink tokens, in both themes. -->
@@ -56,15 +45,8 @@
         </div>
       </div>
     </div>
-    <script>
-      // Which console, from the address -- the same words SessionSplash shows next, so nothing on screen moves.
-      (function () {
-        var names = { staff: 'Staff', agents: 'Agent', customers: 'Policyholder', regulators: 'Regulator' };
-        var name = names[location.pathname.split('/')[1]];
-        var line = document.getElementById('boot-console');
-        if (name && line) line.textContent = name + ' console';
-      })();
-    </script>
+    <!-- Which console, from the address (public/boot-console.js). -->
+    <script src="/boot-console.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -93,7 +93,7 @@ public class PortalAccessService {
                 + access.getStatus().name().toLowerCase(Locale.ROOT) + "): re-send the invite, or revoke it first", true);
         }
         if (access == null) {
-            String username = email != null ? email.toLowerCase(Locale.ROOT) : phone;
+            String username = usernameFor(email, phone, emailEnabled);
             String userId = accounts.create(username, email, party.displayName(), tenantId, partyId);
             access = new PortalAccess(tenantId, partyId, userId, username, delivery, invitedBy);
         } else {
@@ -146,6 +146,18 @@ public class PortalAccessService {
             return PortalAccess.Delivery.SMS_PASSWORD;
         }
         return email != null && emailEnabled ? PortalAccess.Delivery.EMAIL_LINK : PortalAccess.Delivery.TEMPORARY_PASSWORD;
+    }
+
+    /**
+     * The new login's username. With email switched off (2026-11-16, the user: "the email is not used") it is the phone
+     * number the password is texted to -- never an email address the client is told nothing about -- and the email only
+     * where there is no phone. With email on, the email as before.
+     */
+    static String usernameFor(String email, String phone, boolean emailEnabled) {
+        if (phone != null && (!emailEnabled || email == null)) {
+            return phone;
+        }
+        return email.toLowerCase(Locale.ROOT);
     }
 
     private PortalInvite firstPassword(PortalAccess access, PartyDetailView party) {

@@ -38,8 +38,8 @@ test('the one admin client takes its secret from the environment', () => {
   assert.equal(client('lifeplatform-admin').secret, '$(env:ADMIN_CLIENT_SECRET)');
 });
 
-test('sign-in by username or email, and emails unique', () => {
-  assert.equal(realm.loginWithEmailAllowed, true);
+test('sign-in by email only where email is in use, and emails unique', () => {
+  assert.equal(realm.loginWithEmailAllowed, '$(env:MAIL_ENABLED)');
   assert.equal(realm.duplicateEmailsAllowed, false);
 });
 
@@ -47,8 +47,14 @@ test('password policy, lockout and SMTP settings', () => {
   assert.equal(realm.passwordPolicy, 'length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)');
   assert.equal(realm.bruteForceProtected, true);
   assert.equal(realm.sslRequired, 'external');
-  assert.equal(realm.resetPasswordAllowed, '$(env:MAIL_ENABLED)');
+  // On with email off too: the reset texts a code (2026-11-16). Following MAIL_ENABLED hid "Forgot your password?".
+  assert.equal(realm.resetPasswordAllowed, true);
   assert.equal(realm.smtpServer.host, '$(env:MAIL_HOST)');
+});
+
+test('a refresh token works once (security audit M6)', () => {
+  assert.equal(realm.revokeRefreshToken, true);
+  assert.equal(realm.refreshTokenMaxReuse, 0);
 });
 
 test('the workspace roles and every role the platform authorizes on survive', () => {

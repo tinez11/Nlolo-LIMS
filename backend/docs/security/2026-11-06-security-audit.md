@@ -14,15 +14,15 @@ Severity: **High** — exploitable from the internet or puts money/data at direc
 |---|---|---|---|
 | H1 | Keycloak's `master` realm (the admin's own login) is reachable from the internet, with no lockout — **closed 2026-11-14** (bootstrap admin kept, tunnel only) | **High** | Small |
 | H2 | The mobile-money rail is a mock with no authentication, and it is in the production compose file | **High** (before real money) | Large (real integration) |
-| M1 | No Content-Security-Policy on the console | Medium | Small–medium |
+| M1 | No Content-Security-Policy on the console — **closed 2026-11-16** (enforced in the Caddyfile; checked on a production build) | Medium | Small–medium |
 | M2 | No rate limiting at the edge | Medium | Medium |
-| M3 | Off-site backups are not encrypted by the platform | Medium | Small |
-| M4 | Three high-severity advisories in the console's runtime dependencies | Medium | Small |
+| M3 | Off-site backups are not encrypted by the platform — **closed 2026-11-16** (rclone crypt, `offsite.sh`) | Medium | Small |
+| M4 | Three high-severity advisories in the console's runtime dependencies — **closed 2026-11-15** (npm audit fix) | Medium | Small |
 | M5 | No second factor for staff — **closed 2026-11-14** (a texted code on every staff sign-in) | Medium | Medium |
-| M6 | Refresh-token rotation is off | Medium | Small |
+| M6 | Refresh-token rotation is off — **closed 2026-11-16** | Medium | Small |
 | M7 | Keycloak is pinned at 26.0.7 | Medium | Small–medium |
 | L1 | Four unit-linked child tables carry no `tenant_id` and no row-level security | Low | Small |
-| L2 | Containers run without hardening flags; no SSH brute-force ban | Low | Small |
+| L2 | Containers run without hardening flags; no SSH brute-force ban — **containers closed 2026-11-16** (no-new-privileges); fail2ban still open | Low | Small |
 | L3 | 400 responses echo `IllegalArgumentException` messages | Low | Small |
 | L4 | Backend (Maven) dependencies were not scanned for CVEs in this audit | Gap | Small |
 

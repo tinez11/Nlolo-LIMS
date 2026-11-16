@@ -13,6 +13,7 @@ import { cn } from '@/lib/cn';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useCommunicationsStore } from '@/store/communicationsStore';
 import { ChannelStatusBar } from './ChannelStatusBar';
+import { emailInUse, useChannels } from './useChannels';
 import {
   TOPICS,
   journeyOrder,
@@ -45,6 +46,8 @@ export function TemplatesPage() {
   const loadTemplates = useCommunicationsStore((s) => s.loadTemplates);
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState<string | null>(null);
+  const channels = useChannels();
+  const withEmail = emailInUse(channels);
   // How often each message went out in the last 30 days (2026-11-08): the screen's own report.
   const [sent, setSent] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -61,11 +64,13 @@ export function TemplatesPage() {
   const byKey = useMemo(() => {
     const map = new Map<string, NotificationTemplateView[]>();
     for (const t of templates.data ?? []) {
+      // An email wording is not shown while email is not in use (2026-11-16); it stays stored for the day it is.
+      if (t.channel === 'EMAIL' && !withEmail) continue;
       const key = t.templateKey ?? 'UNKNOWN';
       map.set(key, [...(map.get(key) ?? []), t]);
     }
     return map;
-  }, [templates.data]);
+  }, [templates.data, withEmail]);
 
   if (isInitialLoad(templates)) return <LoadingBlock label="Loading templates…" />;
   if (templates.status === 'error' && templates.error && templates.data === null) {
@@ -99,7 +104,7 @@ export function TemplatesPage() {
         description="What customers are told, and when. Editing a message changes every one sent from then on."
       />
       <div className="space-y-4 px-6 pb-8">
-        <ChannelStatusBar />
+        <ChannelStatusBar channels={channels} />
         <div className="flex flex-wrap items-center gap-2">
           <FilterChip label="All" active={topic === null} onClick={() => setTopic(null)} />
           {topics.map((t) => <FilterChip key={t} label={t} active={topic === t} onClick={() => setTopic(t)} />)}
