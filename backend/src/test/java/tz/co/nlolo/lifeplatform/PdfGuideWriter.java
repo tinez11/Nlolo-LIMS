@@ -28,6 +28,21 @@ public final class PdfGuideWriter implements AutoCloseable {
     private PDPageContentStream stream;
     private float y;
 
+    /**
+     * Saves the guide byte for byte the same on every run (2026-11-17). PDFBox otherwise stamps a fresh random file
+     * ID on each save, so the committed guides showed as changed after every test run with nothing in them changed.
+     * The ID is taken from the file name instead; the files now differ only when their content does.
+     */
+    public static void saveStable(PDDocument doc, java.nio.file.Path out) throws IOException {
+        byte[] id = java.util.Arrays.copyOf(
+            out.getFileName().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), 16);
+        org.apache.pdfbox.cos.COSArray ids = new org.apache.pdfbox.cos.COSArray();
+        ids.add(new org.apache.pdfbox.cos.COSString(id));
+        ids.add(new org.apache.pdfbox.cos.COSString(id));
+        doc.getDocument().getTrailer().setItem(org.apache.pdfbox.cos.COSName.ID, ids);
+        doc.save(out.toFile());
+    }
+
     public PdfGuideWriter(PDDocument doc) throws IOException {
         this.doc = doc;
         newPage();
