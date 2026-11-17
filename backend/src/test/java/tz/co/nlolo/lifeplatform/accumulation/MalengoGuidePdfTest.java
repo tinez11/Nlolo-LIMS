@@ -107,7 +107,7 @@ class MalengoGuidePdfTest {
                 + "section 5 describes.");
 
             w.close();
-            doc.save(out.toFile());
+            PdfGuideWriter.saveStable(doc, out);
         }
 
         // Read it back: a PDF that writes without throwing can still have lost its last section off

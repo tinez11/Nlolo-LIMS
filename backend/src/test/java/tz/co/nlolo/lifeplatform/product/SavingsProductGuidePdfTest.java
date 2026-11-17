@@ -166,7 +166,7 @@ class SavingsProductGuidePdfTest {
                 + "next week is fine; one who is 61 today cannot be sold the product at all.");
 
             w.close();
-            doc.save(out.toFile());
+            PdfGuideWriter.saveStable(doc, out);
         }
 
         // Read it back: a guide that writes without throwing can still have lost its last section
