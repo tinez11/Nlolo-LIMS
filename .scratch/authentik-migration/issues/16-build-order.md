@@ -44,6 +44,13 @@ The user's decisions, 2026-11-19.
 
 **Step 0, on `main` before the branch:** fix token validation. First a test proving today's behaviour, then explicit issuer and audience validators in `SecurityConfig.lazyDecoder` against Keycloak. The gap was found by [Can Authentik issue the tokens universal login needs?](05-tokens-and-universal-login.md). The cut-over then changes only the issuer value.
 
+**Amended 2026-11-19, while doing step 0 (the user chose (a)):** step 0 adds the **issuer** check only. Keycloak's
+access tokens carry no `aud` claim (no audience mapper in the realm), so the **audience** validator moves into step 2,
+where Authentik's tokens carry `aud` natively. The gap is confirmed in Spring Security 6.3.4: `NimbusJwtDecoder`
+defaults to `JwtValidators.createDefault()`, and only `JwtDecoders.fromIssuerLocation` adds the issuer check. It was
+proven live against dev Keycloak: a token minted via `127.0.0.1:8081`, with the same key but a different `iss`, now
+gets 401, while `localhost:8081` gets 200.
+
 **Inside the cut-over branch.** Each step ends with its affected tests and a manual check in the dev stack. Keycloak stays in the **dev** compose until step 3, so the dev stack can always sign someone in; production never runs both.
 
 1. **Authentik in dev:**
