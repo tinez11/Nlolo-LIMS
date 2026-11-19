@@ -149,6 +149,127 @@ entries:
   - model: authentik_policies.policybinding
     identifiers: {target: !KeyOf binding-deny-superuser, policy: !KeyOf policy-is-superuser, order: 0}
 
+  # ---- The staff sign-in code (ticket 05; today's texted code, 2026-11-14). Authentik makes the code and checks it; the
+  # backend texts it -- to the phone on the staff record, else the login's `phone` attribute -- with its own wording,
+  # and caps it at 5 an hour and 1 a minute. Its refusals ("No phone number is on file for you...", "Too many
+  # codes...") come back as plain text, which Authentik shows as it is.
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-sign-in-code
+    identifiers: {name: lifeplatform-sign-in-code}
+    attrs:
+      expression: |
+        attributes = user.attributes or {}
+        return {
+            "tenantId": attributes.get("tenant_id"),
+            "userId": str(user.uuid),
+            "code": token,
+            "phone": attributes.get("phone"),
+        }
+
+  - model: authentik_stages_authenticator_sms.authenticatorsmsstage
+    id: stage-sms-setup
+    identifiers: {name: lifeplatform-sms-setup}
+    attrs:
+      provider: generic
+      from_number: Nlolo
+      account_sid: !Format ["%s/internal/staff-sign-in-code/sms", !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]]
+      auth_type: bearer
+      auth: !Env SIGN_IN_CODE_WEBHOOK_SECRET
+      mapping: !KeyOf mapping-sign-in-code
+      verify_only: false
+
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    id: stage-sign-in-code
+    identifiers: {name: lifeplatform-sign-in-code}
+    attrs:
+      device_classes: [sms]
+      not_configured_action: configure
+      configuration_stages: [!KeyOf stage-sms-setup]
+      last_auth_threshold: seconds=0
+
+  # Who is asked: staff, while the STAFF_SIGN_IN_CODE switch is on (production refuses to start with it off), and the
+  # dev-only e2e-sign-in-code group always, so its test runs with the switch off. The policy also puts the login's
+  # username into the prompt data as the "phone", so the first sign-in sets the SMS device up with no phone screen:
+  # the device's number is only a key; the backend decides where the text goes (proven in the migration's ticket 13).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-needs-sign-in-code
+    identifiers: {name: lifeplatform-needs-sign-in-code}
+    attrs:
+      expression: !Format
+        - |
+          switch_on = "%s".strip().lower() == "true"
+          user = request.context.get("pending_user") or request.user
+          asked = ak_is_group_member(user, name="e2e-sign-in-code") or (
+              switch_on and ak_is_group_member(user, name="staff"))
+          if not asked:
+              return False
+          request.context["flow_plan"].context.setdefault("prompt_data", {})["phone"] = user.username
+          return True
+        - !Env [STAFF_SIGN_IN_CODE, "false"]
+
+  # Why a code can't be sent, shown before the code step (2026-11-19, the user's choice). Authentik's own code pages do
+  # not show a refused send: over the cap they still say a code was sent, and with no phone the first sign-in shows a
+  # phone screen. So the backend is asked first; when it says no (422 no phone, 429 too many), this deny stage ends the
+  # sign-in with its words. The send stays capped by the backend all the same. If the backend can't be asked, the code
+  # step goes ahead and the send itself decides.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-code-refused
+    identifiers: {name: lifeplatform-sign-in-code-refused}
+    attrs:
+      expression: !Format
+        - |
+          switch_on = "%s".strip().lower() == "true"
+          user = request.context.get("pending_user") or request.user
+          asked = ak_is_group_member(user, name="e2e-sign-in-code") or (
+              switch_on and ak_is_group_member(user, name="staff"))
+          if not asked:
+              return False
+          attributes = user.attributes or {}
+          try:
+              answer = requests.post(
+                  "%s/internal/staff-sign-in-code/check",
+                  json={"tenantId": attributes.get("tenant_id"), "userId": str(user.uuid),
+                        "phone": attributes.get("phone")},
+                  headers={"Authorization": "Bearer %s"},
+                  timeout=10,
+              )
+          except Exception as error:
+              ak_logger.warning("Sign-in code check failed", error=str(error))
+              return False
+          if answer.status_code in (422, 429):
+              request.context["flow_plan"].context["deny_message"] = answer.text
+              return True
+          return False
+        - !Env [STAFF_SIGN_IN_CODE, "false"]
+        - !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]
+        - !Env SIGN_IN_CODE_WEBHOOK_SECRET
+
+  - model: authentik_stages_deny.denystage
+    id: stage-no-sign-in-code
+    identifiers: {name: lifeplatform-no-sign-in-code}
+    attrs:
+      deny_message: We couldn't send your code. Try again.
+
+  # Runs only for someone asked for a code (the same rule as the code step's) whom the backend can't send one; agents
+  # and customers never reach the backend call.
+  - model: authentik_flows.flowstagebinding
+    id: binding-no-sign-in-code
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-no-sign-in-code, order: 54}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-no-sign-in-code, policy: !KeyOf policy-code-refused, order: 0}
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-sign-in-code
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-sign-in-code, order: 55}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-sign-in-code, policy: !KeyOf policy-needs-sign-in-code, order: 0}
+
   # ---- A temporary password must be replaced at the next sign-in (ticket 03; Keycloak's UPDATE_PASSWORD required
   # action). Authentik has no such flag: the backend sets the password, then the login's reset_password attribute to
   # true. These two stages run only while that attribute is exactly true -- judged once the login is known -- and the

@@ -26,6 +26,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyHmacFilter;
 
@@ -143,6 +145,17 @@ public class SecurityConfig {
      * {@code @Qualifier} wiring above was designed to avoid -- confirmed via {@code ModularityTests}
      * after this change, not assumed.
      */
+    /**
+     * Reads a sign-in token everywhere except the {@code /internal/} paths (2026-11-19, Authentik cut-over ticket 05).
+     * Authentik calls those with a bearer secret of their own, which each endpoint checks; read as a sign-in token it
+     * failed as a JWT and every call was refused with 401 before reaching the endpoint. Those paths are permitted
+     * below and kept off the public address by Caddy.
+     */
+    static BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver standard = new DefaultBearerTokenResolver();
+        return request -> request.getServletPath().startsWith("/internal/") ? null : standard.resolve(request);
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -201,6 +214,8 @@ public class SecurityConfig {
                 // Keycloak asking for a staff sign-in code to be texted (2026-11-14): signed the same way, checked by
                 // StaffSignInCodeController before anything happens.
                 .requestMatchers(HttpMethod.POST, "/internal/staff-sign-in-code/sms").permitAll()
+                // Could a code be sent now? Asked by Authentik before the code step (2026-11-19); same secret.
+                .requestMatchers(HttpMethod.POST, "/internal/staff-sign-in-code/check").permitAll()
                 // The public quote link (2026-11-02): open to anyone by design, and guarded inside instead -- a
                 // Turnstile-checked visit, a signed visit token for pricing, rate limits, and the deployment's own
                 // insurer as the tenant (omnichannel PublicAccess). Exact paths, never a /public/** prefix, so a
@@ -215,6 +230,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/public/applications").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
+                .bearerTokenResolver(bearerTokenResolver())
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))
             .addFilterBefore(mobileMoneyHmacFilter, BearerTokenAuthenticationFilter.class)
             .addFilterAfter(new WorkspaceFilter(objectMapper), BearerTokenAuthenticationFilter.class)

@@ -17,6 +17,7 @@ class ProductionSettingsGuardTest {
         s.put("minio.access-key", "platform-docs");
         s.put("minio.secret-key", "Lk2-real-object-store-secret");
         s.put("app.authentik.api-token", "Ak9-real-authentik-api-token");
+        s.put("app.staff-sign-in-code.webhook-secret", "Sc2-real-sign-in-code-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
         s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
         s.put("communication.sms-gateway.live", "true");
@@ -48,6 +49,18 @@ class ProductionSettingsGuardTest {
             "app.authentik.api-token still holds the dev value");
         s.remove("app.authentik.api-token");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly("app.authentik.api-token is not set");
+    }
+
+    /** 2026-11-19 (Authentik cut-over, ticket 05): Authentik's sign-in code calls carry their own bearer secret. */
+    @Test
+    void theDevSignInCodeSecretOrNoneIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.staff-sign-in-code.webhook-secret", "dev-only-sign-in-code-secret");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.staff-sign-in-code.webhook-secret still holds the dev value");
+        s.remove("app.staff-sign-in-code.webhook-secret");
+        assertThat(ProductionSettingsGuard.problems(s::get))
+            .containsExactly("app.staff-sign-in-code.webhook-secret is not set");
     }
 
     @Test

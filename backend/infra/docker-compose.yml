@@ -109,6 +109,11 @@ services:
       # The backend's API token (ticket 03): the blueprint gives the lifeplatform-backend service account this key, and
       # the backend sends it as AUTHENTIK_API_TOKEN. Same dev default on both sides; production sets its own.
       AUTHENTIK_API_TOKEN: ${AUTHENTIK_API_TOKEN:-dev-only-authentik-api-token}
+      # The staff sign-in code (ticket 05): the switch the blueprint reads (off in dev, as for the backend), where the
+      # backend answers (it runs on the host in dev), and the bearer secret the backend checks.
+      STAFF_SIGN_IN_CODE: ${STAFF_SIGN_IN_CODE:-false}
+      LP_BACKEND_URL: ${LP_BACKEND_URL:-http://host.docker.internal:8080}
+      SIGN_IN_CODE_WEBHOOK_SECRET: ${SIGN_IN_CODE_WEBHOOK_SECRET:-dev-only-sign-in-code-secret}
     ports:
       - "9100:9000"
     # Mounted on the server too, not only the worker: the admin API's "apply" runs here, and without the files it

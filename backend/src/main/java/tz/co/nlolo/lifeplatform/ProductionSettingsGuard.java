@@ -24,7 +24,8 @@ public class ProductionSettingsGuard {
         new String[] {"minio.secret-key", "minioadmin"},
         new String[] {"app.authentik.api-token", "dev-only-"},
         new String[] {"mobile-money.callback-hmac-secret", "dev-only-placeholder-secret"},
-        new String[] {"password-reset.sms-secret", "dev-only-reset-sms-secret"});
+        new String[] {"password-reset.sms-secret", "dev-only-reset-sms-secret"},
+        new String[] {"app.staff-sign-in-code.webhook-secret", "dev-only-"});
 
     private static final List<String> MUST_BE_HTTPS = List.of("app.security.issuer", "app.portal.url");
 

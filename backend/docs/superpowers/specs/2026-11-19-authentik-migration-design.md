@@ -166,7 +166,16 @@ The three adapters are rewritten for Authentik's API and lose "Keycloak" from th
 `POST /internal/staff-sign-in-code/sms`:
 - **Body:** `{tenantId, userId (UUID), code, phone}`.
 - **Phone:** the backend **ignores `phone`** and texts the staff record's phone, falling back to the login's phone.
+  (Amended 2026-11-19, cut-over ticket 05: the mapping sends the login's `phone` **attribute** as `phone`, not the
+  device number, which is only the username; the backend uses it only when it is a phone number.)
 - **Caps:** they move into `StaffSignInCodes`.
+- **The check before the code step** (added 2026-11-19, the user's choice in cut-over ticket 05): Authentik's code
+  pages don't show a refused send (over the cap they still say "a code has been sent"; with no phone the first sign-in
+  shows a phone screen). So a policy first calls `POST /internal/staff-sign-in-code/check` (same secret, body
+  `{tenantId, userId, phone}`); a 422 or 429 ends the sign-in at a deny stage with the backend's words. Asking never
+  counts as a send.
+- **Spring Security** must not read the webhooks' bearer secrets as sign-in tokens: the bearer resolver skips
+  `/internal/`.
 - **Replies,** shown to the person by Authentik:
 
 | Outcome | Status | Text |

@@ -217,3 +217,26 @@ entries:
         - !Find [authentik_core.group, [name, customer]]
       attributes:
         tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  # Added 2026-11-19 (ticket 05 of .scratch/authentik-cutover): the staff sign-in code's test login. Members of
+  # e2e-sign-in-code are asked for the code even with STAFF_SIGN_IN_CODE off, as dev runs; the backend texts it to the
+  # login's phone until the staff record has one. Not in the Keycloak realm.
+  - model: authentik_core.group
+    id: group-e2e-sign-in-code
+    identifiers: {name: e2e-sign-in-code}
+
+  - model: authentik_core.user
+    identifiers: {username: e2e.sign-in-code}
+    attrs:
+      name: Sign-in Code Tester
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+        - !KeyOf group-e2e-sign-in-code
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        phone: "+255700000099"
+        job_roles: [UNDERWRITER]
