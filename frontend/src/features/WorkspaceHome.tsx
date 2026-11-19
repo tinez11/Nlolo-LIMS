@@ -3,6 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import { Link, Navigate } from 'react-router-dom';
 import { readIdentity } from '@/auth/claims';
 import { REALM_CONFIG } from '@/auth/realms';
+import { signOut } from '@/auth/signOut';
 import { availableWorkspaces } from '@/auth/workspaces';
 import { SessionSplash } from '@/components/SessionSplash';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,7 @@ export function WorkspaceHome() {
             <p className="mt-1 text-sm text-muted-foreground">
               This account has no access yet. Contact the insurer.
             </p>
-            <Button className="mt-6" variant="outline" onClick={() => void auth.signoutRedirect().catch(() => undefined)}>
+            <Button className="mt-6" variant="outline" onClick={() => void signOut(auth).catch(() => undefined)}>
               Sign out
             </Button>
           </>

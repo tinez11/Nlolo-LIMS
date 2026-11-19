@@ -202,3 +202,18 @@ entries:
       attributes:
         tenant_id: "11111111-1111-1111-1111-111111111111"
         job_roles: [TIRA_READ_ONLY]
+
+  # Added 2026-11-19 (ticket 02 of .scratch/authentik-cutover): one login in two workspaces, an agent who is also a
+  # customer, to prove the console's X-Workspace switch. Not in the Keycloak realm.
+  - model: authentik_core.user
+    identifiers: {username: agent.customer}
+    attrs:
+      name: Rehema Both
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"

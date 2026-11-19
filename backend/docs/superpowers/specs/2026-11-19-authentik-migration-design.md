@@ -209,7 +209,12 @@ The settings are `AUTHENTIK_BASE_URL`, `AUTHENTIK_API_TOKEN`, `AUTHENTIK_ISSUER`
 ## Part 3 -- Frontend
 
 - **`claims.ts` and `realms.ts`** read `roles`.
-- **The OIDC configuration** points at the Authentik issuer. Set `revokeTokensOnSignout: true`.
+- **The OIDC configuration** points at the Authentik issuer. Signing out revokes the tokens. (Amended 2026-11-19, ticket
+  02: Authentik's revoke endpoint sends no CORS headers, so the console revokes through its own origin at
+  `/oauth/revoke/`, forwarded to Authentik by Vite in dev and Caddy in production. It revokes, then redirects even if
+  the revoke failed, rather than using `revokeTokensOnSignout`, which abandons the sign-out on a failed revoke. The
+  provider gets its own sign-out flow with a user-logout stage and a registered logout address: the stock provider
+  invalidation flow left the Authentik session alive, so the console signed straight back in.)
 - **A forced sign-out 10 hours after `auth_time`.**
 - **The `/reset` page:** public and bilingual (English/Kiswahili), shared by agents and customers, with Turnstile.
   - It always answers "If this number has a login, we've texted a code."

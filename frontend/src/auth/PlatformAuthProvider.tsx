@@ -2,6 +2,8 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { AuthProvider, useAuth } from 'react-oidc-context';
 import { setAccessTokenProvider, setUnauthenticatedHandler } from '@/lib/http';
 import { CLIENT_ID, ISSUER } from './realms';
+import { useSessionCap } from './sessionCap';
+import { REVOCATION_PATH, signOut } from './signOut';
 import { createStateStore, createUserStore } from './userStore';
 
 /**
@@ -29,6 +31,9 @@ export function PlatformAuthProvider({ children }: { children: ReactNode }) {
       userStore: createUserStore(),
       stateStore: createStateStore(),
       automaticSilentRenew: true,
+      // Revocation goes through the console's own origin (see signOut.ts): Authentik's revoke endpoint answers no
+      // CORS. Discovery supplies every other endpoint; the seed overrides only this one.
+      metadataSeed: { revocation_endpoint: `${window.location.origin}${REVOCATION_PATH}` },
       // The userinfo endpoint adds nothing the access token does not already carry,
       // and it costs a request per load.
       loadUserInfo: false,
@@ -69,6 +74,9 @@ function HttpAuthBridge({ children }: { children: ReactNode }) {
       void auth.signinSilent().catch(() => undefined);
     });
   }, [auth]);
+
+  // Ten hours after the person typed their password, the console signs them out, however often the token renewed.
+  useSessionCap(auth.user, () => void signOut(auth).catch(() => undefined));
 
   return <>{children}</>;
 }

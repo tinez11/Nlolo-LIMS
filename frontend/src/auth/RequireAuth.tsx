@@ -55,8 +55,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
           <p className="text-sm font-medium">Could not sign in</p>
           <p className="mt-1 text-xs text-muted-foreground">{auth.error.message}</p>
           <p className="mt-3 text-xs text-subtle-foreground">
-            Check that Keycloak is running and that the <code>lifeplatform-spa</code> client
-            exists in the <code>lifeplatform</code> realm.
+            Check that Authentik is running and that its <code>lifeplatform</code> blueprint applied.
           </p>
           <Button
             className="mt-4"

@@ -19,6 +19,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Tip } from './ui/tooltip';
 import { useMyAccess } from '@/store/accessStore';
+import { signOut } from '@/auth/signOut';
 import { useLanguage, useLanguageStore } from '@/features/customer/language';
 import { wordsFor } from '@/features/customer/words';
 
@@ -478,9 +479,9 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
           variant="ghost"
           aria-label="Sign out"
           onClick={() => {
-            // End the Keycloak session too, not just the local one -- otherwise the
+            // Revoke the tokens and end the Authentik session too, not just the local one -- otherwise the
             // next visit silently signs straight back in.
-            void auth.signoutRedirect().catch(() => navigate('/'));
+            void signOut(auth).catch(() => navigate('/'));
           }}
         >
           <LogOut />
