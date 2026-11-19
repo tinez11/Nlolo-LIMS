@@ -16,9 +16,7 @@ class ProductionSettingsGuardTest {
         s.put("spring.datasource.password", "Zq8-real-db-password");
         s.put("minio.access-key", "platform-docs");
         s.put("minio.secret-key", "Lk2-real-object-store-secret");
-        s.put("app.portal.keycloak.client-secret", "Pt7-real-portal-secret");
         s.put("app.authentik.api-token", "Ak9-real-authentik-api-token");
-        s.put("app.agent-logins.keycloak.client-secret", "Ag6-real-agents-admin-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
         s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
         s.put("communication.sms-gateway.live", "true");
@@ -62,13 +60,13 @@ class ProductionSettingsGuardTest {
         Map<String, String> s = realLooking();
         s.put("spring.datasource.password", "devapppassword");
         s.put("minio.secret-key", "minioadmin");
-        s.put("app.portal.keycloak.client-secret", "dev-secret-portal-admin");
+        s.put("app.authentik.api-token", "dev-only-authentik-api-token");
         s.put("mobile-money.callback-hmac-secret", "dev-only-placeholder-secret");
         s.put("password-reset.sms-secret", "dev-only-reset-sms-secret");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password still holds the dev value",
             "minio.secret-key still holds the dev value",
-            "app.portal.keycloak.client-secret still holds the dev value",
+            "app.authentik.api-token still holds the dev value",
             "mobile-money.callback-hmac-secret still holds the dev value",
             "password-reset.sms-secret still holds the dev value");
     }

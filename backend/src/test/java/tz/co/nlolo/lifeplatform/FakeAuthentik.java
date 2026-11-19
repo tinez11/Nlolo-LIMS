@@ -39,8 +39,10 @@ public final class FakeAuthentik implements AutoCloseable {
     }
 
     /** Scripts the next answer to "METHOD /path"; several scripted answers are given in order, the last one repeats. */
-    public FakeAuthentik on(String methodAndPath, int status, String body) {
-        replies.computeIfAbsent(methodAndPath, k -> new ArrayList<>()).add(new Reply(status, body));
+    public FakeAuthentik on(String methodAndPath, int status, String body, String... laterBodies) {
+        List<Reply> scripted = replies.computeIfAbsent(methodAndPath, k -> new ArrayList<>());
+        scripted.add(new Reply(status, body));
+        for (String later : laterBodies) scripted.add(new Reply(status, later));
         return this;
     }
 

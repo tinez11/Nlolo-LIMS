@@ -108,6 +108,18 @@ class AuthentikClientTest {
     }
 
     @Test
+    void findsALoginByUsernameWithTheWorkspacesItHolds() {
+        authentik.on("GET /api/v3/core/users/", 200, "{\"pagination\":{\"count\":1},\"results\":[{\"pk\":35,"
+            + "\"username\":\"+255700000001\",\"is_active\":true,\"attributes\":{},\"uuid\":\"" + UUID_1 + "\","
+            + "\"groups_obj\":[{\"name\":\"agent\"},{\"name\":\"customer\"}]}]}");
+
+        AuthentikClient.User user = client.findUserByUsername("+255700000001").orElseThrow();
+
+        assertThat(user.groups()).containsExactly("agent", "customer");
+        assertThat(authentik.last("GET /api/v3/core/users/").query()).contains("username=+255700000001");
+    }
+
+    @Test
     void aUserTheTokenCannotSeeIsNotFound() {
         authentik.on("GET /api/v3/core/users/", 200, EMPTY_PAGE);
 
@@ -150,6 +162,16 @@ class AuthentikClientTest {
 
         assertThat(authentik.last("POST /api/v3/core/users/35/set_password/").body()).isEqualTo("{\"password\":\"Temp-pass-123\"}");
         assertThat(authentik.last("PATCH /api/v3/core/users/35/").body()).isEqualTo("{\"is_active\":false}");
+    }
+
+    /** 2026-11-19: Authentik's first call after a restart took over 10 seconds, and the timeout reached staff as a 500. */
+    @Test
+    void anAuthentikThatDoesNotAnswerIsARefusalNotAnUnexpectedError() {
+        AuthentikClient nobodyHome = new AuthentikClient("http://127.0.0.1:1", "t");
+
+        assertThatThrownBy(() -> nobodyHome.user(UUID_1)).isInstanceOf(AuthentikClient.Refused.class)
+            .hasMessageContaining("did not answer")
+            .satisfies(e -> assertThat(((AuthentikClient.Refused) e).status()).isEqualTo(503));
     }
 
     @Test

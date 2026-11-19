@@ -8,12 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,7 +42,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AuthentikClient {
 
     /** A login as the API reports it. */
-    public record User(int pk, UUID uuid, String username, boolean active, Map<String, Object> attributes) {}
+    public record User(int pk, UUID uuid, String username, boolean active, Map<String, Object> attributes,
+                       List<String> groups) {}
 
     /** Authentik refused the call; {@code status} is its HTTP status (404 also for a user this token may not see). */
     public static class Refused extends RuntimeException {
@@ -75,7 +79,8 @@ public class AuthentikClient {
         // Authentik drops a chunked body (found 2026-11-19: every create answered 400 "This field is required.").
         JdkClientHttpRequestFactory jdk = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(3)).build());
-        jdk.setReadTimeout(Duration.ofSeconds(10));
+        // 30 seconds: the first call after Authentik restarts took over 10 on the dev box (2026-11-19).
+        jdk.setReadTimeout(Duration.ofSeconds(30));
         this.http = RestClient.builder().baseUrl(baseUrl + "/api/v3")
             .requestFactory(new BufferingClientHttpRequestFactory(jdk))
             .defaultHeader("Authorization", "Bearer " + apiToken).build();
@@ -96,6 +101,8 @@ public class AuthentikClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 400 && usernameNotUnique(e)) throw new UsernameTaken(username);
             throw refused(e);
+        } catch (ResourceAccessException e) {
+            throw noAnswer(e);
         }
     }
 
@@ -104,6 +111,17 @@ public class AuthentikClient {
         JsonNode page = call(() -> http.get().uri("/core/users/?uuid={uuid}", uuid).retrieve().body(JsonNode.class));
         JsonNode results = page == null ? null : page.path("results");
         return results == null || results.isEmpty() ? Optional.empty() : Optional.of(toUser(results.get(0)));
+    }
+
+    /** The login with exactly this username, if this token may see it. */
+    public Optional<User> findUserByUsername(String username) {
+        JsonNode page = call(() -> http.get().uri("/core/users/?username={u}", username).retrieve().body(JsonNode.class));
+        JsonNode results = page == null ? null : page.path("results");
+        if (results == null) return Optional.empty();
+        for (JsonNode node : results) {
+            if (username.equals(node.path("username").asText())) return Optional.of(toUser(node));
+        }
+        return Optional.empty();
     }
 
     /** The login with this UUID; {@link Refused} 404 when there is none this token may see. */
@@ -166,8 +184,10 @@ public class AuthentikClient {
         if (node == null) throw new Refused(502, "Authentik answered with no user");
         Map<String, Object> attributes = node.hasNonNull("attributes")
             ? JSON.convertValue(node.get("attributes"), LinkedHashMap.class) : new LinkedHashMap<>();
+        List<String> groups = new ArrayList<>();
+        for (JsonNode group : node.path("groups_obj")) groups.add(group.path("name").asText());
         return new User(node.path("pk").asInt(), UUID.fromString(node.path("uuid").asText()),
-            node.path("username").asText(), node.path("is_active").asBoolean(), attributes);
+            node.path("username").asText(), node.path("is_active").asBoolean(), attributes, List.copyOf(groups));
     }
 
     /** Authentik's field error for a taken username: {"username": ["This field must be unique."]}. */
@@ -187,7 +207,15 @@ public class AuthentikClient {
             return request.get();
         } catch (RestClientResponseException e) {
             throw refused(e);
+        } catch (ResourceAccessException e) {
+            throw noAnswer(e);
         }
+    }
+
+    /** Unreachable, or slower than the read timeout: a refusal staff see as such, not an unexpected error. */
+    private static Refused noAnswer(ResourceAccessException e) {
+        return new Refused(503, "Authentik did not answer (" + e.getMostSpecificCause().getClass().getSimpleName()
+            + "). Nothing was changed on the platform; try again in a minute.");
     }
 
     private static Refused refused(RestClientResponseException e) {

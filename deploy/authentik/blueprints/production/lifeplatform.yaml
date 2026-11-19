@@ -67,12 +67,21 @@ entries:
     permissions:
       - {permission: authentik_core.view_group, role: !KeyOf role-backend}
       - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+  # Agent and customer access are opened and closed from the platform (ticket 04), so the backend may add and remove.
   - model: authentik_core.group
     id: group-agent
     identifiers: {name: agent}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.remove_user_from_group, role: !KeyOf role-backend}
   - model: authentik_core.group
     id: group-customer
     identifiers: {name: customer}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.remove_user_from_group, role: !KeyOf role-backend}
   - model: authentik_core.group
     id: group-regulator
     identifiers: {name: regulator}

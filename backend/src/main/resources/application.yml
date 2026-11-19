@@ -104,30 +104,17 @@ app:
   staff-admin:
     # The sign-in address a new staff member's texted password names.
     console-url: ${STAFF_CONSOLE_URL:http://localhost:5173/staff}
-  # Agent logins (2026-10-28): staff give an agent a login from the agent's page, through the same lifeplatform-admin
-  # service account of the one realm (2026-11-06).
+  # Agent logins (2026-10-28): staff give an agent a login from the agent's page, in Authentik (2026-11-19) through
+  # app.authentik above.
   agent-logins:
-    keycloak:
-      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
-      realm: lifeplatform
-      client-id: lifeplatform-admin
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:dev-secret-admin}
-      console-client-id: lifeplatform-spa
-    # Where a set-your-password email sends a new agent once they have chosen one.
+    # The sign-in address a new agent's texted password names.
     console-url: ${AGENT_CONSOLE_URL:http://localhost:5173/agents}
-  # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in the one realm
-  # (2026-11-06) through the lifeplatform-admin service account. The secret is never committed for a real environment;
-  # the default is the dev realm's own placeholder.
+  # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in Authentik
+  # (2026-11-19) through app.authentik above.
   portal:
     url: ${PORTAL_URL:http://localhost:5173/customers}
     # A new client's login is texted when their first premium starts their cover (2026-11-08, the user).
     auto-invite: ${PORTAL_AUTO_INVITE:true}
-    keycloak:
-      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
-      realm: lifeplatform
-      client-id: lifeplatform-admin
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:dev-secret-admin}
-      portal-client-id: lifeplatform-spa
   # The public quote link (2026-11-02): anyone may price the portal's online products with no login. OFF unless a
   # deployment turns it on and names its insurer -- the tenant is never taken from a request. A real deployment sets
   # its own Cloudflare Turnstile secret and a visit secret; with none, visits end on every restart.
