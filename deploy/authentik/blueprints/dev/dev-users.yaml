@@ -1,0 +1,204 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+#
+# DEV ONLY -- never baked into the -auth image, never mounted on a server (smoke.sh fails if one of these users exists).
+# The 14 test users, carried over from the Keycloak realm JSON on 2026-11-19 (ticket 01 of .scratch/authentik-cutover):
+# same usernames, names, attributes and workspaces, password devpassword, and their Keycloak job roles as the job_roles
+# attribute the platform imports once at first sign-in.
+version: 1
+metadata:
+  name: lifeplatform-dev-users
+  labels:
+    blueprints.goauthentik.io/description: DEV ONLY test users
+
+entries:
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers: {name: lifeplatform}
+      required: true
+
+  - model: authentik_core.user
+    identifiers: {username: staff.underwriter}
+    attrs:
+      name: Halima Underwriter
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [UNDERWRITER]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.senior}
+    attrs:
+      name: Josephat Senior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [UNDERWRITER, SENIOR_UNDERWRITER]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.assessor}
+    attrs:
+      name: Daudi Assessor
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CLAIMS_ASSESSOR]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.manager}
+    attrs:
+      name: Fatuma Manager
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CLAIMS_MANAGER]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.management}
+    attrs:
+      name: Baraka Director
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [MANAGEMENT]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.finance}
+    attrs:
+      name: Rehema Finance
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "ARU"
+        job_roles: [FINANCE_OFFICER]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.finance-approver}
+    attrs:
+      name: Baraka Approver
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [FINANCE_OFFICER, FINANCE_APPROVER]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.service}
+    attrs:
+      name: Neema Service
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CUSTOMER_SERVICE_REP]
+
+  - model: authentik_core.user
+    identifiers: {username: staff.admin}
+    attrs:
+      name: Asha Admin
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [ADMIN, FINANCE_OFFICER, UNDERWRITER, CLAIMS_ASSESSOR, CLAIMS_MANAGER, CUSTOMER_SERVICE_REP]
+
+  - model: authentik_core.user
+    identifiers: {username: agent.senior}
+    attrs:
+      name: Juma Senior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    identifiers: {username: agent.junior}
+    attrs:
+      name: Neema Junior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    identifiers: {username: customer.owner}
+    attrs:
+      name: Amina Owner
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    identifiers: {username: customer.other}
+    attrs:
+      name: Baraka Other
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    identifiers: {username: regulator.tira}
+    attrs:
+      name: Salum Tira
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, regulator]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        job_roles: [TIRA_READ_ONLY]

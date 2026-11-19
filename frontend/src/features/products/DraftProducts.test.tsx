@@ -18,11 +18,11 @@ import { ProductsPage } from './ProductsPage';
 
 let roles: string[] = [];
 
-// `canAuthorProducts` reads realm_access.roles off the access token, stubbed at the auth boundary.
+// A signed-in user, stubbed at the auth boundary. `canAuthorProducts` reads the platform's permissions, not the token.
 vi.mock('react-oidc-context', () => ({
   useAuth: () => ({
     user: roles.length
-      ? { access_token: `x.${btoa(JSON.stringify({ realm_access: { roles } }))}.y` }
+      ? { access_token: `x.${btoa(JSON.stringify({ roles: ['staff'], job_roles: roles }))}.y` }
       : undefined,
   }),
 }));

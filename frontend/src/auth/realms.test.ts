@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ISSUER, realmForPath, workspaceHeaderFor, workspacesOf } from './realms';
 
 describe('one realm', () => {
-  it('has one issuer', () => {
-    expect(ISSUER).toMatch(/\/realms\/lifeplatform$/);
+  it("has one issuer: Authentik's application issuer, trailing slash included", () => {
+    expect(ISSUER).toMatch(/\/application\/o\/lifeplatform\/$/);
   });
 });
 

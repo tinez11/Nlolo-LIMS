@@ -88,8 +88,11 @@ through a webhook mapping that shapes the body as Part 3 describes.
   - `tenant_id`, `party_id` and `home_branch`: from user attributes
 - **Scopes:** add `offline_access`; drop `email`.
 - **Lifetimes:** access token 5 minutes, refresh 30 minutes (idle), sign-in session 10 hours.
-- **Groups:** exactly four, `staff`, `agent`, `customer` and `regulator`. Job roles stay in the platform's `iam`
-  tables and are never in Authentik.
+- **Groups:** exactly four, `staff`, `agent`, `customer` and `regulator`. Job roles are granted and checked in the
+  platform's `iam` tables.
+- **The `job_roles` attribute** (amended 2026-11-19): a login may carry a `job_roles` attribute, emitted as its own
+  `job_roles` claim. `AccessService.importFromToken` reads it **once**, at a staff member's first sign-in; nothing else
+  reads it. This is how the dev users and `add-user.sh`'s first administrator get their roles.
 - **The backend's service account and its non-expiring token,** with the key from `.env`. Its role holds:
   - "add user", globally
   - change, delete and reset-password only on users it created

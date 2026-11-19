@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+#
+# The platform's Authentik configuration (2026-11-19, the Authentik migration;
+# backend/docs/superpowers/specs/2026-11-19-authentik-migration-design.md). Baked into the -auth image for production
+# and mounted by the dev compose; applied by the worker at start and on every change, idempotently.
+#
+# Ticket 01 of .scratch/authentik-cutover: groups, the sign-in flow, the token's claims, the provider, the application
+# and the brand's sign-in flow. Hardening (PKCE, superuser refusal), the sign-in code, notifications, recovery and the
+# look come in later tickets.
+version: 1
+metadata:
+  name: lifeplatform
+  labels:
+    blueprints.goauthentik.io/description: Nlolo Life platform -- sign-in, tokens, groups
+
+entries:
+  # ---- The four workspaces. Job roles are NOT groups: they live in the platform's iam tables, and reach it once at a
+  # staff member's first sign-in through the login's job_roles attribute (see the claims mapping below).
+  - model: authentik_core.group
+    id: group-staff
+    identifiers: {name: staff}
+  - model: authentik_core.group
+    id: group-agent
+    identifiers: {name: agent}
+  - model: authentik_core.group
+    id: group-customer
+    identifiers: {name: customer}
+  - model: authentik_core.group
+    id: group-regulator
+    identifiers: {name: regulator}
+
+  # ---- Sign-in: username and password on one page (identification carries the password stage), then the session.
+  - model: authentik_stages_password.passwordstage
+    id: stage-password
+    identifiers: {name: lifeplatform-password}
+    attrs:
+      backends: [authentik.core.auth.InbuiltBackend]
+      failed_attempts_before_cancel: 5
+
+  - model: authentik_stages_identification.identificationstage
+    id: stage-identification
+    identifiers: {name: lifeplatform-identification}
+    attrs:
+      user_fields: [username]
+      password_stage: !KeyOf stage-password
+      case_insensitive_matching: true
+      show_matched_user: false
+
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-user-login
+    identifiers: {name: lifeplatform-user-login}
+    attrs:
+      session_duration: hours=10
+
+  - model: authentik_flows.flow
+    id: flow-sign-in
+    identifiers: {slug: lifeplatform-sign-in}
+    attrs:
+      name: Nlolo Life sign-in
+      title: Welcome back.
+      designation: authentication
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-identification, order: 10}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-user-login, order: 100}
+
+  # ---- What the token says about the person. roles: the workspace groups only, so Authentik's own groups never reach
+  # a token. tenant_id / party_id / home_branch: from the login's attributes. job_roles: read once by the platform at a
+  # staff member's first sign-in, nowhere else.
+  - model: authentik_providers_oauth2.scopemapping
+    id: mapping-claims
+    identifiers: {name: lifeplatform-claims}
+    attrs:
+      scope_name: lifeplatform
+      description: Workspaces, tenant and party
+      expression: |
+        workspaces = {"staff", "agent", "customer", "regulator"}
+        claims = {"roles": sorted({g.name for g in request.user.all_groups()} & workspaces)}
+        attributes = request.user.attributes or {}
+        for key in ("tenant_id", "party_id", "home_branch"):
+            if attributes.get(key):
+                claims[key] = str(attributes[key])
+        job_roles = attributes.get("job_roles")
+        if job_roles:
+            claims["job_roles"] = [str(r) for r in job_roles]
+        return claims
+
+  # ---- One public client for every console (universal login). The issuer is per provider:
+  # <auth origin>/application/o/lifeplatform/ -- trailing slash included.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers: {name: lifeplatform}
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: public
+      client_id: lifeplatform-spa
+      # 2026.8 lists the allowed grants on the provider, and an empty list allows none (found 2026-11-19: the
+      # authorize endpoint answered "Invalid grant_type for provider"). The console needs the code flow and refresh;
+      # nothing else (no password or client-credentials grant on the public client).
+      grant_types: [authorization_code, refresh_token]
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      sub_mode: user_uuid
+      include_claims_in_id_token: true
+      issuer_mode: per_provider
+      access_token_validity: minutes=5
+      refresh_token_validity: minutes=30
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !KeyOf mapping-claims
+
+  - model: authentik_core.application
+    identifiers: {slug: lifeplatform}
+    attrs:
+      name: Nlolo Life
+      provider: !KeyOf provider
+      policy_engine_mode: any
+
+  # ---- The default brand signs people in through the flow above.
+  - model: authentik_brands.brand
+    identifiers: {domain: authentik-default}
+    attrs:
+      branding_title: Nlolo Life
+      flow_authentication: !KeyOf flow-sign-in

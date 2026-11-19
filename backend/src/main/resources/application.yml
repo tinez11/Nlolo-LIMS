@@ -145,7 +145,11 @@ app:
   support-phone: ${SUPPORT_PHONE:}
   security:
     # One realm for everyone (2026-11-06, universal login); the workspace comes from the X-Workspace header.
-    issuer: ${KEYCLOAK_ISSUER:http://localhost:8081/realms/lifeplatform}
+    # Authentik (2026-11-19): the provider's own issuer, trailing slash included -- tokens must match it exactly.
+    issuer: ${AUTHENTIK_ISSUER:http://localhost:9100/application/o/lifeplatform/}
+    # The console's client id, which Authentik puts in every token's aud: a token from any other application of the
+    # same Authentik is refused.
+    audience: ${AUTHENTIK_AUDIENCE:lifeplatform-spa}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

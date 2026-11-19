@@ -133,6 +133,54 @@ services:
       postgres:
         condition: service_healthy
 
+  # Authentik (2026-11-19, the Authentik migration): replaces Keycloak above, which leaves this file in ticket 02 of
+  # .scratch/authentik-cutover. A server (the sign-in pages and API) and a worker (blueprints, notifications) from the
+  # same stock image, on their own `authentik` database in this Postgres. The worker applies both blueprint folders --
+  # production's, which the -auth image bakes in, and dev's test users, which no server ever mounts -- at start and on
+  # every change. The issuer is http://localhost:9100/application/o/lifeplatform/ (trailing slash included).
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-only-authentik-secret-key-0123456789abcdef}
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: postgres
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      # Set, not left to the default: the docs and the 2026.8.5 source disagree on it.
+      AUTHENTIK_POSTGRESQL__SSLMODE: disable
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-devadmin}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-dev-only-authentik-bootstrap-token}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      # The console's origin, for the provider's one exact redirect address.
+      LP_APP_ORIGIN: http://localhost:5173
+    ports:
+      - "9100:9000"
+    # Mounted on the server too, not only the worker: the admin API's "apply" runs here, and without the files it
+    # re-applies stale content and still reports success (found 2026-11-19). A Windows bind mount sends no file events
+    # into the container, so after editing a blueprint apply it through the API or restart the worker.
+    volumes:
+      - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
+      - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+    mem_limit: 1g
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
+      - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+    mem_limit: 512m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   mock-mobile-money:
     # Simulates Vodacom M-Pesa / Airtel Money / Tigo Pesa callback behavior for local
     # dev and integration tests, so `payment`'s ACL can be exercised without live

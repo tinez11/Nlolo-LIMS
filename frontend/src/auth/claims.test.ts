@@ -30,26 +30,30 @@ function unsignedToken(claims: Record<string, unknown>): string {
 }
 
 describe('readIdentity', () => {
-  it('reads realm_access.roles, which is what the backend authorizes on', () => {
+  it('reads the roles claim, which is what the backend authorizes on', () => {
     const token = unsignedToken({
-      realm_access: { roles: ['UNDERWRITER', 'ADMIN'] },
+      roles: ['agent', 'customer'],
       tenant_id: '11111111-1111-1111-1111-111111111111',
-      preferred_username: 'staff.underwriter',
+      preferred_username: 'agent.senior',
     });
     const identity = readIdentity(token);
-    expect(identity.roles).toEqual(['UNDERWRITER', 'ADMIN']);
+    expect(identity.roles).toEqual(['agent', 'customer']);
     expect(identity.tenantId).toBe('11111111-1111-1111-1111-111111111111');
-    expect(identity.preferredUsername).toBe('staff.underwriter');
+    expect(identity.preferredUsername).toBe('agent.senior');
+  });
+
+  it("ignores a Keycloak-shaped realm_access: Authentik's roles claim is the only source (2026-11-19)", () => {
+    expect(readIdentity(unsignedToken({ realm_access: { roles: ['staff'] } })).roles).toEqual([]);
   });
 
   it('returns the same object for the same token, so an effect depending on it does not re-run every render', () => {
     // useNavBadges lists the identity in its dependencies; a fresh object per render looped its fetch forever.
-    const token = unsignedToken({ realm_access: { roles: ['ADMIN'] }, sub: 'u-1' });
+    const token = unsignedToken({ roles: ['staff'], sub: 'u-1' });
     const first = readIdentity(token);
     expect(readIdentity(token)).toBe(first);
-    const other = readIdentity(unsignedToken({ realm_access: { roles: ['UNDERWRITER'] }, sub: 'u-2' }));
+    const other = readIdentity(unsignedToken({ roles: ['agent'], sub: 'u-2' }));
     expect(other).not.toBe(first);
-    expect(other.roles).toEqual(['UNDERWRITER']);
+    expect(other.roles).toEqual(['agent']);
     expect(readIdentity(token)).toEqual(first);
   });
 
@@ -76,8 +80,8 @@ describe('readIdentity', () => {
   });
 
   it('ignores non-string entries in the roles array', () => {
-    const token = unsignedToken({ realm_access: { roles: ['ADMIN', 42, null] } });
-    expect(readIdentity(token).roles).toEqual(['ADMIN']);
+    const token = unsignedToken({ roles: ['staff', 42, null] });
+    expect(readIdentity(token).roles).toEqual(['staff']);
   });
 });
 
@@ -94,7 +98,7 @@ describe('canSeeFinance', () => {
   it('excludes the operational staff roles, whatever their token says', () => {
     for (const role of ['UNDERWRITER', 'CLAIMS_ASSESSOR', 'CLAIMS_MANAGER', 'CUSTOMER_SERVICE_REP']) {
       grantRoles(role);
-      expect(canSeeFinance(readIdentity(unsignedToken({ realm_access: { roles: ['FINANCE_OFFICER'] } }))), role).toBe(false);
+      expect(canSeeFinance(readIdentity(unsignedToken({ roles: ['staff'], job_roles: ['FINANCE_OFFICER'] }))), role).toBe(false);
     }
   });
 

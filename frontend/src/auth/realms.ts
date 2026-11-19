@@ -61,14 +61,11 @@ export const REALM_CONFIG: Record<Realm, RealmConfig> = {
   },
 };
 
-const KEYCLOAK_BASE = import.meta.env.VITE_KEYCLOAK_BASE_URL ?? 'http://localhost:8081';
+/** `lifeplatform-spa` -- Authentik's PUBLIC PKCE client, the one application every console signs in through. */
+export const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID ?? 'lifeplatform-spa';
 
-/** `lifeplatform-spa` -- the PUBLIC PKCE client. `lifeplatform-app` is confidential
- *  and cannot be used from a browser at all. */
-export const CLIENT_ID = import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? 'lifeplatform-spa';
-
-/** The one realm (2026-11-06). */
-export const ISSUER = `${KEYCLOAK_BASE}/realms/lifeplatform`;
+/** Authentik's issuer for that application (2026-11-19), trailing slash included -- the backend matches it exactly. */
+export const ISSUER = import.meta.env.VITE_AUTH_ISSUER ?? 'http://localhost:9100/application/o/lifeplatform/';
 
 export function isRealm(value: string | undefined): value is Realm {
   return value !== undefined && (REALMS as readonly string[]).includes(value);

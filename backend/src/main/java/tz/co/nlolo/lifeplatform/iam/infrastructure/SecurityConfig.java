@@ -16,7 +16,10 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -26,10 +29,8 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 import org.springframework.security.web.SecurityFilterChain;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyHmacFilter;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 /**
  * JWT resource server for the one Keycloak realm, {@code lifeplatform} (2026-11-06; four realms before -- see
@@ -54,8 +55,8 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationManagerResolver<HttpServletRequest> issuerAuthenticationManagerResolver(
-            @Value("${app.security.issuer}") String issuer) {
-        JwtDecoder decoder = lazyDecoder(issuer);
+            @Value("${app.security.issuer}") String issuer, @Value("${app.security.audience}") String audience) {
+        JwtDecoder decoder = lazyDecoder(issuer, audience);
         // Per request, because the authorities depend on the request's X-Workspace header. The decoder -- and with it
         // the issuer check that refuses a token from any other realm -- is shared.
         return request -> {
@@ -69,7 +70,7 @@ public class SecurityConfig {
         };
     }
 
-    static JwtDecoder lazyDecoder(String issuer) {
+    static JwtDecoder lazyDecoder(String issuer, String audience) {
         return new JwtDecoder() {
             private volatile JwtDecoder delegate;
 
@@ -83,8 +84,13 @@ public class SecurityConfig {
                             // withIssuerLocation(...).build() installs only the timestamp check: a token signed with
                             // the provider's key but naming any other issuer would pass. The issuer is checked here
                             // (2026-11-19, step 0 of the Authentik migration; SecurityConfigDecoderTest).
+                            // The audience too (2026-11-19, Authentik cut-over ticket 01): every application of the same
+                            // Authentik signs with keys this backend trusts, so the token must be meant for the console.
                             NimbusJwtDecoder built = NimbusJwtDecoder.withIssuerLocation(issuer).build();
-                            built.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
+                            built.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                                JwtValidators.createDefaultWithIssuer(issuer),
+                                new JwtClaimValidator<List<String>>(JwtClaimNames.AUD,
+                                    aud -> aud != null && aud.contains(audience))));
                             current = delegate = built;
                         }
                     }
@@ -94,31 +100,26 @@ public class SecurityConfig {
         };
     }
 
-    /** The token's realm roles, as a list. */
-    static List<String> realmRoles(Jwt jwt) {
-        Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-        if (realmAccess == null || !(realmAccess.get("roles") instanceof Collection<?> roles)) return List.of();
+    /**
+     * The workspaces the token holds: Authentik's {@code roles} claim (2026-11-19), the person's workspace groups and
+     * nothing else -- the provider's mapping filters out Authentik's own groups.
+     */
+    static List<String> workspaceRoles(Jwt jwt) {
+        if (!(jwt.getClaims().get("roles") instanceof Collection<?> roles)) return List.of();
         return roles.stream().filter(String.class::isInstance).map(String.class::cast).toList();
     }
 
     /**
-     * One {@code ROLE_REALM_<X>} for the request's workspace -- the names every {@code @PreAuthorize} already reads --
-     * plus {@code ROLE_<role>} for each job role where the workspace carries them (staff, regulator). Nothing at all
-     * when the workspace cannot be resolved; {@link WorkspaceFilter} then answers the request with why.
+     * One {@code ROLE_REALM_<X>} for the request's workspace -- the names every {@code @PreAuthorize} already reads.
+     * Job roles are never authorities: the platform's iam tables hold them (the token's job_roles claim is read once,
+     * at a staff member's first sign-in -- AccessExpressions.identityOf). Nothing at all when the workspace cannot be
+     * resolved; {@link WorkspaceFilter} then answers the request with why.
      */
     static Collection<GrantedAuthority> authoritiesFor(Jwt jwt, String workspaceHeader) {
-        List<String> roles = realmRoles(jwt);
-        if (!(Workspace.resolve(roles, workspaceHeader) instanceof Workspace.Resolution.Active active)) {
+        if (!(Workspace.resolve(workspaceRoles(jwt), workspaceHeader) instanceof Workspace.Resolution.Active active)) {
             return List.of();
         }
-        List<GrantedAuthority> authorities = new ArrayList<>();
-        authorities.add(new SimpleGrantedAuthority("ROLE_REALM_" + active.workspace().marker()));
-        if (active.workspace().carriesJobRoles()) {
-            for (String role : roles) {
-                if (!Workspace.isWorkspaceRole(role)) authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
-            }
-        }
-        return authorities;
+        return List.of(new SimpleGrantedAuthority("ROLE_REALM_" + active.workspace().marker()));
     }
 
     /**
