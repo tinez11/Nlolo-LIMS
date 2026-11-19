@@ -63,5 +63,5 @@ Found while building:
 - **A hidden prompt field's value is its placeholder,** never evaluated, so the flag is cleared to the string `"false"`. The check reads only an exact `true`.
 - **Authentik's pages are in shadow DOM:** scripts must find text with Playwright locators, not `body.innerText`.
 - **The service account can't manage logins it didn't create:** the dev users, and the first administrator made on the server. Closing or resetting one of those from the Users screen says so and changes nothing.
-- **Keycloak's "not one of the last 3 passwords"** needs Authentik's enterprise unique-password policy. Kept: at least 8 characters, not the username, and not the temporary password itself. Raised with the user.
-- **The console's own Change password** asks Keycloak for its built-in update-password action, which Authentik ignores. No ticket covers it. Raised with the user.
+- **Keycloak's "not one of the last 3 passwords"** needs Authentik's enterprise unique-password policy. Kept: at least 8 characters, not the username, and not the temporary password itself. **The user accepted dropping it** (2026-11-19, recorded in the spec's carry-over table).
+- **The console's own Change password** asks Keycloak for its built-in update-password action, which Authentik ignores. **The user put it in [Password changed text](06-password-changed-text.md)** (2026-11-19).

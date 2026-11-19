@@ -53,6 +53,8 @@ not to port it.
 | Swahili login pages | **Changed:** Authentik's sign-in and set-password pages are English only. The reset request and all texts stay bilingual | 11 |
 | Staff can't reset their own password | Same. `/reset` texts nothing to staff numbers | 12 |
 | 10-hour session cap | Same, enforced by the console from the token's `auth_time`. 30-minute idle timeout | 07 |
+| Password rules: 8 characters, not the username, not one of the last 3 (added 2026-11-19, cut-over ticket 03) | **Changed:** at least 8 characters, not the username, and not the password the person was given or already has. "Not one of the last 3" needs Authentik's enterprise licence; the user accepted dropping it | cut-over 03 |
+| The console's **Change password** (Keycloak's update-password action: current password again, the rules, the text) (added 2026-11-19) | Same, as an Authentik change-password flow the console links to. Built with the "password changed" text | cut-over 06 |
 
 ## Part 1 -- Authentik configuration (blueprints)
 
