@@ -18,6 +18,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
@@ -68,7 +69,7 @@ public class SecurityConfig {
         };
     }
 
-    private static JwtDecoder lazyDecoder(String issuer) {
+    static JwtDecoder lazyDecoder(String issuer) {
         return new JwtDecoder() {
             private volatile JwtDecoder delegate;
 
@@ -79,7 +80,12 @@ public class SecurityConfig {
                     synchronized (this) {
                         current = delegate;
                         if (current == null) {
-                            current = delegate = NimbusJwtDecoder.withIssuerLocation(issuer).build();
+                            // withIssuerLocation(...).build() installs only the timestamp check: a token signed with
+                            // the provider's key but naming any other issuer would pass. The issuer is checked here
+                            // (2026-11-19, step 0 of the Authentik migration; SecurityConfigDecoderTest).
+                            NimbusJwtDecoder built = NimbusJwtDecoder.withIssuerLocation(issuer).build();
+                            built.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
+                            current = delegate = built;
                         }
                     }
                 }

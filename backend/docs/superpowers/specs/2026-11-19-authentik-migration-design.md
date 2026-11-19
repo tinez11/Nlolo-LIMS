@@ -137,7 +137,7 @@ The brand's recovery flow is a one-step flow that redirects to `/reset`.
 
 - **`SecurityConfig.authoritiesFor`** reads `roles` instead of `realm_access.roles`; `Workspace.resolve` is unchanged.
 - **The issuer** is `https://<auth>/application/o/<slug>/`, and must match exactly, trailing slash included.
-- **The issuer and audience validators land first, on `main`** (step 0 below).
+- **The issuer validator landed first, on `main`** (step 0 below). The audience validator comes with step 2.
 
 ### Login management ([04](../../../../.scratch/authentik-migration/issues/04-admin-api-for-logins.md), [10](../../../../.scratch/authentik-migration/issues/10-groups-and-roles.md))
 
@@ -243,14 +243,21 @@ The settings are `AUTHENTIK_BASE_URL`, `AUTHENTIK_API_TOKEN`, `AUTHENTIK_ISSUER`
 
 ## Build order ([16](../../../../.scratch/authentik-migration/issues/16-build-order.md))
 
-**Step 0, on `main`, separately:** a test proving today's token validation, then explicit issuer and audience
-validators in `SecurityConfig.lazyDecoder`.
+**Step 0, on `main`, separately: done 2026-11-19.** A test proved today's token validation, and `SecurityConfig.lazyDecoder`
+now checks the **issuer** (`JwtValidators.createDefaultWithIssuer`; `SecurityConfigDecoderTest`).
+
+The **audience** check moves into cut-over step 2 (the user's choice, 2026-11-19). Keycloak's access tokens carry no
+`aud` claim, because the realm has no audience mapper, so the check can't be switched on without Keycloak
+configuration that step 9 deletes. Until then, a token from another client of the same realm still passes the
+decoder. The only such client in production is `lifeplatform-admin`, whose tokens hold no workspace role, so
+`WorkspaceFilter` refuses them.
 
 **Cut-over branch.** Each step ends with its affected tests and a manual check. Keycloak stays in the dev compose
 until step 3.
 
 1. **Authentik in dev:** production and dev blueprints. Check the decoded token's claims.
-2. **Backend reads Authentik tokens:** test helpers and the test `application.yml`.
+2. **Backend reads Authentik tokens:** the **audience validator** (`aud` must hold the SPA's client id), test helpers
+   and the test `application.yml`.
 3. **Frontend signs in with Authentik.** Keycloak leaves the dev compose.
 4. **The three login adapters.**
 5. **The two webhooks.**
