@@ -17,7 +17,7 @@ class ProductionSettingsGuardTest {
         s.put("minio.access-key", "platform-docs");
         s.put("minio.secret-key", "Lk2-real-object-store-secret");
         s.put("app.portal.keycloak.client-secret", "Pt7-real-portal-secret");
-        s.put("app.staff-admin.keycloak.client-secret", "Sa3-real-staff-admin-secret");
+        s.put("app.authentik.api-token", "Ak9-real-authentik-api-token");
         s.put("app.agent-logins.keycloak.client-secret", "Ag6-real-agents-admin-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
         s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
@@ -39,6 +39,17 @@ class ProductionSettingsGuardTest {
             "app.staff-sign-in-code.enabled is off (STAFF_SIGN_IN_CODE: staff must get a sign-in code)");
         s.remove("app.staff-sign-in-code.enabled");
         assertThat(ProductionSettingsGuard.problems(s::get)).hasSize(1);
+    }
+
+    /** 2026-11-19 (Authentik cut-over, ticket 03): the backend's Authentik API token replaces the staff admin secret. */
+    @Test
+    void theDevAuthentikApiTokenOrNoneIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.authentik.api-token", "dev-only-authentik-api-token");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.authentik.api-token still holds the dev value");
+        s.remove("app.authentik.api-token");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly("app.authentik.api-token is not set");
     }
 
     @Test

@@ -106,6 +106,9 @@ services:
       AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
       # The console's origin, for the provider's one exact redirect address.
       LP_APP_ORIGIN: http://localhost:5173
+      # The backend's API token (ticket 03): the blueprint gives the lifeplatform-backend service account this key, and
+      # the backend sends it as AUTHENTIK_API_TOKEN. Same dev default on both sides; production sets its own.
+      AUTHENTIK_API_TOKEN: ${AUTHENTIK_API_TOKEN:-dev-only-authentik-api-token}
     ports:
       - "9100:9000"
     # Mounted on the server too, not only the worker: the admin API's "apply" runs here, and without the files it

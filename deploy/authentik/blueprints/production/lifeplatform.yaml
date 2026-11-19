@@ -14,11 +14,59 @@ metadata:
     blueprints.goauthentik.io/description: Nlolo Life platform -- sign-in, tokens, groups
 
 entries:
+  # ---- The backend's own login (ticket 03): a service account whose API token the backend holds as
+  # AUTHENTIK_API_TOKEN. Its role may add users anywhere, but may only see, change, delete and reset the password of
+  # the users it created itself (initial permissions). It is never given a global reset-password right: a leaked token
+  # could then reset an administrator's password. Workspace rights are per group, below.
+  - model: authentik_rbac.role
+    id: role-backend
+    identifiers: {name: lifeplatform-backend}
+    attrs:
+      permissions:
+        - authentik_core.add_user
+
+  - model: authentik_rbac.initialpermissions
+    identifiers: {name: lifeplatform-backend-created-users}
+    attrs:
+      role: !KeyOf role-backend
+      permissions:
+        - !Find [auth.permission, [codename, view_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, change_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, delete_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, reset_user_password], [content_type__app_label, authentik_core]]
+
+  - model: authentik_core.user
+    id: user-backend
+    identifiers: {username: lifeplatform-backend}
+    attrs:
+      name: Nlolo Life backend
+      type: service_account
+      path: lifeplatform/service
+      is_active: true
+      roles:
+        - !KeyOf role-backend
+
+  # Non-expiring: an expiring token gets a new key when it lapses and the backend silently loses access. The key comes
+  # from the environment, with no default: unset, Authentik generates one nobody holds, and the backend fails loudly.
+  - model: authentik_core.token
+    identifiers: {identifier: lifeplatform-backend-api}
+    attrs:
+      user: !KeyOf user-backend
+      intent: api
+      expiring: false
+      description: The platform backend's access to the users API
+      key: !Env AUTHENTIK_API_TOKEN
+
   # ---- The four workspaces. Job roles are NOT groups: they live in the platform's iam tables, and reach it once at a
   # staff member's first sign-in through the login's job_roles attribute (see the claims mapping below).
+  # The backend may add people to staff, never remove them (a closed staff login is disabled instead), and has no
+  # right at all on regulator: regulator logins are made by hand on the server.
   - model: authentik_core.group
     id: group-staff
     identifiers: {name: staff}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
   - model: authentik_core.group
     id: group-agent
     identifiers: {name: agent}
@@ -91,6 +139,114 @@ entries:
 
   - model: authentik_policies.policybinding
     identifiers: {target: !KeyOf binding-deny-superuser, policy: !KeyOf policy-is-superuser, order: 0}
+
+  # ---- A temporary password must be replaced at the next sign-in (ticket 03; Keycloak's UPDATE_PASSWORD required
+  # action). Authentik has no such flag: the backend sets the password, then the login's reset_password attribute to
+  # true. These two stages run only while that attribute is exactly true -- judged once the login is known -- and the
+  # user-write stage saves the new password and sets the attribute to the string "false": a hidden field's value is
+  # its placeholder, taken from the server, never from the browser, and never evaluated as an expression.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-must-change-password
+    identifiers: {name: lifeplatform-must-change-password}
+    attrs:
+      expression: |
+        return (request.user.attributes or {}).get("reset_password") is True
+
+  # Keycloak's password rules, carried over: at least 8 characters and not the username. Its "not one of the last 3"
+  # needs Authentik's enterprise unique-password policy; what stays is "not the temporary password itself", without
+  # which the administrator who issued it would still know the password.
+  - model: authentik_policies_password.passwordpolicy
+    id: policy-password-rules
+    identifiers: {name: lifeplatform-password-rules}
+    attrs:
+      password_field: password
+      check_static_rules: true
+      length_min: 8
+      error_message: Use at least 8 characters.
+
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-password-not-reused
+    identifiers: {name: lifeplatform-password-not-username-or-temporary}
+    attrs:
+      expression: |
+        new = request.context.get("prompt_data", {}).get("password") or ""
+        if new.lower() == request.user.username.lower():
+            ak_message("Your password can't be your username.")
+            return False
+        if request.user.check_password(new):
+            ak_message("Choose a password different from the one you were given.")
+            return False
+        return True
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-new-password
+    identifiers: {name: lifeplatform-new-password}
+    attrs:
+      field_key: password
+      label: New password
+      type: password
+      required: true
+      placeholder: New password
+      order: 0
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-new-password-repeat
+    identifiers: {name: lifeplatform-new-password-repeat}
+    attrs:
+      field_key: password_repeat
+      label: New password again
+      type: password
+      required: true
+      placeholder: New password again
+      order: 1
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-clear-reset-flag
+    identifiers: {name: lifeplatform-clear-reset-password}
+    attrs:
+      field_key: attributes.reset_password
+      label: reset_password
+      type: hidden
+      required: false
+      placeholder: "false"
+      placeholder_expression: false
+      order: 2
+
+  - model: authentik_stages_prompt.promptstage
+    id: stage-choose-password
+    identifiers: {name: lifeplatform-choose-password}
+    attrs:
+      fields:
+        - !KeyOf prompt-new-password
+        - !KeyOf prompt-new-password-repeat
+        - !KeyOf prompt-clear-reset-flag
+      validation_policies:
+        - !KeyOf policy-password-rules
+        - !KeyOf policy-password-not-reused
+
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-save-password
+    identifiers: {name: lifeplatform-save-password}
+    attrs:
+      user_creation_mode: never_create
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-choose-password
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-choose-password, order: 60}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-choose-password, policy: !KeyOf policy-must-change-password, order: 0}
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-save-password
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-save-password, order: 70}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-save-password, policy: !KeyOf policy-must-change-password, order: 0}
 
   # ---- Sign-out ends the Authentik session (ticket 02), as Keycloak's did. The stock provider invalidation flow only
   # signs the person out of the application: with the session still alive, the console's next sign-in redirect came
