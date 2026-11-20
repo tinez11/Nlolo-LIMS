@@ -22,7 +22,7 @@ Spec: Part 1 "Notifications", and Part 2 "Webhook endpoints". The decisions are 
 **Status:** resolved (2026-11-20, branch `authentik-cutover`)
 
 - [x] A person changing their own password receives the text once, in their language
-- [ ] Completing a password reset sends the text once (moved to [Password reset at /reset](07-password-reset-at-reset.md): the recovery flow is built there)
+- [x] Completing a password reset sends the text once (checked in [Password reset at /reset](07-password-reset-at-reset.md): the recovery flow is built there)
 - [x] An administrator's reset, the backend setting a temporary password, and a blueprint password set send nothing
 - [x] The same event delivered twice texts once
 - [x] The endpoint refuses a call without the bearer secret

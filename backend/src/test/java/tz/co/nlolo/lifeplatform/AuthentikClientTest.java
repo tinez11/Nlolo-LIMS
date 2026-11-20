@@ -175,6 +175,17 @@ class AuthentikClientTest {
     }
 
     @Test
+    void asksForARecoveryLinkThatLastsAsLongAsItIsTold() {
+        authentik.on("POST /api/v3/core/users/35/recovery/", 200,
+            "{\"link\":\"http://authentik-server:9000/if/flow/lifeplatform-set-password/?flow_token=abc\"}");
+
+        assertThat(client.recoveryLink(35, "minutes=15"))
+            .isEqualTo("http://authentik-server:9000/if/flow/lifeplatform-set-password/?flow_token=abc");
+        assertThat(authentik.last("POST /api/v3/core/users/35/recovery/").body())
+            .isEqualTo("{\"token_duration\":\"minutes=15\"}");
+    }
+
+    @Test
     void aRefusalCarriesItsStatus() {
         authentik.on("POST /api/v3/core/users/35/set_password/", 403, "{\"detail\":\"You do not have permission.\"}");
 

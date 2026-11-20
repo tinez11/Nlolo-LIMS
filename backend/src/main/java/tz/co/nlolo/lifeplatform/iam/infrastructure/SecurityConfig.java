@@ -227,6 +227,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/public/consent").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/phone-codes").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/phone-codes/check").permitAll()
+                // The password reset page (2026-11-19): behind a visit, like the quote link's calls.
+                .requestMatchers(HttpMethod.POST, "/public/password-reset").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/password-reset/check").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/applications").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2

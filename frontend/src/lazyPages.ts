@@ -20,6 +20,10 @@ export const DashboardPage = lazy(() =>
 export const PublicQuoteApp = lazy(() =>
   import('@/features/public/PublicQuoteApp').then((m) => ({ default: m.PublicQuoteApp })),
 );
+/** The password reset page (2026-11-19): public too, its own chunk for the same reason. */
+export const PasswordResetPage = lazy(() =>
+  import('@/features/public/PasswordResetPage').then((m) => ({ default: m.PasswordResetPage })),
+);
 export const ActivityLogPage = lazy(() =>
   import('@/features/audit/ActivityLogPage').then((m) => ({ default: m.ActivityLogPage })),
 );

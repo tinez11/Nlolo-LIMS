@@ -94,10 +94,33 @@ entries:
       backends: [authentik.core.auth.InbuiltBackend]
       failed_attempts_before_cancel: 5
 
+  # "Forgot your password?" on the sign-in page (ticket 07): a one-step flow sending the browser to the platform's own
+  # bilingual /reset page, where the reset starts (see "Password reset" further down).
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-to-reset-page
+    identifiers: {name: lifeplatform-to-reset-page}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/reset", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-forgot-password
+    identifiers: {slug: lifeplatform-forgot-password}
+    attrs:
+      name: Nlolo Life forgot password
+      title: Forgot your password?
+      designation: recovery
+      authentication: none
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-forgot-password, stage: !KeyOf stage-to-reset-page, order: 10}
+
   - model: authentik_stages_identification.identificationstage
     id: stage-identification
     identifiers: {name: lifeplatform-identification}
     attrs:
+      recovery_flow: !KeyOf flow-forgot-password
       user_fields: [username]
       password_stage: !KeyOf stage-password
       case_insensitive_matching: true
@@ -637,9 +660,39 @@ entries:
   - model: authentik_policies.policybinding
     identifiers: {target: !KeyOf application, policy: !KeyOf policy-pkce-s256, order: 0}
 
-  # ---- The default brand signs people in through the flow above.
+  # ---- Password reset (ticket 07). It starts on the platform's own bilingual /reset page, not in Authentik: the
+  # sign-in page's "Forgot your password?" is a one-step flow that sends the browser there. /reset texts a code, checks
+  # it, and asks the API for a 15-minute recovery link; that link opens the brand's recovery flow below, where the
+  # person chooses a new password (same rules as a forced change) and lands on the console root, to sign in.
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-to-console-root
+    identifiers: {name: lifeplatform-to-console-root}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-set-password
+    identifiers: {slug: lifeplatform-set-password}
+    attrs:
+      name: Nlolo Life set a new password
+      title: Choose a new password
+      designation: recovery
+      authentication: none
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-choose-password, order: 10}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-save-password, order: 20}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-to-console-root, order: 30}
+
+  # ---- The default brand signs people in through the flow above, and its recovery links (from the API) open the
+  # set-a-new-password flow.
   - model: authentik_brands.brand
     identifiers: {domain: authentik-default}
     attrs:
       branding_title: Nlolo Life
       flow_authentication: !KeyOf flow-sign-in
+      flow_recovery: !KeyOf flow-set-password

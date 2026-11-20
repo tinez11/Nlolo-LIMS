@@ -149,6 +149,18 @@ public class AuthentikClient {
             .body(Map.of("attributes", attributes)).retrieve().toBodilessEntity());
     }
 
+    /**
+     * A one-time link into the brand's recovery flow, valid for {@code duration} (Authentik's form, e.g. "minutes=15").
+     * Built with the host this client calls Authentik on; a caller handing it to a browser puts the public one in.
+     */
+    public String recoveryLink(int pk, String duration) {
+        JsonNode answer = call(() -> http.post().uri("/core/users/{pk}/recovery/", pk)
+            .contentType(MediaType.APPLICATION_JSON).body(Map.of("token_duration", duration))
+            .retrieve().body(JsonNode.class));
+        if (answer == null || !answer.hasNonNull("link")) throw new Refused(502, "Authentik answered with no link");
+        return answer.get("link").asText();
+    }
+
     public void deleteUser(int pk) {
         call(() -> http.delete().uri("/core/users/{pk}/", pk).retrieve().toBodilessEntity());
     }

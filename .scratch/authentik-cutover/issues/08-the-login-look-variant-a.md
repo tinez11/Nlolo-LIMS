@@ -33,3 +33,4 @@ Spec: Part 1 "Branding". The decision is in ticket 09 of `.scratch/authentik-mig
 - [ ] The sign-in code page and the set-new-password page carry the same CSS
 - [ ] The branding lives entirely in the production blueprint and image assets, with nothing configured by hand in Authentik's admin
 - [ ] The user has seen and accepted the screenshots
+- [ ] The sign-in page's recovery link reads "Forgot your password?" (found in ticket 07: Authentik's stock wording is "Forgot username or password?", but the username is the phone and isn't what's forgotten)

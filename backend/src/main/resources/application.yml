@@ -105,6 +105,8 @@ app:
   authentik:
     base-url: ${AUTHENTIK_BASE_URL:http://localhost:9100}
     api-token: ${AUTHENTIK_API_TOKEN:dev-only-authentik-api-token}
+    # Authentik's address as a browser reaches it: recovery links are handed to the browser on it (2026-11-19).
+    public-url: ${AUTHENTIK_PUBLIC_URL:http://localhost:9100}
   # Staff logins (2026-10-26): administrators add, close and reset staff logins from the Users screen, in Authentik
   # (2026-11-19).
   staff-admin:

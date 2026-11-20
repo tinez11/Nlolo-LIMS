@@ -92,10 +92,21 @@ public class PublicAccess {
         }
     }
 
-    /** This deployment's insurer, or a 404 when the public link is switched off here. */
+    /** This deployment's insurer, or a 404 when the public quote link is switched off here. */
     public UUID tenant() {
         if (!enabled) {
             throw new Refused(404, "Online quotes are not available here");
+        }
+        return tenantId;
+    }
+
+    /**
+     * This deployment's insurer whether or not the quote link is on (2026-11-19): the password reset page uses the same
+     * visits and insurer, and must work with the quote link switched off. A 404 only when no insurer is configured.
+     */
+    public UUID insurer() {
+        if (tenantId == null) {
+            throw new Refused(404, "This page is not available here");
         }
         return tenantId;
     }
@@ -121,7 +132,7 @@ public class PublicAccess {
      * on the server, and is single-use there. Answers a signed visit token.
      */
     public String startVisit(String turnstileToken, String remoteIp) {
-        tenant();
+        insurer();
         limit("visit:" + remoteIp, 20, Duration.ofHours(1));
         if (turnstileEnabled && !humanByCloudflare(turnstileToken, remoteIp)) {
             throw new Refused(403, "We could not confirm you are a person. Reload the page and try again.");
@@ -133,7 +144,7 @@ public class PublicAccess {
 
     /** The visit token's own id, once its signature and expiry check out; a 401 otherwise. */
     public String visit(String visitToken) {
-        tenant();
+        insurer();
         if (visitToken == null) {
             throw new Refused(401, "Your session has ended. Reload the page to continue.");
         }
