@@ -50,6 +50,7 @@ public final class ReportingTestMigrations {
         "db-migrations/distribution/V9__credit_life_pending_commission.sql",
         "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
         "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql",
+            "db-migrations/distribution/V13__login_user_id.sql",
     };
 
     public static final String[] ALL = Stream.of(

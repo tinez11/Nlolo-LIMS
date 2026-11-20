@@ -27,7 +27,7 @@ const DELIVERY_LABEL: Record<string, string> = {
 /**
  * A client's customer-portal access on their record (2026-10-08, the customer portal design step 1). Customer
  * service and admins invite the client: the platform creates the login itself, so nobody types the client's id into
- * Keycloak. With an email the client gets a set-your-password link; otherwise a one-time password is texted to their
+ * the sign-in system. With an email the client gets a set-your-password link; otherwise a one-time password is texted to their
  * phone (2026-10-13) and never shown here at all. Only where there is no email and no phone the SMS could reach is it
  * shown ONCE -- read it to the client, it is not kept anywhere and cannot be shown again (re-send makes a new one).
  */

@@ -25,7 +25,7 @@ import java.util.UUID;
  * no self-registration; D2: policyholders only).
  *
  * <p>The platform creates the login itself and writes the tenant and party onto it, so the party a customer is
- * authorised as is the one staff chose on screen -- never an id somebody typed into Keycloak. With an email the
+ * authorised as is the one staff chose on screen -- never an id somebody typed into the sign-in system. With an email the
  * identity provider sends its own set-your-password link; otherwise a one-time password goes to the client's phone by
  * SMS (2026-10-13), and only where there is neither an email nor a reachable phone is it returned to the staff member
  * once and kept nowhere. The texted password is never stored: see {@code NotificationApi.sendUnloggedSms}.
@@ -97,7 +97,7 @@ public class PortalAccessService {
             String userId = accounts.create(username, email, party.displayName(), tenantId, partyId);
             access = new PortalAccess(tenantId, partyId, userId, username, delivery, invitedBy);
         } else {
-            accounts.setEnabled(access.getKeycloakUserId(), true);
+            accounts.setEnabled(access.getLoginUserId(), true);
             access.reinvited(delivery, invitedBy);
         }
         accesses.save(access);
@@ -120,7 +120,7 @@ public class PortalAccessService {
         if (access.getStatus() == PortalAccess.Status.REVOKED) {
             return view(access);
         }
-        accounts.setEnabled(access.getKeycloakUserId(), false);
+        accounts.setEnabled(access.getLoginUserId(), false);
         access.revoked(revokedBy);
         return view(accesses.save(access));
     }
@@ -161,7 +161,7 @@ public class PortalAccessService {
     }
 
     private PortalInvite firstPassword(PortalAccess access, PartyDetailView party) {
-        String userId = access.getKeycloakUserId();
+        String userId = access.getLoginUserId();
         if (access.getDelivery() == PortalAccess.Delivery.EMAIL_LINK) {
             accounts.sendSetPasswordLink(userId);
             return new PortalInvite(view(access), null, null, null);

@@ -108,7 +108,7 @@ public class AgentLoginService {
             String userId = accounts.create(username, email, party.displayName(), tenantId, agent.partyId());
             login = new AgentLogin(tenantId, agentId, agent.partyId(), userId, username, delivery, by);
         } else {
-            accounts.setEnabled(login.getKeycloakUserId(), true);
+            accounts.setEnabled(login.getLoginUserId(), true);
             login.opened();
             login.passwordSent(delivery);
         }
@@ -136,7 +136,7 @@ public class AgentLoginService {
     public AgentLoginView close(UUID agentId, String by) {
         AgentLogin login = existing(agentId);
         if (login.getStatus() == AgentLogin.Status.OPEN) {
-            accounts.setEnabled(login.getKeycloakUserId(), false);
+            accounts.setEnabled(login.getLoginUserId(), false);
             login.closed(AgentLogin.Status.CLOSED, by);
             logins.save(login);
         }
@@ -159,11 +159,11 @@ public class AgentLoginService {
                 .findByTenantIdAndAgentId(envelope.tenantId(), UUID.fromString(agentId.toString()))
                 .ifPresent(login -> {
                     if (suspended && login.getStatus() == AgentLogin.Status.OPEN) {
-                        accounts.setEnabled(login.getKeycloakUserId(), false);
+                        accounts.setEnabled(login.getLoginUserId(), false);
                         login.closed(AgentLogin.Status.SUSPENDED, "system");
                         logins.save(login);
                     } else if (reactivated && login.getStatus() == AgentLogin.Status.SUSPENDED) {
-                        accounts.setEnabled(login.getKeycloakUserId(), true);
+                        accounts.setEnabled(login.getLoginUserId(), true);
                         login.opened();
                         logins.save(login);
                     }
@@ -198,7 +198,7 @@ public class AgentLoginService {
     }
 
     private AgentLoginIssued firstPassword(AgentLogin login, PartyDetailView party, AgentLogin.Delivery delivery) {
-        String userId = login.getKeycloakUserId();
+        String userId = login.getLoginUserId();
         if (delivery == AgentLogin.Delivery.EMAIL_LINK) {
             accounts.sendSetPasswordLink(userId);
             return new AgentLoginIssued(view(login), null, null, null);

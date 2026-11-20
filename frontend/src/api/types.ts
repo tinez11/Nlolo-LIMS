@@ -443,7 +443,7 @@ export type PartyType = NonNullable<PartyView['partyType']>;
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 /**
  * One KYC decision in a client's history. `decidedByName` is null for a decision taken before
- * the name was captured (V7) — "not recorded", never "nobody" — and `decidedBy` is a Keycloak
+ * the name was captured (V7) — "not recorded", never "nobody" — and `decidedBy` is a login
  * subject, which is an identity and not something to show a person.
  */
 export type KycDecisionView = PartyComponents['schemas']['KycDecisionView'];

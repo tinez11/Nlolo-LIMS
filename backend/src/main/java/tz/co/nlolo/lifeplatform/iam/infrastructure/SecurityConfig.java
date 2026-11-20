@@ -35,17 +35,16 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * JWT resource server for the one Keycloak realm, {@code lifeplatform} (2026-11-06; four realms before -- see
- * docs/04-api-contracts.md §3). Each request acts in one workspace (see {@link Workspace}) and gets that workspace's
- * synthetic ROLE_REALM_<X> authority -- the names every @PreAuthorize already reads -- plus, in the staff and regulator
- * workspaces, a ROLE_<Y> authority per job role in realm_access.roles.
+ * JWT resource server for the one sign-in, Authentik's {@code lifeplatform} provider (one for everyone since
+ * 2026-11-06, four Keycloak realms before -- see docs/04-api-contracts.md §3; Authentik since 2026-11-19). Each request
+ * acts in one workspace (see {@link Workspace}) and gets that workspace's synthetic ROLE_REALM_<X> authority -- the names
+ * every @PreAuthorize already reads. Job roles are never authorities (see authoritiesFor below).
  *
  * Decoders are constructed lazily (see lazyDecoder below): NimbusJwtDecoder.
  * withIssuerLocation(...).build() makes an EAGER HTTP call to the issuer's
  * OIDC discovery endpoint. If that ran at bean-creation time, the whole app
- * context would fail to start whenever Keycloak's realm import hasn't
- * finished yet when `app` boots (infra/docker-compose.yml's app service
- * depends_on keycloak with condition: service_started, not service_healthy)
+ * context would fail to start whenever the sign-in server is not answering yet
+ * when the backend boots (it starts in parallel with it, in dev and on the server)
  * -- exactly the kind of boot-time crash M0's Task 10 had to fix once already
  * for a different dependency. Deferring the discovery call to first actual
  * token validation avoids re-introducing that failure mode.
@@ -178,7 +177,7 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/health/liveness",
                                  "/actuator/health/readiness", "/actuator/info").permitAll()
                 // Prometheus scrapes with no credentials at all (observability/prometheus.yml
-                // declares no basic_auth/bearer_token) and cannot obtain or refresh a Keycloak
+                // declares no basic_auth/bearer_token) and cannot obtain or refresh a sign-in
                 // JWT, so the scrape endpoint must be permitAll SOMEWHERE. What bounds it is
                 // WHERE it exists, not this rule: application.yml binds actuator to its own port
                 // 9090, and infra/docker-compose.yml publishes only 8080 to the host -- so this
@@ -198,21 +197,18 @@ public class SecurityConfig {
                 // must change with it -- ActuatorExposureTest fails loudly if it does not.
                 .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                 // The mobile-money aggregator authenticates with its own HMAC signature scheme,
-                // not a Keycloak bearer token (openapi-payment.yaml declares security: [] for
+                // not a sign-in bearer token (openapi-payment.yaml declares security: [] for
                 // this one path). It is permitAll HERE only because mobileMoneyHmacFilter runs
                 // in front of it and fails closed -- this is not an unauthenticated endpoint,
                 // it is a differently-authenticated one. Scoped to the exact path, never a
                 // prefix wildcard.
                 .requestMatchers(HttpMethod.POST, MobileMoneyHmacFilter.CALLBACK_PATH).permitAll()
-                // Keycloak asking for a password-reset code to be texted (2026-10-28): signed the same way, and checked by
-                // PasswordResetSmsController itself before it does anything -- differently authenticated, not open. The
-                // literal rather than the controller's constant, which would make iam depend on omnichannel internals.
-                .requestMatchers(HttpMethod.POST, "/internal/password-reset/sms").permitAll()
-                // Keycloak saying a password changed, so the person is texted (2026-11-06): signed the same way, checked
-                // by PasswordChangedController before anything happens.
+                // Authentik saying a password changed, so the person is texted (2026-11-06; Authentik since 2026-11-19):
+                // its own bearer secret, checked by PasswordChangedController before anything happens. Literal paths
+                // rather than the controllers' constants, which would make iam depend on omnichannel internals.
                 .requestMatchers(HttpMethod.POST, "/internal/password-changed").permitAll()
-                // Keycloak asking for a staff sign-in code to be texted (2026-11-14): signed the same way, checked by
-                // StaffSignInCodeController before anything happens.
+                // Authentik asking for a staff sign-in code to be texted (2026-11-14; Authentik since 2026-11-19): its
+                // own bearer secret, checked by StaffSignInCodeController before anything happens.
                 .requestMatchers(HttpMethod.POST, "/internal/staff-sign-in-code/sms").permitAll()
                 // Could a code be sent now? Asked by Authentik before the code step (2026-11-19); same secret.
                 .requestMatchers(HttpMethod.POST, "/internal/staff-sign-in-code/check").permitAll()

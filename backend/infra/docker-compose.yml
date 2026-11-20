@@ -91,6 +91,9 @@ services:
   authentik-server:
     image: ghcr.io/goauthentik/server:2026.8.5
     command: server
+    # host.docker.internal is Docker Desktop's name for this machine, where the backend runs; Linux (CI, a Linux dev
+    # box) has it only when mapped, and the staff sign-in code and the password-changed notice call the backend there.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment: &authentik-env
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-only-authentik-secret-key-0123456789abcdef}
       AUTHENTIK_POSTGRESQL__HOST: postgres
@@ -135,6 +138,8 @@ services:
   authentik-worker:
     image: ghcr.io/goauthentik/server:2026.8.5
     command: worker
+    # host.docker.internal is Docker Desktop's name for this machine; Linux (CI, a Linux dev box) has it only when mapped.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment: *authentik-env
     volumes:
       - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro

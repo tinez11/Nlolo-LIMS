@@ -81,7 +81,7 @@ export function EvidencePanel({ claimId, canAttach, lendersClaim = false }: {
               </p>
               <p className="text-xs text-muted-foreground">
                 {/* The name captured from the uploader's token -- never `uploadedBy`, which is
-                    their Keycloak subject. Evidence attached before the name was captured has
+                    their login subject. Evidence attached before the name was captured has
                     none to recover, and says so. */}
                 {item.uploadedByName?.trim() || 'Name not recorded'} · {formatInstant(item.uploadedAt)}
               </p>

@@ -1,6 +1,6 @@
 # 09 — Local Development
 
-A runbook for running the platform on a development machine. Postgres, Keycloak, Redis, SeaweedFS (the document store),
+A runbook for running the platform on a development machine. Postgres, Authentik (sign-in), Redis, SeaweedFS (the document store),
 the mobile-money and SMS stubs, and Mailpit all run as Docker containers; the backend and the console run on the host
 (see gotcha 2 below for why).
 
@@ -14,12 +14,12 @@ the mobile-money and SMS stubs, and Mailpit all run as Docker containers; the ba
   `/c/Users/USER/.jdks/jdk-21.0.12.1+1` (already on `PATH`; `java -version` says 21). Do **not** use the
   VS Code Java extension's bundled runtime any more: since extension 1.58.0 (2026-10) it ships Java **25**,
   not 21, and its path changes with every extension update.
-- **Do NOT install Postgres or Keycloak natively.** They run as containers on host ports `15432`
-  and `8081` respectively (Postgres is published on `15432`, not the standard `5432`, specifically
+- **Do NOT install Postgres or Authentik natively.** They run as containers on host ports `15432`
+  and `9100` respectively (Postgres is published on `15432`, not the standard `5432`, specifically
   because a native Postgres install will silently win that port instead of failing to bind —
-  `application-local.yml`'s datasource URL already points at `15432` to match; Keycloak's
-  container publishes its internal `8080` as host `8081` — see `infra/docker-compose.yml`). If you
-  already have a local Postgres or Keycloak service running on either port, stop it before
+  `application-local.yml`'s datasource URL already points at `15432` to match; Authentik's server
+  publishes its internal `9000` as host `9100` — see `infra/docker-compose.yml`). If you
+  already have a local Postgres or another service running on either port, stop it before
   bringing this stack up, or the app will silently talk to the wrong database with a confusing
   `password authentication failed` error.
 - **No local `psql` or Flyway install is required.** `scripts/migrate.sh local` runs the Flyway CLI
@@ -29,7 +29,7 @@ the mobile-money and SMS stubs, and Mailpit all run as Docker containers; the ba
 
 ```bash
 # from backend/
-cd infra && docker compose up -d postgres keycloak objectstore redis mock-mobile-money mock-sms-gateway mailpit && cd ..
+cd infra && docker compose up -d postgres authentik-server authentik-worker objectstore redis mock-mobile-money mock-sms-gateway mailpit && cd ..
 cd infra && docker compose up objectstore-init && cd ..   # one-shot: creates the four buckets
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
 scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
@@ -61,7 +61,7 @@ actually want an empty database. To get back to a clean slate:
 ```bash
 cd infra
 docker compose --profile tools down -v   # -v drops the named volumes, including postgres-data
-docker compose up -d postgres keycloak objectstore redis mock-mobile-money mock-sms-gateway mailpit
+docker compose up -d postgres authentik-server authentik-worker objectstore redis mock-mobile-money mock-sms-gateway mailpit
 docker compose up objectstore-init       # DO NOT SKIP -- see below
 cd ..
 scripts/migrate.sh local
@@ -118,13 +118,12 @@ which records each module's current version as applied without running anything.
 database Flyway already manages is refused.
 
 **2. Run the application on the HOST, not as the compose `app` service, whenever a browser is
-involved.** `application.yml` defaults the Keycloak issuer to `http://localhost:8081/realms/lifeplatform`,
-which is what your browser and Keycloak both use. The compose `app` service overrides them to
-`http://keycloak:8080/...` for in-network use. Run the app in Docker and the browser is redirected
-to `localhost:8081`, Keycloak stamps the token `iss: http://localhost:8081/...`, and the app
-rejects it because it expects `keycloak:8080` — an opaque 401 with a correct-looking login. Running
-on the host makes every URL agree, and matches this project's standing rule against running Maven
-in Docker.
+involved.** `application.yml` defaults Authentik's issuer to
+`http://localhost:9100/application/o/lifeplatform/` (trailing slash included), which is what your browser and
+Authentik both use. A token's `iss` must match it exactly, so an app inside Docker reaching Authentik by a container
+name would refuse every browser's token -- an opaque 401 with a correct-looking login. Running on the host makes every
+URL agree, matches this project's standing rule against running Maven in Docker, and is where Authentik's sign-in code
+and password-changed notices call back (`host.docker.internal:8080`).
 
 **3. Two worktrees (or a worktree and the main checkout) running `docker compose up` at the same
 time will collide.** `docker compose config` in this directory reports `name: infra` — Compose
@@ -139,30 +138,30 @@ worktree its own project name, either by exporting `COMPOSE_PROJECT_NAME=<worktr
 running compose commands, or by passing `-p <worktree-name>` on every `docker compose` invocation
 in that worktree.
 
-**4. The Keycloak realm alone is NOT enough to log in as a customer or an agent — you must run
-the seeder.** `keycloak/lifeplatform-realm.json` (one realm for everyone since 2026-11-06) sets each test user's
-`tenant_id` attribute, but deliberately set **no** `party_id`: a party's UUID does not exist until
-`POST /parties/individuals` creates it, so only `scripts/seed-dev-data.sh` (step 4, "Write
-`party_id` back into Keycloak") can fill it in. Skip the seeder and `customer.owner` still
-authenticates perfectly — Keycloak issues a valid token, `TenantContextFilter` accepts it because
+**4. The dev users alone are NOT enough to log in as a customer or an agent — you must run
+the seeder.** The dev blueprint (`deploy/authentik/blueprints/dev/dev-users.yaml`, which Authentik's worker applies
+as it starts) sets each test user's `tenant_id` attribute, but deliberately sets **no** `party_id`: a party's UUID does
+not exist until `POST /parties/individuals` creates it, so only `scripts/seed-dev-data.sh` (step 4, "Write `party_id`
+onto the Authentik logins") can fill it in. The users are `state: created`, so re-applying the blueprint leaves the
+`party_id` alone. Skip the seeder and `customer.owner` still
+authenticates perfectly — Authentik issues a valid token, `TenantContextFilter` accepts it because
 `tenant_id` is present — and then **every ownership-checked endpoint returns `403`**:
 `GET /policies/{id}`, `GET /claims`, `GET /claims/{id}/evidence/{ref}`, `GET /parties/{id}`,
 `GET /policies/{id}/loans`, and the agent hierarchy endpoints. The failure mode looks like a
-permissions bug or a broken realm import; it is neither. Recognize it by decoding the access token
-(`jwt.io`, or `curl` the token endpoint and look at the payload): if it has `tenant_id` but no
+permissions bug or a broken blueprint; it is neither. Recognize it by decoding the access token
+(`jwt.io`, or the token `scripts/seed-lib.sh`'s `token_for` mints): if it has `tenant_id` but no
 `party_id`, you skipped or half-ran the seeder. The fix is not to hand-edit the user in the admin
 console — run the seeder, and if it refuses with "Already seeded", drop the volume per the reset
-sequence above and start clean. (Hand-editing *would* work — that is what
-`unmanagedAttributePolicy: ADMIN_EDIT` in the realm file is for, see `keycloak/README.md` — but
-the `party_id` has to match a real party row, so guessing one just moves the `403` to a `404`.)
+sequence above and start clean. (`set_party_id` in `scripts/seed-lib.sh` writes one by hand -- but the `party_id` has
+to match a real party row, so guessing one just moves the `403` to a `404`.)
 
 ## Consoles
 
 | Service | URL | Credentials |
 |---|---|---|
-| Console (one sign-in at `/` for staff, agents, customers) | http://localhost:5173 | the realm's users -- see `keycloak/README.md` |
-| Application API | http://localhost:8080 | bearer token from Keycloak |
-| Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
+| Console (one sign-in at `/` for staff, agents, customers) | http://localhost:5173 | the dev users -- `deploy/authentik/blueprints/dev/dev-users.yaml`, password `devpassword` |
+| Application API | http://localhost:8080 | bearer token from Authentik (`token_for` in `scripts/seed-lib.sh`) |
+| Authentik admin | http://localhost:9100/if/flow/default-authentication-flow/?next=/if/admin/ | `akadmin` / `devadmin` |
 | pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |
 | Mailpit (outbound mail) | http://localhost:8025 | none |
 | Document store (S3 API, no console) | http://localhost:9000 | `minioadmin` / `minioadmin` (see the note below) |
@@ -172,20 +171,19 @@ the `party_id` has to match a real party row, so guessing one just moves the `40
 **The dev document store is SeaweedFS (2026-10-19).** MinIO withdrew public distribution on
 2026-10-13 -- its Docker Hub repositories are gone, `dl.min.io` answers 410, quay.io demands credentials -- so
 `minio/minio:latest` pulled on no new machine. The dev stack now runs SeaweedFS (`objectstore`), as the tests
-(`ObjectStoreContainer`) and the server (`deploy/server/compose.yml`) already did. The platform still talks to it
+(`ObjectStoreContainer`) already did, and the server does natively (`deploy/server`). The platform still talks to it
 through the `io.minio` S3 client on **host port 9000 with the same dev credentials**, so `application.yml`'s dev
 defaults are unchanged; the credentials live in `infra/objectstore/s3-dev.json`. There is no web console -- list a
 bucket with `rclone` or the S3 API. Documents stored in the old MinIO volume were copied across with rclone and
 compared file by file; `infra_minio-data` was left in place, unused, and can be deleted once nothing is missed.
 
-**Keycloak upgrades are one-way.** The dev stack runs Keycloak 26 (`quay.io/keycloak/keycloak`),
-and starting a newer Keycloak migrates its database in place. Going back to an older one afterwards
-leaves every realm answering normally while **no password is accepted** — the newer version
-re-encodes stored credentials. Always `docker exec infra-postgres-1 pg_dump -U postgres -Fc
-keycloak > keycloak-backup.dump` before changing that version, and restore it if you go back.
-Note also that Keycloak 26 renamed `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD` to
-`KC_BOOTSTRAP_ADMIN_USERNAME`/`KC_BOOTSTRAP_ADMIN_PASSWORD`; the old names are ignored in silence,
-leaving a Keycloak with no admin user and nothing in the log.
+**Sign-in is Authentik (since 2026-11-19; Keycloak until then).** Its whole configuration is the blueprints in
+`deploy/authentik/blueprints/` (production's flows, provider and look; dev's test users), which the worker applies at
+start and whenever a file's content changes. A Windows bind mount sends no file events into the container, so after
+editing a blueprint apply it yourself -- `docker exec infra-authentik-worker-1 ak apply_blueprint
+/blueprints/lifeplatform/lifeplatform.yaml` (from PowerShell; Git Bash rewrites the path) -- or restart the worker.
+Like any database-backed server, an Authentik upgrade migrates its database in place: `pg_dump` the `authentik`
+database before changing the version in `infra/docker-compose.yml`.
 
 pgAdmin's registered connection uses the `postgres` superuser deliberately: `app_role` is
 `NOSUPERUSER NOBYPASSRLS`, so browsing as it shows **zero rows** in every tenant-scoped table

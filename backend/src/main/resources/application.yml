@@ -97,7 +97,7 @@ app:
   password-changed:
     webhook-secret: ${PASSWORD_CHANGED_WEBHOOK_SECRET:dev-only-password-changed-secret}
   # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
-  # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
+  # the job roles on the token through their built-in definitions -- only for tests with no iam schema.
   access:
     source: ${APP_ACCESS_SOURCE:platform}
   # Authentik's users API (2026-11-19, the Authentik cut-over), as the lifeplatform-backend service account: it may add
@@ -165,11 +165,6 @@ mobile-money:
   # accepting unsigned ones.
   callback-hmac-secret: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET:dev-only-placeholder-secret}
   callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
-
-# The secret Keycloak signs its "text this person a reset code" requests with (2026-10-28). Keycloak holds the same value
-# as LP_RESET_SMS_SECRET. The dev default is refused in production by ProductionSettingsGuard.
-password-reset:
-  sms-secret: ${PASSWORD_RESET_SMS_SECRET:dev-only-reset-sms-secret}
 
 communication:
   # The SMS aggregator: NextSMS (messaging-service.co.tz) in production. DEFAULTS TO THE LOCAL
@@ -244,7 +239,7 @@ management:
   # WHY A SEPARATE PORT, not just a permitAll() rule on 8080: infra/docker-compose.yml publishes
   # "8080:8080" to the host, so anything reachable on 8080 is reachable from outside the Docker
   # network. Prometheus scrapes with no credentials (observability/prometheus.yml declares none),
-  # and this app authenticates via Keycloak-issued JWTs, which a scraper cannot practically obtain
+  # and this app authenticates via Authentik-issued JWTs, which a scraper cannot practically obtain
   # or refresh. A dedicated scrape credential IS technically a third option -- Prometheus supports
   # basic_auth/authorization in a scrape config -- but it means provisioning and rotating a
   # credential whose only purpose is to reach an endpoint that does not need to leave the network
@@ -302,7 +297,7 @@ management:
       exposure:
         # Deliberately an explicit allow-list, never "*". The blast radius of the management port
         # being reachable from any container on the Docker network is bounded by exactly this
-        # line: /actuator/env would disclose SPRING_DATASOURCE_PASSWORD and every Keycloak/MinIO
+        # line: /actuator/env would disclose SPRING_DATASOURCE_PASSWORD and every Authentik/MinIO
         # credential in the compose environment, /actuator/heapdump would disclose live JWTs and
         # decrypted row data, and /actuator/loggers is remotely writable. Adding an entry here is
         # a security decision, not a convenience one.

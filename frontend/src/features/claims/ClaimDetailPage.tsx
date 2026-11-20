@@ -48,7 +48,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   // What the platform lets this person do (2026-10-29), not the roles their token happens to carry: an administrator
-  // holds claims.assess and claims.settle on the platform with no claims role in Keycloak, and used to see a claim
+  // holds claims.assess and claims.settle on the platform with no claims role on the login, and used to see a claim
   // with no way to act on it -- though the server would have let them.
   const roles = {
     ...staffRoles(identity),

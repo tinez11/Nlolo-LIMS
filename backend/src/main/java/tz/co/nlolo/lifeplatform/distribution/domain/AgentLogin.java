@@ -10,8 +10,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The platform's side of an agent's Keycloak login (2026-10-28, db-migrations/distribution/V8): which user, its
- * username, how its last password went out, and whether it is open. One row per agent.
+ * The platform's side of an agent's login (2026-10-28, db-migrations/distribution/V8; in Authentik since 2026-11-19,
+ * Keycloak until then): which user, its username, how its last password went out, and whether it is open. One row per
+ * agent.
  */
 @Entity
 @Table(name = "agent_login", schema = "distribution")
@@ -25,7 +26,7 @@ public class AgentLogin {
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;
     @Column(name = "agent_id", nullable = false) private UUID agentId;
     @Column(name = "party_id", nullable = false) private UUID partyId;
-    @Column(name = "keycloak_user_id", nullable = false) private String keycloakUserId;
+    @Column(name = "login_user_id", nullable = false) private String loginUserId;
     @Column(nullable = false) private String username;
     @Column(nullable = false) private String delivery;
     @Column(nullable = false) private String status;
@@ -38,13 +39,13 @@ public class AgentLogin {
 
     protected AgentLogin() {}
 
-    public AgentLogin(UUID tenantId, UUID agentId, UUID partyId, String keycloakUserId, String username,
+    public AgentLogin(UUID tenantId, UUID agentId, UUID partyId, String loginUserId, String username,
                       Delivery delivery, String createdBy) {
         this.agentLoginId = UUID.randomUUID();
         this.tenantId = tenantId;
         this.agentId = agentId;
         this.partyId = partyId;
-        this.keycloakUserId = keycloakUserId;
+        this.loginUserId = loginUserId;
         this.username = username;
         this.delivery = delivery.name();
         this.status = Status.OPEN.name();
@@ -73,7 +74,7 @@ public class AgentLogin {
 
     public UUID getAgentId() { return agentId; }
     public UUID getPartyId() { return partyId; }
-    public String getKeycloakUserId() { return keycloakUserId; }
+    public String getLoginUserId() { return loginUserId; }
     public String getUsername() { return username; }
     public Status getStatus() { return Status.valueOf(status); }
     public Delivery getDelivery() { return Delivery.valueOf(delivery); }

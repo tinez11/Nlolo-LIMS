@@ -16,7 +16,7 @@ scrape_configs:
   # 8080 to the host, and this scrape carries no credentials (see below) -- 9090 is reachable
   # only from inside this compose network, which is where Prometheus runs.
   #
-  # No basic_auth/bearer_token here, deliberately: the app authenticates with Keycloak-issued
+  # No basic_auth/bearer_token here, deliberately: the app authenticates with Authentik-issued
   # JWTs, which a scraper cannot practically obtain or refresh. SecurityConfig permitAll()s
   # exactly this one path, and it exists only on the unpublished port. If this job is ever
   # repointed at 8080, the scrape will 404 rather than silently expose anything.

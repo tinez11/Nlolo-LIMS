@@ -30,9 +30,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Two sources, chosen by {@code app.access.source}:
  * <ul>
  *   <li>{@code platform} (the default): the {@code iam} tables. A tenant's eight built-in roles are seeded the first
- *       time it is resolved, and a staff member the first time they are seen -- with the Keycloak roles their token
- *       carries, imported once. From then on the platform is the authority: Keycloak role changes are not read again.
- *   <li>{@code token}: the token's Keycloak roles, each read through its built-in definition. For tests that sign
+ *       time it is resolved, and a staff member the first time they are seen -- with the job roles their token
+ *       carries (Authentik's job_roles claim), imported once. From then on the platform is the authority.
+ *   <li>{@code token}: the token's job roles, each read through its built-in definition. For tests that sign
  *       requests with synthetic roles and no {@code iam} schema, so they keep proving what a role may do. A staff
  *       token naming no built-in role at all holds every permission here: it is how the tests written before
  *       2026-10-26 say "any staff member", and what they prove is the act, not the gate.
@@ -199,7 +199,7 @@ public class AccessService implements AccessApi {
         }
     }
 
-    /** First sight of a staff member: record them, and the Keycloak roles they arrived with, once. */
+    /** First sight of a staff member: record them, and the job roles they arrived with, once. */
     private void importFromToken(StaffIdentity identity) {
         MapSqlParameterSource p = new MapSqlParameterSource()
             .addValue("tenant", identity.tenantId()).addValue("user", identity.userId())
@@ -213,13 +213,13 @@ public class AccessService implements AccessApi {
         Set<String> imported = new LinkedHashSet<>();
         for (String code : identity.tokenRoles()) {
             int granted = jdbc.update("INSERT INTO iam.user_role (tenant_id, user_id, role_id, granted_by) "
-                    + "SELECT :tenant, :user, role_id, 'keycloak' FROM iam.role WHERE tenant_id = :tenant AND code = :code "
+                    + "SELECT :tenant, :user, role_id, 'authentik' FROM iam.role WHERE tenant_id = :tenant AND code = :code "
                     + "ON CONFLICT DO NOTHING",
                 new MapSqlParameterSource(p.getValues()).addValue("code", code));
             if (granted > 0) imported.add(code);
         }
         jdbc.update("INSERT INTO iam.access_change (tenant_id, user_id, change_type, detail, requested_by, "
-                + "requested_by_name) VALUES (:tenant, :user, 'IMPORTED', CAST(:detail AS jsonb), 'keycloak', 'Keycloak')",
+                + "requested_by_name) VALUES (:tenant, :user, 'IMPORTED', CAST(:detail AS jsonb), 'authentik', 'Authentik')",
             new MapSqlParameterSource(p.getValues()).addValue("detail", "{\"roles\":" + toJsonArray(imported) + "}"));
         log.info("Staff member {} seen for the first time in tenant {}; imported roles {}", identity.username(),
             identity.tenantId(), imported);

@@ -1,7 +1,7 @@
 /**
  * The four workspaces of the console, and the routes they own.
  *
- * Since 2026-11-06 (universal login) there is ONE Keycloak realm, `lifeplatform`, for everyone. A workspace is a realm
+ * Since 2026-11-06 (universal login) there is ONE sign-in for everyone (Authentik since 2026-11-19). A workspace is a realm
  * role on the account (`staff`, `agent`, `customer`, `regulator`), and the URL prefix says which workspace a page is in
  * -- which is also what the console tells the backend, as `X-Workspace`, on every request. The type keeps its old name,
  * `Realm`, because the four prefixes and every screen keyed by them are unchanged.
@@ -20,7 +20,7 @@ export interface RealmConfig {
   description: string;
   /** Synthetic authority the backend grants for a request in this workspace. */
   realmAuthority: string;
-  /** The Keycloak realm role that opens this workspace, and the X-Workspace value naming it. */
+  /** The login's group (its roles claim) that opens this workspace, and the X-Workspace value naming it. */
   workspaceRole: WorkspaceRole;
 }
 

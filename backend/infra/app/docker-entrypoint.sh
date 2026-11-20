@@ -1,6 +1,6 @@
 #!/bin/sh
 # Starts the platform. When EXTRA_CA_FILE names a readable certificate -- the local dress rehearsal, where Caddy signs
-# with a CA of its own -- it is added to a COPY of the JVM trust store first, so the backend can fetch Keycloak's
+# with a CA of its own -- it is added to a COPY of the JVM trust store first, so the backend can fetch the sign-in server's
 # signing keys over https. In production the variable is unset and nothing is added.
 set -e
 if [ -n "${EXTRA_CA_FILE:-}" ]; then
@@ -13,7 +13,7 @@ if [ -n "${EXTRA_CA_FILE:-}" ]; then
     JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Djavax.net.ssl.trustStore=/tmp/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
     export JAVA_TOOL_OPTIONS
   else
-    echo "EXTRA_CA_FILE=$EXTRA_CA_FILE never appeared; starting without it -- https to Keycloak will fail" >&2
+    echo "EXTRA_CA_FILE=$EXTRA_CA_FILE never appeared; starting without it -- https to the sign-in server will fail" >&2
   fi
 fi
 exec java -jar /app/app.jar

@@ -46,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Inviting a client to the customer portal (2026-10-08, the customer portal design step 1). Keycloak is replaced by a
+ * Inviting a client to the customer portal (2026-10-08, the customer portal design step 1). The sign-in system is replaced by a
  * recording fake: what is under test is who may be invited, what the login is created with, how the first password
  * reaches the customer, and the access's life -- invited, signed in, revoked, invited again.
  */
@@ -80,7 +80,7 @@ class PortalAccessIntegrationTest {
     private static final UUID TENANT = UUID.randomUUID();
     private static final LocalDate TODAY = LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam"));
 
-    /** Keycloak, as the platform asks things of it. */
+    /** The sign-in system (Authentik), as the platform asks things of it. */
     static class Recording implements CustomerAccounts {
         final List<String> calls = new ArrayList<>();
         @Override public String create(String username, String email, String displayName, UUID tenantId, UUID partyId) {
@@ -121,13 +121,13 @@ class PortalAccessIntegrationTest {
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private PolicyApi policyApi;
     @Autowired private PartyApi partyApi;
-    @Autowired private Recording keycloak;
+    @Autowired private Recording logins;
     @Autowired private RecordingSms sms;
     @Autowired private JdbcTemplate jdbc;
 
     @BeforeEach
     void clearCalls() {
-        keycloak.calls.clear();
+        logins.calls.clear();
         sms.sent.clear();
         sms.accept = true;
     }
@@ -193,11 +193,11 @@ class PortalAccessIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT body FROM communication.notification_dispatch WHERE party_id = ?"
             + " AND template_key = 'PORTAL_INVITE'", String.class, partyId))
             .contains("••••••••").doesNotContain(password);
-        // The login carries the tenant and party the platform chose -- nobody typed them into Keycloak.
-        assertThat(keycloak.calls).hasSize(2);
-        assertThat(keycloak.calls.get(0)).startsWith("create +25571500").contains("email=null")
+        // The login carries the tenant and party the platform chose -- nobody typed them into the sign-in system.
+        assertThat(logins.calls).hasSize(2);
+        assertThat(logins.calls.get(0)).startsWith("create +25571500").contains("email=null")
             .contains("tenant=" + TENANT).contains("party=" + partyId);
-        assertThat(keycloak.calls.get(1)).isEqualTo("password kc-" + partyId);
+        assertThat(logins.calls.get(1)).isEqualTo("password kc-" + partyId);
 
         mockMvc.perform(staff(post(base), "CUSTOMER_SERVICE_REP"))
             .andExpect(status().isConflict()).andExpect(jsonPath("$.errorCode").value("PORTAL_ACCESS_EXISTS"));
@@ -217,12 +217,12 @@ class PortalAccessIntegrationTest {
 
         mockMvc.perform(staff(delete(base), "ADMIN")).andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("REVOKED")).andExpect(jsonPath("$.revokedBy").value("Rose Service"));
-        assertThat(keycloak.calls).contains("disable kc-" + partyId);
+        assertThat(logins.calls).contains("disable kc-" + partyId);
 
-        keycloak.calls.clear();
+        logins.calls.clear();
         mockMvc.perform(staff(post(base), "CUSTOMER_SERVICE_REP")).andExpect(status().isCreated())
             .andExpect(jsonPath("$.access.status").value("INVITED"));
-        assertThat(keycloak.calls).containsExactly("enable kc-" + partyId, "password kc-" + partyId);
+        assertThat(logins.calls).containsExactly("enable kc-" + partyId, "password kc-" + partyId);
     }
 
     @Test
@@ -236,7 +236,7 @@ class PortalAccessIntegrationTest {
             .andExpect(jsonPath("$.access.delivery").value("EMAIL_LINK"))
             .andExpect(jsonPath("$.access.username").value("amina.juma@example.tz"))
             .andExpect(jsonPath("$.temporaryPassword").doesNotExist());
-        assertThat(keycloak.calls).containsExactly(
+        assertThat(logins.calls).containsExactly(
             "create amina.juma@example.tz email=Amina.Juma@Example.tz tenant=" + TENANT + " party=" + partyId,
             "link kc-" + partyId);
     }
@@ -276,7 +276,7 @@ class PortalAccessIntegrationTest {
             .andExpect(status().isForbidden());
         mockMvc.perform(customer(post("/parties/" + holder + "/portal-access"), holder))
             .andExpect(status().isForbidden());
-        assertThat(keycloak.calls).isEmpty();
+        assertThat(logins.calls).isEmpty();
     }
 
     // --- automatic invite on the first premium (2026-11-08, phase 3 of the public quote link) ----------------------
@@ -305,7 +305,7 @@ class PortalAccessIntegrationTest {
     @Test
     void aNewClientIsInvitedBySmsWhenTheirFirstPremiumStartsTheCoverAndOnlyOnce() {
         UUID partyId = policyholder();
-        keycloak.calls.clear();
+        logins.calls.clear();
         sms.sent.clear();
 
         autoInvites().onDomainEvent(activated(partyId, true));
@@ -325,14 +325,14 @@ class PortalAccessIntegrationTest {
     @Test
     void coverThatStartedAtIssueIsNotInvitedAutomatically() {
         UUID partyId = policyholder();
-        keycloak.calls.clear();
+        logins.calls.clear();
         sms.sent.clear();
 
         autoInvites().onDomainEvent(activated(partyId, false));
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM omnichannel.portal_access WHERE party_id = ?",
             Integer.class, partyId)).isZero();
-        assertThat(keycloak.calls).isEmpty();
+        assertThat(logins.calls).isEmpty();
         assertThat(invites()).isEmpty();
     }
 }

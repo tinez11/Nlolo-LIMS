@@ -350,7 +350,7 @@ paths:
         its own callback payload shape; this endpoint is the ACL boundary translating
         that shape into PaymentConfirmed/PaymentFailed internally. Authenticated via the
         aggregator's own HMAC-SHA256 signature scheme (Task 8's MobileMoneyHmacFilter),
-        not Keycloak — this is the one path in the whole platform's filter chain that is
+        not a sign-in token — this is the one path in the whole platform's filter chain that is
         permitAll() for exactly this method+path, because a differently-authenticated
         caller, not an unauthenticated one, sits in front of it.
       security: []

@@ -97,7 +97,7 @@ public class AccessExpressions implements CurrentAccess {
             roles);
     }
 
-    /** Keycloak's subject is a UUID; a test's synthetic one ("staff") is given a stable one of its own. */
+    /** A login's subject is a UUID; a test's synthetic one ("staff") is given a stable one of its own. */
     static UUID userIdOf(String subject) {
         try {
             return UUID.fromString(subject);

@@ -4,7 +4,7 @@ import { normalisePhone, PHONE_MESSAGE } from '@/lib/patterns';
 
 /**
  * Zod schema for `POST /access/users` (2026-10-26), mirroring AccessAdministration.createUser: first name, last name and
- * login name required; email, phone and branch optional. The login name is lower-case, as Keycloak stores it and as
+ * login name required; email, phone and branch optional. The login name is lower-case, as Keycloak stored it (logins carried over) and as
  * deploy/server/add-user.sh names logins (`asha.juma`).
  *
  * The email decides how the first password arrives -- with one, the identity provider's own set-your-password link;

@@ -33,7 +33,7 @@ const DELIVERY_LABEL: Record<string, string> = {
 /**
  * An agent's login to the agent console, on the agent's page (2026-10-28, user decision) -- the client record's Portal
  * access, for agents. Until now an agent onboarded in the register had no way to sign in. The platform creates the login
- * itself, so nobody types the agent's id into Keycloak: with an email the agent gets a set-your-password link; otherwise
+ * itself, so nobody types the agent's id into the sign-in system: with an email the agent gets a set-your-password link; otherwise
  * a one-time password is texted to their phone and never shown here. Only when it cannot be texted is it shown ONCE, to
  * hand over -- it is kept nowhere, and a new password makes a new one.
  */

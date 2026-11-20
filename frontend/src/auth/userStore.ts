@@ -6,10 +6,10 @@ import { WebStorageStateStore, type StateStore } from 'oidc-client-ts';
  * Tokens are held IN MEMORY ONLY. This console reads policyholder PII and triggers
  * real payouts, so a long-lived access or refresh token sitting in web storage is a
  * standing prize for any XSS. A page reload costs one silent redirect against
- * Keycloak's SSO cookie instead.
+ * Authentik's session cookie instead.
  *
  * `sessionStorage` still holds the transient PKCE verifier and state, because those
- * must survive the redirect to Keycloak and back -- but they are single-use and
+ * must survive the redirect to Authentik and back -- but they are single-use and
  * worthless once redeemed.
  *
  * Keys are namespaced PER REALM. Without that, moving between /staff and /agents

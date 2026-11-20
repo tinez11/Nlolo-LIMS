@@ -163,10 +163,10 @@ export function OnboardAgentPage() {
           THE SECOND STEP, SAID OUT LOUD.
 
           Onboarding creates the COMMISSION record and nothing else. It does not create a
-          Keycloak login: this backend makes no Admin API calls anywhere, and the `party_id`
-          claim that ties a signed-in agent to this profile is written by an administrator, not
-          by this form. Until that happens the agent cannot sign in, cannot register clients,
-          and therefore can never be bound as an introducing agent on their own business.
+          login: that is "Give a login" on the agent's page, a separate step, which also writes
+          the `party_id` that ties a signed-in agent to this profile. Until that happens the agent
+          cannot sign in, cannot register clients, and therefore can never be bound as an
+          introducing agent on their own business.
 
           Said here because the form otherwise looks complete. Of the agent profiles in this
           platform's own dev data, only two have a login at all -- and nothing on screen has

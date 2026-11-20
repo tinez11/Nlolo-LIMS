@@ -10,7 +10,7 @@ web
 
 **Primary: back-office insurance staff, at a desk, on a large monitor.** Confirmed.
 They are the volume users and the console is designed for their screen. Six staff
-roles exist in the `staff` Keycloak realm and each has a different centre of
+roles exist on the platform (Users and roles) and each has a different centre of
 gravity:
 
 | Role | What they are doing in here |
@@ -133,10 +133,9 @@ client-side premium arithmetic. No fabricated rows. That refusal is the position
 
 ## Capabilities and Constraints
 
-**Realms.** Four Keycloak realms — `staff`, `agents`, `customers`, `regulators` —
-served by one React SPA through realm-scoped route subtrees, each mounting its
-own `AuthProvider`. Public PKCE client `lifeplatform-spa`. Tokens live in memory
-only.
+**Workspaces.** One sign-in (Authentik; Keycloak until 2026-11-19) for four workspaces — `staff`, `agents`,
+`customers`, `regulators` — served by one React SPA through workspace route prefixes under one `AuthProvider`.
+Public PKCE client `lifeplatform-spa`. Tokens live in memory only.
 
 **Screen inventory.** ~36 routed screens across 11 feature areas: policies,
 claims, underwriting, party, products, distribution, finaccounting,
@@ -214,7 +213,7 @@ presented as if it were one.
 
 **Undecided / deliberately deferred, and not to be designed around:**
 endorsements UI (the change vocabulary is un-ratified), CORS bean, pagination for
-the eleven bare-array endpoints, Keycloak identity brokering, commission-plan
+the eleven bare-array endpoints, sign-in identity brokering, commission-plan
 deactivation, underwriting override, and the four undesigned bounded contexts
 from the operations mockup (leads, needs analysis, quotations/proposals, service
 cases). The `customers` and `regulators` surfaces are undecided.
@@ -239,7 +238,7 @@ this console. It may be distinctive; it may not be one insurer's.
   document in the repo. `README.md` at the root is **stale** (it still describes
   Phase 0 with no code generated) and should not be trusted.
 - **A real test estate.** ~466 unit tests (Vitest + RTL), 24 Playwright e2e specs
-  driving the real Keycloak container. **Hard rule: zero fabricated JWTs
+  driving the real Authentik sign-in. **Hard rule: zero fabricated JWTs
   anywhere.** This project has twice shipped a fully green suite over a
   completely unusable real credential path.
 - **No mock data, no invented metrics, no placeholder copy.** An operations-console

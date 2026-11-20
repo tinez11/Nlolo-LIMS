@@ -264,7 +264,7 @@ paths:
     post:
       summary: Give the agent a login, or open a closed one again, and send the first password -- agents.manage
       description: >
-        With an email address, Keycloak emails a set-your-password link; otherwise a one-time password is texted to the
+        With an email address, the sign-in system emails a set-your-password link; otherwise a one-time password is texted to the
         agent's phone, and only where neither is possible is it returned once, in temporaryPassword, to hand over.
       security:
         - staffAuth: []

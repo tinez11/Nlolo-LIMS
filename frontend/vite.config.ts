@@ -16,7 +16,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: true, // the Keycloak client's redirect URI is pinned to 5173
+    strictPort: true, // the sign-in client's redirect address is pinned to 5173
     proxy: {
       '/api': {
         target: BACKEND,
