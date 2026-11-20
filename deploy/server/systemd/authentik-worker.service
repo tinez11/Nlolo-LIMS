@@ -1,0 +1,30 @@
+# Authentik's worker: applies the blueprint, runs Authentik's scheduled tasks and sends the password-changed notices
+# (2026-11-20, ticket 10 of .scratch/authentik-cutover). Same build and settings as the server; its own ports, since
+# both listen and share this host (authentik-worker.env).
+[Unit]
+Description=Authentik worker (sign-in background tasks)
+After=network-online.target postgresql@16-main.service
+Wants=network-online.target
+Requires=postgresql@16-main.service
+
+[Service]
+User=authentik
+Group=authentik
+WorkingDirectory=/opt/authentik/current
+EnvironmentFile=/etc/platform/authentik.env
+EnvironmentFile=/etc/platform/authentik-worker.env
+Environment=PATH=/opt/authentik/current/.venv/bin:/usr/local/bin:/usr/bin:/bin
+RuntimeDirectory=authentik-worker
+Environment=TMPDIR=/run/authentik-worker PROMETHEUS_MULTIPROC_DIR=/run/authentik-worker
+ExecStart=/opt/authentik/current/bin/authentik worker
+Restart=on-failure
+RestartSec=5
+MemoryMax=512M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/authentik
+
+[Install]
+WantedBy=multi-user.target

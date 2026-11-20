@@ -28,7 +28,8 @@ public class ProductionSettingsGuard {
         new String[] {"app.staff-sign-in-code.webhook-secret", "dev-only-"},
         new String[] {"app.password-changed.webhook-secret", "dev-only-"});
 
-    private static final List<String> MUST_BE_HTTPS = List.of("app.security.issuer", "app.portal.url");
+    private static final List<String> MUST_BE_HTTPS =
+        List.of("app.security.issuer", "app.portal.url", "app.authentik.public-url");
 
     public ProductionSettingsGuard(Environment environment) {
         List<String> problems = problems(environment::getProperty);
@@ -63,25 +64,31 @@ public class ProductionSettingsGuard {
                 problems.add("communication.sms-gateway.live is true but communication.sms-gateway.authorization is empty");
             }
         }
-        // The public quote link (2026-11-02): on only with a real Turnstile secret, a visit secret and a named insurer.
-        if ("true".equalsIgnoreCase(settings.apply("app.public-quote.enabled"))) {
-            String secret = settings.apply("app.public-quote.turnstile.secret");
-            if (secret == null || secret.isBlank() || secret.startsWith("1x0000") || secret.startsWith("2x0000")
-                    || secret.startsWith("3x0000")) {
-                problems.add("app.public-quote is enabled but app.public-quote.turnstile.secret is a Cloudflare test"
-                    + " secret or empty");
-            }
-            if (!"true".equalsIgnoreCase(settings.apply("app.public-quote.turnstile.enabled"))) {
-                problems.add("app.public-quote is enabled with its Turnstile check switched off");
-            }
-            String visitSecret = settings.apply("app.public-quote.visit-secret");
-            if (visitSecret == null || visitSecret.length() < 32) {
-                problems.add("app.public-quote.visit-secret must be at least 32 characters");
-            }
-            String tenant = settings.apply("app.public-quote.tenant-id");
-            if (tenant == null || tenant.isBlank() || tenant.startsWith("11111111-")) {
-                problems.add("app.public-quote.tenant-id must name this deployment's insurer");
-            }
+        // The reset page and the public quote link (2026-11-02; the reset page since the Authentik cut-over, ticket 10):
+        // both check visitors with Turnstile, sign their visit, and work in the insurer's tenant. /reset is always on, so
+        // these are needed whether or not the quote link is.
+        String secret = settings.apply("app.public-quote.turnstile.secret");
+        if (secret == null || secret.isBlank() || secret.startsWith("1x0000") || secret.startsWith("2x0000")
+                || secret.startsWith("3x0000")) {
+            problems.add("app.public-quote.turnstile.secret is a Cloudflare test secret or empty (TURNSTILE_SECRET: /reset"
+                + " and the quote link check visitors with it)");
+        }
+        if (!"true".equalsIgnoreCase(settings.apply("app.public-quote.turnstile.enabled"))) {
+            problems.add("app.public-quote.turnstile.enabled is off (/reset and the quote link must check visitors)");
+        }
+        String visitSecret = settings.apply("app.public-quote.visit-secret");
+        if (visitSecret == null || visitSecret.length() < 32) {
+            problems.add("app.public-quote.visit-secret must be at least 32 characters (PUBLIC_VISIT_SECRET)");
+        }
+        String tenant = settings.apply("app.public-quote.tenant-id");
+        if (tenant == null || tenant.isBlank() || tenant.startsWith("11111111-")) {
+            problems.add("app.public-quote.tenant-id must name this deployment's insurer (PUBLIC_QUOTE_TENANT_ID)");
+        }
+        // Authentik's issuer ends in a slash, and a token's iss must match it exactly (ticket 10).
+        String issuer = settings.apply("app.security.issuer");
+        if (issuer != null && issuer.startsWith("https://") && !issuer.endsWith("/")) {
+            problems.add("app.security.issuer must end with a slash (AUTHENTIK_ISSUER: Authentik's issuer is"
+                + " https://<auth domain>/application/o/lifeplatform/)");
         }
         for (String key : MUST_BE_HTTPS) {
             String value = settings.apply(key);

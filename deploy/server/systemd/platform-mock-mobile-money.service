@@ -1,0 +1,23 @@
+# The money rail is still a mock (2026-10-13): it answers "accepted" to everything and no money moves. Loopback only,
+# so nothing outside this machine can reach an unauthenticated mock. Its answers are the release's mock-mobile-money
+# folder.
+[Unit]
+Description=Mock mobile-money gateway (no money moves)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=platform-mock
+Group=platform-mock
+ExecStart=/usr/bin/java -Xmx256m -jar /opt/platform/tools/wiremock-standalone.jar \
+  --port 8089 --bind-address 127.0.0.1 --root-dir /opt/platform/current/mock-mobile-money \
+  --global-response-templating --disable-banner
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

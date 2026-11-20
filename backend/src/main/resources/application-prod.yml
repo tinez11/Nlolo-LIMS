@@ -1,5 +1,6 @@
-# The prod profile (2026-10-13, deployment pilot design §5). Everything here comes from the server's .env through
-# deploy/server/compose.yml; ProductionSettingsGuard refuses to start while a secret still holds its dev default.
+# The prod profile (2026-10-13, deployment pilot design §5). Everything here comes from the server's .env, which
+# deploy/server/remote-release.sh writes into /etc/platform/backend.env; ProductionSettingsGuard refuses to start
+# while a secret still holds its dev default.
 spring:
   config:
     activate:

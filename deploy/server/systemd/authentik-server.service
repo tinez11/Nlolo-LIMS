@@ -1,0 +1,30 @@
+# Authentik's server: the sign-in pages, the OAuth provider and the login API (2026-11-20, ticket 10 of
+# .scratch/authentik-cutover). Built from source by install-authentik.sh and run from its checkout, which is its
+# working directory: the server finds ./web/dist and ./lifecycle there. Loopback only; Caddy faces the internet.
+[Unit]
+Description=Authentik server (sign-in)
+After=network-online.target postgresql@16-main.service
+Wants=network-online.target
+Requires=postgresql@16-main.service
+
+[Service]
+User=authentik
+Group=authentik
+WorkingDirectory=/opt/authentik/current
+EnvironmentFile=/etc/platform/authentik.env
+EnvironmentFile=/etc/platform/authentik-server.env
+Environment=PATH=/opt/authentik/current/.venv/bin:/usr/local/bin:/usr/bin:/bin
+RuntimeDirectory=authentik-server
+Environment=TMPDIR=/run/authentik-server PROMETHEUS_MULTIPROC_DIR=/run/authentik-server
+ExecStart=/opt/authentik/current/bin/authentik server
+Restart=on-failure
+RestartSec=5
+MemoryMax=1G
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/authentik
+
+[Install]
+WantedBy=multi-user.target

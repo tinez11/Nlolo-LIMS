@@ -1,39 +1,69 @@
 #!/usr/bin/env bash
-# The release's last gate (2026-10-13). Five questions, each one a way a release has actually gone wrong:
-# does the site serve the console, does the API refuse an anonymous caller, is the backend healthy by its own
-# account, does Keycloak report the issuer the backend demands, and is the admin console shut to the internet.
+# The release's last gate (2026-10-13; Authentik since 2026-11-20, ticket 10 of .scratch/authentik-cutover). Each
+# check is a way a release has gone wrong, or could:
+#
+#   the console is served, the API refuses an anonymous caller, the backend is healthy by its own account,
+#   Authentik reports the issuer the backend demands, its blueprint applied, the sign-in page is up, sign-out's revoke
+#   reaches it, everything else on the auth address is shut to the internet, and no dev test user exists.
 set -euo pipefail
 cd "$(dirname "$0")"
-set -a; . ./.env; set +a
-
-DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
+. ./platform-lib.sh
 # The rehearsal signs with Caddy's own CA, which this machine has no reason to trust.
 K=""; [ -n "${CADDY_GLOBAL_OPTIONS:-}" ] && K="-k"
 # Resolve both names to this host: on the server DNS may still be propagating, and the answer must not depend on it.
 R="--resolve $APP_DOMAIN:443:127.0.0.1 --resolve $AUTH_DOMAIN:443:127.0.0.1"
 
 fail() { echo "SMOKE FAILED: $1" >&2; exit 1; }
+status() { curl -sS $K $R -o /dev/null -w '%{http_code}' "$@"; }
 
 curl -sS $K $R "https://$APP_DOMAIN/" | grep -q '<div id="root"' \
   || fail "https://$APP_DOMAIN/ does not serve the console"
 
-code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' "https://$APP_DOMAIN/api/policies")
+code=$(status "https://$APP_DOMAIN/api/policies")
 [ "$code" = "401" ] || fail "/api without a token answered $code, expected 401 (is the proxy reaching the backend?)"
 
-$DC exec -T backend wget -qO- http://localhost:9090/actuator/health | grep -q '"status":"UP"' \
+curl -sf "http://127.0.0.1:$BACKEND_MANAGEMENT_PORT/actuator/health" | grep -q '"status":"UP"' \
   || fail "the backend does not report itself UP"
 
-curl -sS $K $R "https://$AUTH_DOMAIN/realms/lifeplatform/.well-known/openid-configuration" \
-  | grep -q "\"issuer\":\"https://$AUTH_DOMAIN/realms/lifeplatform\"" \
-  || fail "the realm does not report issuer https://$AUTH_DOMAIN/realms/lifeplatform -- every token would be refused"
+ISSUER="https://$AUTH_DOMAIN/application/o/lifeplatform/"
+curl -sS $K $R "${ISSUER}.well-known/openid-configuration" | grep -q "\"issuer\": *\"$ISSUER\"" \
+  || fail "Authentik does not report issuer $ISSUER -- every token would be refused (is the blueprint applied?)"
 
-code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' "https://$AUTH_DOMAIN/admin/")
-[ "$code" = "404" ] || fail "the Keycloak admin console answered $code from the internet, expected 404"
+code=$(status "https://$AUTH_DOMAIN/if/flow/lifeplatform-sign-in/")
+[ "$code" = "200" ] || fail "the sign-in page answered $code, expected 200"
 
-# The Keycloak administrator's own realm (2026-11-14, security audit H1): its token endpoint is where the admin
-# password could be guessed from outside.
-code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' -X POST \
-  "https://$AUTH_DOMAIN/realms/master/protocol/openid-connect/token")
-[ "$code" = "404" ] || fail "Keycloak's master realm answered $code from the internet, expected 404"
+# Sign-out revokes through the console's own origin (Authentik's revoke sends no CORS headers). A request with no
+# client is refused by Authentik itself; a 404 or the console's own page means Caddy did not forward it.
+body=$(curl -sS $K $R -X POST "https://$APP_DOMAIN/oauth/revoke/" -w '\n%{http_code}')
+code=$(printf '%s' "$body" | tail -1)
+{ [ "$code" != "404" ] && ! printf '%s' "$body" | grep -q '<div id="root"'; } \
+  || fail "https://$APP_DOMAIN/oauth/revoke/ does not reach Authentik (answered $code)"
+
+# Everything but the sign-in pages is shut to the internet: the admin, the admin API, Authentik's user pages, and its
+# stock flows -- default-authentication-flow above all, which signs in around the platform's own flow.
+for path in /if/admin/ /api/v3/core/users/ /if/user/ /if/flow/default-authentication-flow/ \
+            /api/v3/flows/executor/default-authentication-flow/ /-/health/live/; do
+  code=$(status "https://$AUTH_DOMAIN$path")
+  [ "$code" = "404" ] || fail "https://$AUTH_DOMAIN$path answered $code from the internet, expected 404"
+done
+
+# Inside Authentik: the blueprint applied cleanly, and no dev test user exists. The dev blueprint is never in the
+# -auth image, but a login copied from a dev database, or made by hand with a dev name, would hold the dev password
+# everybody knows.
+OUT=$(ak_manage -- shell -c '
+from authentik.blueprints.models import BlueprintInstance
+from authentik.core.models import User
+DEV = ["staff.underwriter", "staff.senior", "staff.assessor", "staff.manager", "staff.management", "staff.finance",
+       "staff.finance-approver", "staff.service", "staff.admin", "agent.senior", "agent.junior", "customer.owner",
+       "customer.other", "regulator.tira", "agent.customer", "e2e.sign-in-code"]
+blueprint = BlueprintInstance.objects.filter(path="lifeplatform/lifeplatform.yaml").first()
+print("RESULT:BLUEPRINT " + (blueprint.status if blueprint else "missing"))
+dev = User.objects.filter(path__startswith="lifeplatform/dev") | User.objects.filter(username__in=DEV)
+print("RESULT:DEV " + ",".join(sorted(set(dev.values_list("username", flat=True)))))
+' 2>&1) || fail "could not ask Authentik about its blueprint and users"
+blueprint=$(printf '%s\n' "$OUT" | sed -n 's/^RESULT:BLUEPRINT //p')
+[ "$blueprint" = "successful" ] || fail "Authentik's lifeplatform blueprint is '${blueprint:-unknown}', not successful"
+dev=$(printf '%s\n' "$OUT" | sed -n 's/^RESULT:DEV //p' | tr -d '\r')
+[ -z "$dev" ] || fail "dev test users exist in Authentik: $dev -- delete them; they hold a password everyone knows"
 
 echo "Smoke check passed."

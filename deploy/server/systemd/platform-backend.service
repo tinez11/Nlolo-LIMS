@@ -1,0 +1,28 @@
+# The platform's backend (2026-11-20, ticket 10 of .scratch/authentik-cutover; a container until then). EXACTLY ONE:
+# the platform runs about 30 scheduled jobs with no cluster lock, so a second instance would send every reminder twice.
+# The release in service is /opt/platform/current; a rollback relinks it and restarts this.
+[Unit]
+Description=Life platform backend
+After=network-online.target postgresql@16-main.service seaweedfs.service authentik-server.service
+Wants=network-online.target seaweedfs.service authentik-server.service
+Requires=postgresql@16-main.service
+
+[Service]
+User=platform
+Group=platform
+WorkingDirectory=/opt/platform/current
+EnvironmentFile=/etc/platform/backend.env
+Environment=TZ=Africa/Dar_es_Salaam
+ExecStart=/usr/bin/java -Xms512m -Xmx1800m -Duser.timezone=Africa/Dar_es_Salaam -jar /opt/platform/current/lifeplatform.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+MemoryMax=2500M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

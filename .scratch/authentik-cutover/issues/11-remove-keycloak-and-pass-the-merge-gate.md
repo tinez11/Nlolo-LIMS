@@ -45,3 +45,9 @@ Spec: "Build order", merge gate. The decision is in ticket 16 of `.scratch/authe
 - **Two failures older than the cut-over** (details in ticket 09):
   - `staff-underwriting` "a proposal states the contract": it needs a priced product.
   - the seed's customer loan step: a 403, because loans are staff-only.
+
+**2026-11-20, handed on from ticket 10 (native install):**
+- **Still for Keycloak, delete them:**
+  - `PASSWORD_RESET_SMS_SECRET`: the server `.env`, `bootstrap-server.sh`, `remote-release.sh`'s `backend.env`, and the guard's `password-reset.sms-secret` entry, together with `PasswordResetSmsController` and `KeycloakSignature`
+  - `CREATE DATABASE keycloak` in `backend/infra/postgres/init/01-create-app-role.sql.template`, which the native first release also runs
+- **No Docker on the server any more.** The fresh-bootstrap rehearsal is now `bootstrap-server.sh` plus `release.sh` on a Debian 13 server, which the user decided is the real server (ticket 10, Q6).

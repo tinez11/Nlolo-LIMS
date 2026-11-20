@@ -9,10 +9,12 @@
 #
 # Runs the Flyway CLI image, so no local Flyway install is needed anywhere.
 #
-# Usage: scripts/migrate.sh <local|ci|server|staging|production> [--baseline]
+# Usage: scripts/migrate.sh <local|ci|native|staging|production> [--baseline]
 #   local       the dev stack (infra/docker-compose.yml, network infra_default), as postgres
 #   ci          a Postgres on localhost:5432, database postgres (the CI service container), PGPASSWORD
-#   server      the deploy/server/compose.yml stack, run from the server's platform directory (reads ./.env)
+#   native      the production server, where everything runs under systemd (2026-11-20, ticket 10 of
+#               .scratch/authentik-cutover): the Flyway CLI deploy/server/install-tools.sh installs, against Postgres
+#               on loopback, as postgres with POSTGRES_PASSWORD. Run from a release folder by remote-release.sh.
 #   staging|production  MIGRATE_JDBC_URL, MIGRATE_USER, MIGRATE_PASSWORD from the environment
 #   --baseline  ONCE, on a database migrated before Flyway existed (the hand-migrated dev database): records each
 #               module's current migrations as already applied, running none of them. Flyway refuses this where a
@@ -20,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ENVIRONMENT="${1:?Usage: scripts/migrate.sh <local|ci|server|staging|production> [--baseline]}"
+ENVIRONMENT="${1:?Usage: scripts/migrate.sh <local|ci|native|staging|production> [--baseline]}"
 BASELINE=0
 [ "${2:-}" = "--baseline" ] && BASELINE=1
 
@@ -33,17 +35,15 @@ case "$ENVIRONMENT" in
   ci)
     JDBC_URL="jdbc:postgresql://localhost:5432/postgres"; DB_USER=postgres
     DB_PASSWORD="${PGPASSWORD:?PGPASSWORD is not set}"; NETWORK=host ;;
-  server)
-    set -a; . ./.env; set +a
-    if [ -f versions.env ]; then set -a; . ./versions.env; set +a; FLYWAY_IMAGE="flyway/flyway:${FLYWAY_VERSION}"; fi
-    JDBC_URL="jdbc:postgresql://postgres:5432/lifeplatform"; DB_USER=postgres
-    DB_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in .env}"; NETWORK=platform_default ;;
+  native)
+    JDBC_URL="jdbc:postgresql://127.0.0.1:5432/lifeplatform"; DB_USER=postgres
+    DB_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}"; NETWORK="" ;;
   staging|production)
     JDBC_URL="${MIGRATE_JDBC_URL:?MIGRATE_JDBC_URL is not set}"
     DB_USER="${MIGRATE_USER:?MIGRATE_USER is not set}"
     DB_PASSWORD="${MIGRATE_PASSWORD:?MIGRATE_PASSWORD is not set}"; NETWORK=host ;;
   *)
-    echo "Unknown environment: $ENVIRONMENT (expected local, ci, server, staging or production)" >&2; exit 1 ;;
+    echo "Unknown environment: $ENVIRONMENT (expected local, ci, native, staging or production)" >&2; exit 1 ;;
 esac
 
 # Git Bash on Windows rewrites /flyway/... arguments into Windows paths and needs a Windows path for the mount.
@@ -56,9 +56,15 @@ MOUNT="$(pwd -W 2>/dev/null || pwd)/db-migrations"
 # fresh database still applies all of them -- the baseline row records only "this module had not run here before".
 flyway() {
   local module="$1"; shift
-  docker run --rm --network "$NETWORK" -v "$MOUNT:/flyway/sql:ro" "$FLYWAY_IMAGE" \
-    -url="$JDBC_URL" -user="$DB_USER" -password="$DB_PASSWORD" \
-    -locations="filesystem:/flyway/sql/$module" -table="flyway_history_$module" \
+  local run
+  if [ "$ENVIRONMENT" = native ]; then
+    # The Flyway CLI on the server itself, reading this release's own db-migrations folder.
+    run=(/usr/local/bin/flyway -locations="filesystem:$(pwd)/db-migrations/$module")
+  else
+    run=(docker run --rm --network "$NETWORK" -v "$MOUNT:/flyway/sql:ro" "$FLYWAY_IMAGE"
+         -locations="filesystem:/flyway/sql/$module")
+  fi
+  "${run[@]}" -url="$JDBC_URL" -user="$DB_USER" -password="$DB_PASSWORD" -table="flyway_history_$module" \
     -schemas=public -createSchemas=false -placeholderReplacement=false -outputType=json \
     -baselineOnMigrate=true -baselineVersion=0 "$@"
 }

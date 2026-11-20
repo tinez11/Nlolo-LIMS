@@ -40,11 +40,50 @@ Spec: Part 5. The decision is in ticket 15 of `.scratch/authentik-migration/`.
 
 **Status:** ready-for-agent
 
-- [ ] A local dry run of the server compose comes up from nothing, applies the production blueprints, and a staff user created with `add-user.sh` signs in with the texted code
-- [ ] The built image contains no dev blueprint, and the smoke check fails when a dev user is present
+Re-scoped 2026-11-20 to the native install (see the comment below); the dry run happens on the real server (Q6).
+
+- [ ] On a fresh Debian 13 server, `bootstrap-server.sh` then `release.sh` come up from nothing: Authentik builds from source, the production blueprint applies, and `platform.admin` signs in with the texted code
+- [ ] A release ships no dev blueprint, and the smoke check fails when a dev user is present
 - [ ] Backup then restore of the `lifeplatform` and `authentik` pair brings back a working sign-in
-- [ ] The admin UI answers 404 through Caddy, and the sign-in page still works
-- [ ] The production guard refuses each dev default and each bad setting it names
-- [ ] The guide's new sections were followed literally in the dry run
+- [ ] Everything on the auth domain but the sign-in pages answers 404 through Caddy, and every sign-in journey still works (sign-in with the code, sign-out, Change password, `/reset`)
+- [x] The production guard refuses each dev default and each bad setting it names (`ProductionSettingsGuardTest`, 11 tests)
+- [ ] A rollback puts the previous release and its Authentik build back
+- [ ] The guide's steps were followed literally on the server
 
 **Added 2026-11-20 (ticket 08):** the `-auth` image bakes `deploy/authentik/branding/` in at `/media/public/lifeplatform/`, where the brand finds `lifeplatform/brand.jpg`, `mark.svg` and `favicon.svg`. A media volume mounted over `/media` in production would hide them: mount it elsewhere, or copy the files into it at first boot.
+
+## Comments
+
+**2026-11-20, re-scoped: a native install under systemd, no Docker on the server.** The user's decisions:
+- **Q1 a:** finish ticket 10, then ticket 11, then deploy from `main`.
+- **Q2 c:** run everything natively under systemd, Authentik included, against the recommendation to keep Docker. Upstream supports only Docker and Kubernetes, so Authentik is built from source.
+- **Q3 a:** account lockout, carried over from Keycloak (D5). It is still to be shaped (Q3b): per-username lockout without revealing a correct password needs a two-step sign-in page.
+- **Q4:** Debian 13 by default, the OS upstream builds on.
+- **Q5 b:** Authentik builds on the server.
+- **Q6:** the dry run happens on the real server, not on this machine.
+
+The "What to build" list above still holds where it is about Authentik. Its Docker-specific lines (the `-auth` image, the server compose, the containers' memory limits) are replaced by:
+
+- **Services** (systemd, each with its own user, on loopback only):
+  - `postgresql@16-main` (PGDG apt, with partman and pg_cron, `max_connections=200`)
+  - `seaweedfs` (the release binary; its volume port moves off 8080)
+  - `platform-mock-mobile-money` (WireMock standalone)
+  - `authentik-server` (`127.0.0.1:9000`) and `authentik-worker` (`127.0.0.1:9001`): they share one host, so the worker gets its own ports
+  - `platform-backend` (`java -jar`)
+  - `caddy` (apt), the only service facing the internet
+- **Authentik, built on the server** by `install-authentik.sh <version>`, once per Authentik version, following upstream's `lifecycle/container/Dockerfile` at that tag:
+  - the web UI with Node 26 and pnpm 11.20
+  - the server binary with Rust 1.97.1, plus cmake, clang and Go for its FIPS crypto library
+  - the Python environment with `uv` and Python 3.14.7
+  - it runs from the checkout as its working directory (`./web/dist` and `./lifecycle` are relative); `blueprints_dir`, `storage.file.path` and `cert_discovery_dir` are moved by environment settings
+- **Releases:** the backend jar and the console are built on the developer's machine (both are platform-independent) and copied up. The server keeps `/opt/platform/releases/<version>`, with `current` as a symlink, so a rollback is a symlink and a restart.
+- **Settings:** one `.env` stays the operator's only file. The release renders a root-only environment file for each service from it.
+- **Scripts:** `migrate.sh` and `configure-db.sh` gain a `native` mode (the Flyway CLI and `psql` as the postgres user). `backup.sh`, `restore.sh`, `add-user.sh` (Authentik's `manage shell`), `smoke.sh` and `status.sh` swap `docker compose exec` for native commands.
+- **Already built, and carried over:**
+  - `ProductionSettingsGuard`: `/reset` always needs a real Turnstile secret, a visit secret and the insurer; the issuer needs its trailing slash; the public Authentik URL must be https. Tests updated.
+  - the console's build settings: Authentik's issuer (it was still using the Keycloak names) and the Turnstile site key
+  - the Caddy allow-list on the auth domain, from a recording of every sign-in journey, and the `/oauth/revoke/` forward
+  - the backup pairing (`authentik` with `lifeplatform`)
+  - `add-user.sh`'s rules (`--workspace`, customers, `job_roles`, rights for the backend's role) and `AddUserScriptRolesTest`
+  - the smoke checks (dev users, blueprint status, everything else on the auth domain answering 404)
+  - the first administrator renamed `platform.admin`: `staff.admin` is a dev user's name, which the smoke check refuses
