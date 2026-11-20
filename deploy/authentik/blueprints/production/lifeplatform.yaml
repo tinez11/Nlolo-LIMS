@@ -86,7 +86,7 @@ entries:
     id: group-regulator
     identifiers: {name: regulator}
 
-  # ---- Sign-in: username and password on one page (identification carries the password stage), then the session.
+  # ---- Sign-in: the username, then (unless the login is locked) the password, then the session.
   - model: authentik_stages_password.passwordstage
     id: stage-password
     identifiers: {name: lifeplatform-password}
@@ -116,13 +116,18 @@ entries:
   - model: authentik_flows.flowstagebinding
     identifiers: {target: !KeyOf flow-forgot-password, stage: !KeyOf stage-to-reset-page, order: 10}
 
+  # The username alone (2026-11-20, ticket 10: the user's Q3b). The password is its own page, because the lockout
+  # below must look at the login BEFORE its password is checked: on one page, a locked account would still have its
+  # password checked, and an attacker would learn when they had guessed it. An unknown username goes on to the password
+  # page too (pretend_user_exists), so the pages never tell a real login from a made-up one.
   - model: authentik_stages_identification.identificationstage
     id: stage-identification
     identifiers: {name: lifeplatform-identification}
     attrs:
       recovery_flow: !KeyOf flow-forgot-password
       user_fields: [username]
-      password_stage: !KeyOf stage-password
+      password_stage: null
+      pretend_user_exists: true
       case_insensitive_matching: true
       show_matched_user: false
 
@@ -145,7 +150,61 @@ entries:
   - model: authentik_flows.flowstagebinding
     identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-identification, order: 10}
   - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-password, order: 20}
+  - model: authentik_flows.flowstagebinding
     identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-user-login, order: 100}
+
+  # ---- Account lockout (2026-11-20, ticket 10; Keycloak's brute-force lockout, the user's D5 and Q3b): five wrong
+  # passwords for a login within 15 minutes lock it until the oldest of them is 15 minutes old, from whatever address
+  # they came. Counted from Authentik's own record of each failed password (one login_failed event each, for a real
+  # login and a made-up one alike, so the lock never tells them apart), and only those since the login last signed in.
+  # Not by address: mobile networks put many customers behind one address, and one person's mistakes would lock them
+  # all out. While locked, the deny stage stands between the username and the password page, so no password is checked
+  # at all -- right or wrong, the answer is the same.
+  #
+  # Not Authentik's reputation policy, tried first: it charges a made-up username twice per attempt (unknown user, then
+  # wrong password), which tells real logins from invented ones, and it lets past sign-ins buy extra tries.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-locked
+    identifiers: {name: lifeplatform-login-locked}
+    attrs:
+      expression: |
+        from datetime import timedelta
+        from django.utils.timezone import now
+        from authentik.events.models import Event, EventAction
+
+        user = request.context.get("pending_user") or request.user
+        username = getattr(user, "username", "") or ""
+        if not username:
+            return False
+        since = now() - timedelta(minutes=15)
+        last_sign_in = (
+            Event.objects.filter(action=EventAction.LOGIN, user__username__iexact=username, created__gte=since)
+            .order_by("-created").values_list("created", flat=True).first()
+        )
+        if last_sign_in:
+            since = last_sign_in
+        failures = Event.objects.filter(
+            action=EventAction.LOGIN_FAILED, context__username__iexact=username, created__gt=since
+        ).count()
+        return failures >= 5
+
+  - model: authentik_stages_deny.denystage
+    id: stage-deny-locked
+    identifiers: {name: lifeplatform-deny-locked}
+    attrs:
+      deny_message: Too many wrong passwords. Wait 15 minutes, then try again.
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-deny-locked
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-deny-locked, order: 15}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-deny-locked, policy: !KeyOf policy-locked, order: 0}
+
 
   # ---- Superusers never sign in here (ticket 02; replaces Keycloak's 404 on the master realm). The deny stage runs
   # only when its policy passes, judged once the login is known: the policy's user is the pending user, not the

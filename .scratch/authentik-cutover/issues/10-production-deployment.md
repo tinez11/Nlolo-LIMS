@@ -87,3 +87,16 @@ The "What to build" list above still holds where it is about Authentik. Its Dock
   - `add-user.sh`'s rules (`--workspace`, customers, `job_roles`, rights for the backend's role) and `AddUserScriptRolesTest`
   - the smoke checks (dev users, blueprint status, everything else on the auth domain answering 404)
   - the first administrator renamed `platform.admin`: `staff.admin` is a dev user's name, which the smoke check refuses
+
+**2026-11-20, account lockout (the user's Q3b: two pages).**
+- **Sign-in is now two pages:** the username, then the password. A deny stage between them, `lifeplatform-login-locked`, refuses a login with five `login_failed` events (username matched case-insensitively) in the last 15 minutes since its last successful sign-in. A locked login never has its password checked, so the right password is refused too, and nothing reveals it.
+- **Not Authentik's reputation policy, which was tried first and dropped:**
+  - it charged a made-up username twice per attempt (unknown user, then wrong password), so made-up names locked after three tries and real ones after five: a way to tell them apart
+  - past sign-ins bought extra tries (up to +5)
+  - its cap is a tenant setting, which blueprints may not hold
+- **Checked live in dev:**
+  - five wrong passwords, then the right one: locked
+  - a made-up username, with mixed capitalisation: locked at five, the same as a real login
+  - another login: unaffected
+  - both pages keep the ticket 08 look
+- `e2e/signIn.ts` fills the two pages; `auth.setup.ts`, `auth-agent.setup.ts` and `public-sign-in-code.spec.ts` pass.

@@ -454,7 +454,11 @@ The last step asks a list of questions. Its message tells you which one failed:
 - **"Invalid password"** for everyone: check the address in the browser is exactly `APP_DOMAIN`.
 - **No sign-in code arrives** (staff): check the staff member's phone in Administration › Users; check
   `SMS_GATEWAY_ALLOWED_RECIPIENTS` includes them while testing; check Messages sent for the reason.
-- **Five wrong passwords** end the attempt; the person starts again from the console.
+- **"Too many wrong passwords. Wait 15 minutes, then try again."** Five wrong passwords for a login within 15
+  minutes lock it, whoever typed them and from wherever, until the oldest of them is 15 minutes old. Even the right
+  password is refused meanwhile. It lifts on its own; there is nothing to reset. If someone is locked out again and
+  again without having tried, someone else is guessing their password: look at the sign-in events in the Authentik
+  admin (Part 7).
 
 ---
 
