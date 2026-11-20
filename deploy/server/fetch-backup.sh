@@ -7,7 +7,7 @@
 #        ./fetch-backup.sh daily/STAMP   copies that one to backups/STAMP, then: ./restore.sh backups/STAMP --scratch
 set -euo pipefail
 cd "$(dirname "$0")"
-set -a; . ./.env; . ./versions.env; set +a
+. ./platform-lib.sh
 . ./offsite.sh
 
 offsite_configured || { echo "BACKUP_S3_ENDPOINT is empty: there is no off-server copy to fetch" >&2; exit 1; }
@@ -20,6 +20,6 @@ fi
 
 STAMP="$(basename "$1")"
 mkdir -p "backups/$STAMP"
-rc copy "safe:$1" "/data/$STAMP"
+rc copy "safe:$1" "backups/$STAMP"
 [ -f "backups/$STAMP/lifeplatform.dump" ] || { echo "backups/$STAMP came back without lifeplatform.dump" >&2; exit 1; }
 echo "backups/$STAMP"

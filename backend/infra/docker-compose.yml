@@ -83,52 +83,64 @@ services:
       exit 0;
       "
 
-  keycloak:
-    # 26, the version the pilot server runs (2026-10-13). Keycloak supports only its latest major, and upgrading
-    # while production holds no users at all is a test-and-switch rather than a live identity-database migration.
-    # KEYCLOAK_ADMIN/_PASSWORD were renamed KC_BOOTSTRAP_ADMIN_* in 26; the old names are ignored in silence, which
-    # leaves a Keycloak with no admin user and no error.
-    image: quay.io/keycloak/keycloak:26.0.7
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
-      # Keycloak emails a person when their password or second factor changes (2026-10-28) -- the notice that tells
-      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it,
-      # and not twice: Keycloak 26 raises UPDATE_CREDENTIAL beside UPDATE_PASSWORD for one change, so that one is off
-      # (a second factor still has its own UPDATE_TOTP notice).
-      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR,UPDATE_CREDENTIAL
-      # The agents' and customers' reset by text (2026-10-28): Keycloak asks the platform, which holds the phone
-      # numbers, to text the code. Signed with a secret the backend holds as PASSWORD_RESET_SMS_SECRET.
-      LP_RESET_SMS_URL: ${LP_RESET_SMS_URL:-http://host.docker.internal:8080/internal/password-reset/sms}
-      LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET:-dev-only-reset-sms-secret}
-      # "Your password was changed" by text (2026-11-06): the same signature, the platform's own endpoint.
-      LP_PASSWORD_CHANGED_URL: ${LP_PASSWORD_CHANGED_URL:-http://host.docker.internal:8080/internal/password-changed}
-      # The staff sign-in code (2026-11-14): Keycloak asks the platform to text it, same signature. The platform's
-      # STAFF_SIGN_IN_CODE switch decides whether staff are asked at all (off in dev).
-      LP_STAFF_CODE_SMS_URL: ${LP_STAFF_CODE_SMS_URL:-http://host.docker.internal:8080/internal/staff-sign-in-code/sms}
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
-    command: ["start-dev", "--import-realm"]
+  # Authentik (2026-11-19, the Authentik migration): replaced Keycloak, which left this file in ticket 02 of
+  # .scratch/authentik-cutover. A server (the sign-in pages and API) and a worker (blueprints, notifications) from the
+  # same stock image, on their own `authentik` database in this Postgres. The worker applies both blueprint folders --
+  # production's, which the -auth image bakes in, and dev's test users, which no server ever mounts -- at start and on
+  # every change. The issuer is http://localhost:9100/application/o/lifeplatform/ (trailing slash included).
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-only-authentik-secret-key-0123456789abcdef}
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: postgres
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      # Set, not left to the default: the docs and the 2026.8.5 source disagree on it.
+      AUTHENTIK_POSTGRESQL__SSLMODE: disable
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-devadmin}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-dev-only-authentik-bootstrap-token}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      # The console's origin, for the provider's one exact redirect address.
+      LP_APP_ORIGIN: http://localhost:5173
+      # The backend's API token (ticket 03): the blueprint gives the lifeplatform-backend service account this key, and
+      # the backend sends it as AUTHENTIK_API_TOKEN. Same dev default on both sides; production sets its own.
+      AUTHENTIK_API_TOKEN: ${AUTHENTIK_API_TOKEN:-dev-only-authentik-api-token}
+      # The staff sign-in code (ticket 05): the switch the blueprint reads (off in dev, as for the backend), where the
+      # backend answers (it runs on the host in dev), and the bearer secret the backend checks.
+      STAFF_SIGN_IN_CODE: ${STAFF_SIGN_IN_CODE:-false}
+      LP_BACKEND_URL: ${LP_BACKEND_URL:-http://host.docker.internal:8080}
+      SIGN_IN_CODE_WEBHOOK_SECRET: ${SIGN_IN_CODE_WEBHOOK_SECRET:-dev-only-sign-in-code-secret}
+      # "Your password was changed" (ticket 06): the bearer secret the notification sends, which the backend checks.
+      PASSWORD_CHANGED_WEBHOOK_SECRET: ${PASSWORD_CHANGED_WEBHOOK_SECRET:-dev-only-password-changed-secret}
     ports:
-      - "8081:8080"
+      - "9100:9000"
+    # Mounted on the server too, not only the worker: the admin API's "apply" runs here, and without the files it
+    # re-applies stale content and still reports success (found 2026-11-19). A Windows bind mount sends no file events
+    # into the container, so after editing a blueprint apply it through the API or restart the worker.
     volumes:
-      - ../keycloak:/opt/keycloak/data/import:ro
-      # The Life Platform login theme. Mounted at its own leaf path rather than
-      # over /opt/keycloak/themes, so the built-in themes -- which ship inside
-      # the keycloak-themes jar, not in that directory -- cannot be shadowed by
-      # accident. A folder theme needs no `kc.sh build`: it is read at runtime,
-      # and start-dev disables theme and template caching, so an edit here is
-      # live on the next page load.
-      #
-      # `../keycloak/themes` also sits inside the import directory mounted
-      # above. That is harmless: --import-realm reads *.json from the top level
-      # of that directory and ignores subdirectories.
-      - ../keycloak/themes/lifeplatform:/opt/keycloak/themes/lifeplatform:ro
-      # The platform's Keycloak extensions, built by `./mvnw -f keycloak/extensions/pom.xml package`. start-dev
-      # picks a provider up on start; rebuild the jar and restart this container after changing it.
-      - ../keycloak/extensions/target/lifeplatform-keycloak.jar:/opt/keycloak/providers/lifeplatform-keycloak.jar:ro
+      - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
+      - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+      # The sign-in pages' photo, mark and favicon (ticket 08): Authentik serves media from /media/public, and the
+      # brand names these files lifeplatform/<file>. The -auth image bakes the same folder in.
+      - ../../deploy/authentik/branding:/media/public/lifeplatform:ro
+    mem_limit: 1g
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.5
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
+      - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+      - ../../deploy/authentik/branding:/media/public/lifeplatform:ro
+    mem_limit: 512m
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,7 +189,9 @@ services:
       MINIO_ENDPOINT: http://objectstore:8333
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/lifeplatform
+      # No AUTHENTIK_ISSUER here yet: the issuer must be the address the browser signs in at, and this container cannot
+      # reach localhost:9100. The server compose sets it (ticket 10 of .scratch/authentik-cutover); this service is not
+      # used in dev, where the backend runs on the host.
       MOBILE_MONEY_GATEWAY_BASE_URL: http://mock-mobile-money:8080
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
@@ -196,7 +210,7 @@ services:
         condition: service_healthy
       objectstore:
         condition: service_healthy
-      keycloak:
+      authentik-server:
         condition: service_started
 
   pgadmin:

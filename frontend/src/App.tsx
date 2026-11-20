@@ -21,7 +21,7 @@ import { LoadingBlock } from '@/components/states';
 import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
 import { CustomerQuotePage } from '@/features/customer/CustomerQuotePage';
 import { CustomerApplyPage } from '@/features/customer/CustomerApplyPage';
-import { PublicQuoteApp } from '@/lazyPages';
+import { PasswordResetPage, PublicQuoteApp } from '@/lazyPages';
 
 /**
  * Workspace-scoped routes, built from the screen manifest in `@/screens`.
@@ -49,6 +49,10 @@ const router = createBrowserRouter(
     <>
         {/* One sign-in for everyone (2026-11-06): "/" signs in, then opens the account's workspace or offers a choice. */}
         <Route path="/" element={<RequireAuth><WorkspaceHome /></RequireAuth>} />
+
+        {/* "Forgot your password?" (2026-11-19, the Authentik cut-over): Authentik's sign-in page sends agents and
+            customers here. Public: no sign-in, behind Turnstile -- see PasswordResetPage. */}
+        <Route path="/reset" element={<Suspense fallback={<LoadingBlock />}><PasswordResetPage /></Suspense>} />
 
         {/* The public quote link (2026-11-02): no realm, no sign-in. The customer portal's own Get-cover and price
             screens, priced on what the visitor types -- see PublicQuoteApp for what guards it. */}

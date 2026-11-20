@@ -33,6 +33,23 @@ class PublicAccessTest {
         assertThat(status(() -> access(false, false).tenant())).isEqualTo(404);
     }
 
+    /**
+     * The password reset page (2026-11-19, Authentik cut-over ticket 07) uses the same visits and insurer, and must work
+     * with the quote link switched off; only a deployment with no insurer configured has no public pages at all.
+     */
+    @Test
+    void visitsAndTheInsurerDoNotDependOnTheQuoteLinkBeingOn() {
+        PublicAccess quoteOff = access(false, false);
+        assertThat(quoteOff.insurer()).isEqualTo(java.util.UUID.fromString(TENANT));
+        assertThat(quoteOff.visit(quoteOff.startVisit(null, "10.0.0.9"))).isNotBlank();
+        assertThat(status(quoteOff::tenant)).isEqualTo(404);
+
+        PublicAccess noInsurer = new PublicAccess(true, "", false, "", "a-visit-secret-of-at-least-thirty-two-chars",
+            new ObjectMapper());
+        assertThat(status(noInsurer::insurer)).isEqualTo(404);
+        assertThat(status(() -> noInsurer.startVisit(null, "10.0.0.9"))).isEqualTo(404);
+    }
+
     @Test
     void noChallengeTokenIsNoVisit() {
         // With Turnstile on, a missing token is refused before Cloudflare is ever asked.

@@ -1,36 +1,23 @@
-import { expect, test as setup } from '@playwright/test';
+import { test as setup } from '@playwright/test';
+import { signIn } from './signIn';
 
 /**
  * Signs in as the CLAIMS_ASSESSOR-only staff user, for tests that need a real
  * separation-of-duties boundary against a CLAIMS_MANAGER identity -- see
- * auth.setup.ts for the shared rationale (real Keycloak, no fabricated JWT,
- * storageState captures the SSO cookie not app tokens).
+ * auth.setup.ts for the shared rationale (real Authentik, no fabricated JWT,
+ * storageState captures the session cookie not app tokens).
  *
  * `staff.underwriter` (the default `staff` project identity) carries only the
  * UNDERWRITER role -- no claims role at all -- so claims adjudication e2e
  * coverage needs its own two single-role identities, matching how the backend
- * itself defines them (`backend/keycloak/lifeplatform-realm.json`: one job role per user).
+ * itself defines them (`deploy/authentik/blueprints/dev/dev-users.yaml`: one job role per user).
  */
 const ASSESSOR_USER = 'staff.assessor';
-const ASSESSOR_PASSWORD = 'devpassword';
 
 setup(`authenticate as ${ASSESSOR_USER}`, async ({ page }) => {
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
-  await page.goto('/staff');
-
-  await page.waitForURL(/\/realms\/lifeplatform\/protocol\/openid-connect\/auth/, {
-    timeout: 30_000,
-    // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
-    waitUntil: 'domcontentloaded',
+  await signIn(page, {
+    console: '/staff',
+    username: ASSESSOR_USER,
+    state: 'e2e/.auth/staff-assessor.json',
   });
-
-  await page.locator('#username').fill(ASSESSOR_USER);
-  await page.locator('#password').fill(ASSESSOR_PASSWORD);
-  await page.locator('#kc-login').click();
-
-  await page.waitForURL(/localhost:5173\/staff/, { timeout: 30_000 });
-  // Every staff role lands on the Dashboard (2026-10-14); it replaced Today, which replaced the module landings (review C5).
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
-
-  await page.context().storageState({ path: 'e2e/.auth/staff-assessor.json' });
 });

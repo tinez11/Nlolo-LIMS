@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * End-to-end against the REAL stack: real Keycloak, real backend, real Postgres.
+ * End-to-end against the REAL stack: real Authentik, real backend, real Postgres.
  *
  * There are no fabricated JWTs anywhere in this suite, and that is a hard rule
  * rather than a preference. This project has twice shipped a completely green test
@@ -13,7 +13,11 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Prerequisites (see backend/infra/docker-compose.yml):
  *   docker compose -f ../backend/infra/docker-compose.yml up -d
+ *     (Authentik's worker applies the dev blueprint: the test users, and the app passwords e2e/signIn.ts's apiToken
+ *     signs them in with)
  *   ../backend/scripts/seed-dev-data.sh
+ *   the backend on :8080 with SMS_GATEWAY_LIVE=true and the gateway left on the local mock (the default), so the
+ *     public specs can read the texted codes from the mock's request journal
  */
 const APP = 'http://localhost:5173';
 
@@ -42,11 +46,18 @@ export default defineConfig({
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],
-        // Captures Keycloak's SSO cookie, not app tokens -- the SPA holds tokens in
+        // Captures Authentik's session cookie, not app tokens -- the SPA holds tokens in
         // memory only, so each page load re-authenticates silently against that
         // cookie. Which means this file exercises the real silent-SSO path too.
         storageState: 'e2e/.auth/staff.json',
       },
+    },
+    {
+      // Signed out: the staff sign-in code and the password reset start from no session at all. They make their own
+      // fixtures over the API, so they wait for no setup.
+      name: 'public',
+      testMatch: /public-.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'agents',

@@ -32,3 +32,22 @@ Spec: "Build order", merge gate. The decision is in ticket 16 of `.scratch/authe
 - [ ] The full e2e suite passes
 - [ ] The fresh-bootstrap rehearsal signs in to every workspace
 - [ ] The whole-branch review's findings are fixed or explicitly accepted by the user
+
+## Comments
+
+**2026-11-20, handed on from ticket 09:**
+
+- **Still speak to Keycloak:**
+  - `backend/scripts/hazina-demo.mjs`: its token function. Rewrite it like `seed-lib.sh`'s `token_for`.
+  - `backend/scripts/apply-staff-sign-in-flow.sh`: Keycloak-only. Delete it.
+- **The full e2e run will be slower.** A silent sign-in through Authentik costs about 3 seconds idle, against Keycloak's well under one, and every page load makes one. Raise the suite's 60-second test budget before treating timeouts as regressions, and re-run a failure alone first.
+- **The public specs need SMS on.** Run the backend with `SMS_GATEWAY_LIVE=true` and the gateway on the mock.
+- **Two failures older than the cut-over** (details in ticket 09):
+  - `staff-underwriting` "a proposal states the contract": it needs a priced product.
+  - the seed's customer loan step: a 403, because loans are staff-only.
+
+**2026-11-20, handed on from ticket 10 (native install):**
+- **Still for Keycloak, delete them:**
+  - `PASSWORD_RESET_SMS_SECRET`: the server `.env`, `bootstrap-server.sh`, `remote-release.sh`'s `backend.env`, and the guard's `password-reset.sms-secret` entry, together with `PasswordResetSmsController` and `KeycloakSignature`
+  - `CREATE DATABASE keycloak` in `backend/infra/postgres/init/01-create-app-role.sql.template`, which the native first release also runs
+- **No Docker on the server any more.** The fresh-bootstrap rehearsal is now `bootstrap-server.sh` plus `release.sh` on a Debian 13 server, which the user decided is the real server (ticket 10, Q6).

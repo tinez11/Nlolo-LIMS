@@ -16,6 +16,10 @@ CREATE ROLE app_role LOGIN
 -- Keycloak upgrade/migration never touches business data.
 CREATE DATABASE keycloak OWNER postgres;
 
+-- Authentik's database (2026-11-19, the Authentik migration), for the same reason. An existing volume never runs this
+-- file again: there, create it once by hand (CREATE DATABASE authentik OWNER postgres;).
+CREATE DATABASE authentik OWNER postgres;
+
 -- pg_partman and pg_cron are enabled here (installed at image-build time in
 -- postgres/Dockerfile); registering specific tables for automated partition
 -- maintenance happens LATER, in db-migrations/_post-migration/configure-pg-partman.sql,

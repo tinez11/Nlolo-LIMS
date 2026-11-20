@@ -5,7 +5,7 @@ import { useAuth } from 'react-oidc-context';
 import { avatarHue, avatarInitials, displayName, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { availableWorkspaces } from '@/auth/workspaces';
-import { changePasswordArgs } from '@/auth/changePassword';
+import { changePasswordUrl } from '@/auth/changePassword';
 import { cn } from '@/lib/cn';
 import { humanizeStatus } from '@/lib/status';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
@@ -19,6 +19,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Tip } from './ui/tooltip';
 import { useMyAccess } from '@/store/accessStore';
+import { signOut } from '@/auth/signOut';
 import { useLanguage, useLanguageStore } from '@/features/customer/language';
 import { wordsFor } from '@/features/customer/words';
 
@@ -453,12 +454,12 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
             </NavLink>
           </Button>
         ))}
-      {/* Keycloak's own change-password page (2026-11-06): it asks for the current password, and comes back here. */}
+      {/* Authentik's change-password flow (2026-11-19): it asks for the current password, and comes back here. */}
       <Button
         size="sm"
         variant="ghost"
         className="mt-1 w-full justify-start"
-        onClick={() => void auth.signinRedirect(changePasswordArgs()).catch(() => undefined)}
+        onClick={() => window.location.assign(changePasswordUrl())}
       >
         <KeyRound />
         {realm === 'customers' ? wordsFor(language).nav.changePassword : 'Change password'}
@@ -478,9 +479,9 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
           variant="ghost"
           aria-label="Sign out"
           onClick={() => {
-            // End the Keycloak session too, not just the local one -- otherwise the
+            // Revoke the tokens and end the Authentik session too, not just the local one -- otherwise the
             // next visit silently signs straight back in.
-            void auth.signoutRedirect().catch(() => navigate('/'));
+            void signOut(auth).catch(() => navigate('/'));
           }}
         >
           <LogOut />

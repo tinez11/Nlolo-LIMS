@@ -16,12 +16,12 @@ import { expect, type Page } from '@playwright/test';
  *    sidebar at all, so "Treaties is not visible" is satisfied by the nav not
  *    existing yet. The assertion passes without ever testing the gate -- it would
  *    keep passing if the gate were removed entirely.
- * 2. The second `goto` races the silent SSO renew, whose redirect to Keycloak
+ * 2. The second `goto` races the silent SSO renew, whose redirect to the sign-in provider
  *    aborts an in-flight navigation with net::ERR_ABORTED. Where it does not abort,
  *    the guard page has not rendered inside the default 10s budget.
  *
  * Both are fixed by anchoring on something that must be PRESENT before asserting
- * anything absent, and by budgeting for a Keycloak round trip.
+ * anything absent, and by budgeting for a sign-in round trip.
  */
 
 /** Every staff identity can see Policies, so it is the anchor that proves the shell rendered. */

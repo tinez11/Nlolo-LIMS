@@ -1,0 +1,409 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+#
+# DEV ONLY -- never baked into the -auth image, never mounted on a server (smoke.sh fails if one of these users exists).
+# The 14 test users, carried over from the Keycloak realm JSON on 2026-11-19 (ticket 01 of .scratch/authentik-cutover):
+# same usernames, names, attributes and workspaces, password devpassword, and their Keycloak job roles as the job_roles
+# attribute the platform imports once at first sign-in.
+#
+# Each user is `state: created`: made when missing, never rewritten (ticket 09). An apply replaces a user's attributes
+# whole, and the worker re-applies this file whenever it changes, so `present` wiped the party_id the seed script writes
+# onto the agent and customer logins. A change to a user here therefore reaches a fresh stack, not an existing one.
+version: 1
+metadata:
+  name: lifeplatform-dev-users
+  labels:
+    blueprints.goauthentik.io/description: DEV ONLY test users
+
+entries:
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers: {name: lifeplatform}
+      required: true
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.underwriter}
+    attrs:
+      name: Halima Underwriter
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [UNDERWRITER]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.senior}
+    attrs:
+      name: Josephat Senior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [UNDERWRITER, SENIOR_UNDERWRITER]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.assessor}
+    attrs:
+      name: Daudi Assessor
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CLAIMS_ASSESSOR]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.manager}
+    attrs:
+      name: Fatuma Manager
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CLAIMS_MANAGER]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.management}
+    attrs:
+      name: Baraka Director
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [MANAGEMENT]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.finance}
+    attrs:
+      name: Rehema Finance
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "ARU"
+        job_roles: [FINANCE_OFFICER]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.finance-approver}
+    attrs:
+      name: Baraka Approver
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [FINANCE_OFFICER, FINANCE_APPROVER]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.service}
+    attrs:
+      name: Neema Service
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [CUSTOMER_SERVICE_REP]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: staff.admin}
+    attrs:
+      name: Asha Admin
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        job_roles: [ADMIN, FINANCE_OFFICER, UNDERWRITER, CLAIMS_ASSESSOR, CLAIMS_MANAGER, CUSTOMER_SERVICE_REP]
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: agent.senior}
+    attrs:
+      name: Juma Senior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: agent.junior}
+    attrs:
+      name: Neema Junior
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: customer.owner}
+    attrs:
+      name: Amina Owner
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: customer.other}
+    attrs:
+      name: Baraka Other
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: regulator.tira}
+    attrs:
+      name: Salum Tira
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, regulator]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        job_roles: [TIRA_READ_ONLY]
+
+  # Added 2026-11-19 (ticket 02 of .scratch/authentik-cutover): one login in two workspaces, an agent who is also a
+  # customer, to prove the console's X-Workspace switch. Not in the Keycloak realm.
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: agent.customer}
+    attrs:
+      name: Rehema Both
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, agent]]
+        - !Find [authentik_core.group, [name, customer]]
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+
+  # Added 2026-11-19 (ticket 05 of .scratch/authentik-cutover): the staff sign-in code's test login. Members of
+  # e2e-sign-in-code are asked for the code even with STAFF_SIGN_IN_CODE off, as dev runs; the backend texts it to the
+  # login's phone until the staff record has one. Not in the Keycloak realm.
+  - model: authentik_core.group
+    id: group-e2e-sign-in-code
+    identifiers: {name: e2e-sign-in-code}
+
+  - model: authentik_core.user
+    state: created
+    identifiers: {username: e2e.sign-in-code}
+    attrs:
+      name: Sign-in Code Tester
+      path: lifeplatform/dev
+      is_active: true
+      password: devpassword
+      groups:
+        - !Find [authentik_core.group, [name, staff]]
+        - !KeyOf group-e2e-sign-in-code
+      attributes:
+        tenant_id: "11111111-1111-1111-1111-111111111111"
+        home_branch: "DSM"
+        phone: "+255700000099"
+        job_roles: [UNDERWRITER]
+
+  # ---- API-level sign-in for the e2e setup and the seed scripts (ticket 09 of .scratch/authentik-cutover). DEV ONLY.
+  # Keycloak's password grant took the login's own password; Authentik's takes an app-password token instead
+  # (grant_type=password, client_id=lifeplatform-spa, username, password=<the token's key>, scope openid profile
+  # lifeplatform). Every test user but e2e.sign-in-code (whose point is the code) gets one with a fixed key,
+  # dev-app-password-<username>, and the provider allows the grant here only: the production blueprint lists
+  # authorization_code and refresh_token and nothing else. Applying production alone takes the grant back away until this
+  # file is applied again (this file applies production first, so applying it is always enough).
+  - model: authentik_providers_oauth2.oauth2provider
+    identifiers: {name: lifeplatform}
+    attrs:
+      grant_types: [authorization_code, refresh_token, password]
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-underwriter}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.underwriter]]
+      key: dev-app-password-staff.underwriter
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-senior}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.senior]]
+      key: dev-app-password-staff.senior
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-assessor}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.assessor]]
+      key: dev-app-password-staff.assessor
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-manager}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.manager]]
+      key: dev-app-password-staff.manager
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-management}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.management]]
+      key: dev-app-password-staff.management
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-finance}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.finance]]
+      key: dev-app-password-staff.finance
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-finance-approver}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.finance-approver]]
+      key: dev-app-password-staff.finance-approver
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-service}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.service]]
+      key: dev-app-password-staff.service
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-staff-admin}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, staff.admin]]
+      key: dev-app-password-staff.admin
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-agent-senior}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, agent.senior]]
+      key: dev-app-password-agent.senior
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-agent-junior}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, agent.junior]]
+      key: dev-app-password-agent.junior
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-customer-owner}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, customer.owner]]
+      key: dev-app-password-customer.owner
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-customer-other}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, customer.other]]
+      key: dev-app-password-customer.other
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-regulator-tira}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, regulator.tira]]
+      key: dev-app-password-regulator.tira
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in
+
+  - model: authentik_core.token
+    identifiers: {identifier: dev-app-password-agent-customer}
+    attrs:
+      intent: app_password
+      user: !Find [authentik_core.user, [username, agent.customer]]
+      key: dev-app-password-agent.customer
+      expiring: false
+      description: DEV ONLY, the e2e setup's and the seed scripts' API sign-in

@@ -53,6 +53,8 @@ not to port it.
 | Swahili login pages | **Changed:** Authentik's sign-in and set-password pages are English only. The reset request and all texts stay bilingual | 11 |
 | Staff can't reset their own password | Same. `/reset` texts nothing to staff numbers | 12 |
 | 10-hour session cap | Same, enforced by the console from the token's `auth_time`. 30-minute idle timeout | 07 |
+| Password rules: 8 characters, not the username, not one of the last 3 (added 2026-11-19, cut-over ticket 03) | **Changed:** at least 8 characters, not the username, and not the password the person was given or already has. "Not one of the last 3" needs Authentik's enterprise licence; the user accepted dropping it | cut-over 03 |
+| The console's **Change password** (Keycloak's update-password action: current password again, the rules, the text) (added 2026-11-19) | Same, as an Authentik change-password flow the console links to. Built with the "password changed" text | cut-over 06 |
 
 ## Part 1 -- Authentik configuration (blueprints)
 
@@ -88,8 +90,11 @@ through a webhook mapping that shapes the body as Part 3 describes.
   - `tenant_id`, `party_id` and `home_branch`: from user attributes
 - **Scopes:** add `offline_access`; drop `email`.
 - **Lifetimes:** access token 5 minutes, refresh 30 minutes (idle), sign-in session 10 hours.
-- **Groups:** exactly four, `staff`, `agent`, `customer` and `regulator`. Job roles stay in the platform's `iam`
-  tables and are never in Authentik.
+- **Groups:** exactly four, `staff`, `agent`, `customer` and `regulator`. Job roles are granted and checked in the
+  platform's `iam` tables.
+- **The `job_roles` attribute** (amended 2026-11-19): a login may carry a `job_roles` attribute, emitted as its own
+  `job_roles` claim. `AccessService.importFromToken` reads it **once**, at a staff member's first sign-in; nothing else
+  reads it. This is how the dev users and `add-user.sh`'s first administrator get their roles.
 - **The backend's service account and its non-expiring token,** with the key from `.env`. Its role holds:
   - "add user", globally
   - change, delete and reset-password only on users it created
@@ -161,7 +166,16 @@ The three adapters are rewritten for Authentik's API and lose "Keycloak" from th
 `POST /internal/staff-sign-in-code/sms`:
 - **Body:** `{tenantId, userId (UUID), code, phone}`.
 - **Phone:** the backend **ignores `phone`** and texts the staff record's phone, falling back to the login's phone.
+  (Amended 2026-11-19, cut-over ticket 05: the mapping sends the login's `phone` **attribute** as `phone`, not the
+  device number, which is only the username; the backend uses it only when it is a phone number.)
 - **Caps:** they move into `StaffSignInCodes`.
+- **The check before the code step** (added 2026-11-19, the user's choice in cut-over ticket 05): Authentik's code
+  pages don't show a refused send (over the cap they still say "a code has been sent"; with no phone the first sign-in
+  shows a phone screen). So a policy first calls `POST /internal/staff-sign-in-code/check` (same secret, body
+  `{tenantId, userId, phone}`); a 422 or 429 ends the sign-in at a deny stage with the backend's words. Asking never
+  counts as a send.
+- **Spring Security** must not read the webhooks' bearer secrets as sign-in tokens: the bearer resolver skips
+  `/internal/`.
 - **Replies,** shown to the person by Authentik:
 
 | Outcome | Status | Text |
@@ -206,7 +220,12 @@ The settings are `AUTHENTIK_BASE_URL`, `AUTHENTIK_API_TOKEN`, `AUTHENTIK_ISSUER`
 ## Part 3 -- Frontend
 
 - **`claims.ts` and `realms.ts`** read `roles`.
-- **The OIDC configuration** points at the Authentik issuer. Set `revokeTokensOnSignout: true`.
+- **The OIDC configuration** points at the Authentik issuer. Signing out revokes the tokens. (Amended 2026-11-19, ticket
+  02: Authentik's revoke endpoint sends no CORS headers, so the console revokes through its own origin at
+  `/oauth/revoke/`, forwarded to Authentik by Vite in dev and Caddy in production. It revokes, then redirects even if
+  the revoke failed, rather than using `revokeTokensOnSignout`, which abandons the sign-out on a failed revoke. The
+  provider gets its own sign-out flow with a user-logout stage and a registered logout address: the stock provider
+  invalidation flow left the Authentik session alive, so the console signed straight back in.)
 - **A forced sign-out 10 hours after `auth_time`.**
 - **The `/reset` page:** public and bilingual (English/Kiswahili), shared by agents and customers, with Turnstile.
   - It always answers "If this number has a login, we've texted a code."

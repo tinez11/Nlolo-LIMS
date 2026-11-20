@@ -27,7 +27,7 @@ async function firstPolicyRow(page: Page): Promise<Locator | null> {
  * policy data from the real backend, then list -> drawer -> full detail page.
  *
  * Every assertion here is against data the platform actually produced (the dev
- * seeder issues one policy). Nothing is mocked -- if the Keycloak client, the
+ * seeder issues one policy). Nothing is mocked -- if the Authentik client, the
  * tenant_id claim mapper, RLS, or the proxy is misconfigured, this fails, which is
  * the entire point.
  */
@@ -36,7 +36,7 @@ test.describe('staff policies', () => {
     await page.goto('/staff/policies');
 
     // Silent SSO: tokens are memory-only, so this load re-authenticates against
-    // Keycloak's cookie rather than replaying a stored token.
+    // Authentik's cookie rather than replaying a stored token.
     await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
 
     // Real rows, or an honest empty state -- never a spinner that never resolves.

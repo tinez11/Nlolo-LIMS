@@ -1,10 +1,9 @@
 /**
  * Reading identity out of the access token.
  *
- * The backend's JwtAuthenticationConverter grants `ROLE_REALM_<REALM>` plus
- * `ROLE_<role>` for every entry in `realm_access.roles`, so the same claim the
- * server authorizes on is the one the UI gates nav on. No extra endpoint, no
- * second source of truth that can disagree.
+ * The backend grants `ROLE_REALM_<WORKSPACE>` from the token's `roles` claim (Authentik, 2026-11-19: the person's
+ * workspace groups), so the same claim the server authorizes on is the one the UI gates workspaces on. Job roles
+ * and permissions come from the platform (`/me/access`), never from the token.
  *
  * Decoding is for DISPLAY AND NAVIGATION ONLY. The token is not verified here and
  * must never be trusted for authorization -- every gate below is a convenience so
@@ -97,11 +96,8 @@ function decodeIdentity(accessToken: string | undefined): TokenIdentity {
   if (typeof parsed !== 'object' || parsed === null) return EMPTY;
   const claims = parsed as Record<string, unknown>;
 
-  const realmAccess = claims.realm_access;
-  const roles =
-    typeof realmAccess === 'object' && realmAccess !== null
-      ? ((realmAccess as Record<string, unknown>).roles ?? [])
-      : [];
+  // Authentik's `roles` claim (2026-11-19): the person's workspaces, the same claim the backend authorizes on.
+  const roles = claims.roles ?? [];
 
   return {
     roles: Array.isArray(roles) ? roles.filter((r): r is string => typeof r === 'string') : [],

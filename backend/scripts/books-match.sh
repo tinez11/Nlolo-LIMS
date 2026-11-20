@@ -4,11 +4,10 @@
 # stopping for. Run by seed-dev-data.sh at its end, and on its own after any money test against a local stack.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 source scripts/seed-lib.sh
 
-FINANCE=$(token_for staff staff.finance "$(realm_secret staff)")
+FINANCE=$(token_for staff.finance)
 # The ledger posts after commit, so a check straight after a money move can run ahead of it.
 sleep "${BOOKS_MATCH_SETTLE_SECONDS:-5}"
 node -e '

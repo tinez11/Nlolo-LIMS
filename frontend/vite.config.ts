@@ -23,6 +23,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      // Token revocation at sign-out (src/auth/signOut.ts). Authentik's revoke endpoint answers no CORS, so the console
+      // calls it on its own origin; Caddy forwards the same path on the app domain.
+      '/oauth/revoke/': {
+        target: process.env.VITE_AUTHENTIK_TARGET ?? 'http://localhost:9100',
+        changeOrigin: true,
+        rewrite: () => '/application/o/revoke/',
+      },
     },
   },
   test: {

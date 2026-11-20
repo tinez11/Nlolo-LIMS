@@ -79,11 +79,15 @@ public class AccessExpressions implements CurrentAccess {
     }
 
     /**
-     * The roles are read from the authorities SecurityConfig made of the token's {@code realm_access}, not from the claim
-     * itself, so a test that signs a request with {@code ROLE_UNDERWRITER} is read exactly as a real token would be.
+     * The job roles the platform imports at a staff member's first sign-in (AccessService.importFromToken): the
+     * login's {@code job_roles} claim (Authentik, 2026-11-19 -- never authorities), plus any {@code ROLE_<job>}
+     * authority, which only a test's signed request carries.
      */
     static AccessApi.StaffIdentity identityOf(Jwt jwt, Collection<? extends GrantedAuthority> authorities) {
         Set<String> roles = new LinkedHashSet<>();
+        if (jwt.getClaims().get("job_roles") instanceof Collection<?> jobRoles) {
+            for (Object role : jobRoles) if (role instanceof String code) roles.add(code);
+        }
         for (GrantedAuthority a : authorities) {
             String name = a.getAuthority();
             if (name.startsWith("ROLE_") && !name.startsWith("ROLE_REALM_")) roles.add(name.substring("ROLE_".length()));

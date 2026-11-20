@@ -2,7 +2,7 @@
 # BUMACO -- the credit-life scheme, recreated in the dev platform and left EMPTY, ready for the
 # lender's enrolment file to be uploaded on screen.
 #
-# Authored 2026-10-15. It speaks the REAL REST API with a REAL Keycloak token, the way
+# Authored 2026-10-15. It speaks the REAL REST API with a REAL Authentik token, the way
 # seed-dev-data.sh does, so what appears in the console got there the way a person's clicks would.
 #
 # WHAT THE DOCS ALREADY SETTLED ABOUT THIS LENDER
@@ -32,12 +32,11 @@
 # THE SCHEME OPENS EMPTY, which credit life allows and an employer scheme does not: the agreement
 # with the lender exists before any borrower, and the book arrives by file.
 #
-# Run it with the dev stack up (infra, backend on 8080, Keycloak on 8081):
+# Run it with the dev stack up (infra, backend on 8080, Authentik on 9100):
 #   ./scripts/bumaco-credit-life-demo.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 RATE="${BUMACO_RATE_PERCENT:-0.5}"
 FCL="${BUMACO_FCL:-600000000.00}"
@@ -52,12 +51,6 @@ uuid() {
   fi
 }
 
-token_for() {
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
 
 api() {
   local token="$1" method="$2" path="$3" body="${4:-}"
@@ -71,11 +64,11 @@ api() {
 
 jsonval() { grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 
-STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
-STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
-STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
+source scripts/seed-lib.sh   # token_for: a real Authentik token for a dev test user (ticket 09 of .scratch/authentik-cutover)
+STAFF_ADMIN_TOKEN=$(token_for staff.admin)
+STAFF_FINANCE_TOKEN=$(token_for staff.finance)
 # Issuing a scheme is gated on UNDERWRITER, not on admin or finance.
-STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
+STAFF_UNDERWRITER_TOKEN=$(token_for staff.underwriter)
 [ -n "$STAFF_ADMIN_TOKEN" ] || { echo "Could not get a staff.admin token" >&2; exit 1; }
 
 SUFFIX=$(date +%H%M%S)

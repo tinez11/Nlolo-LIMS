@@ -2,6 +2,8 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { AuthProvider, useAuth } from 'react-oidc-context';
 import { setAccessTokenProvider, setUnauthenticatedHandler } from '@/lib/http';
 import { CLIENT_ID, ISSUER } from './realms';
+import { useSessionCap } from './sessionCap';
+import { REVOCATION_PATH, signOut } from './signOut';
 import { createStateStore, createUserStore } from './userStore';
 
 /**
@@ -21,12 +23,18 @@ export function PlatformAuthProvider({ children }: { children: ReactNode }) {
       redirect_uri: `${window.location.origin}/`,
       post_logout_redirect_uri: `${window.location.origin}/`,
       response_type: 'code',
-      scope: 'openid profile email',
+      // Authentik (2026-11-19): `lifeplatform` carries the platform's claims (roles, tenant_id, party_id,
+      // home_branch, job_roles); `offline_access` is what makes Authentik issue the refresh token silent renew uses.
+      // No `email`: email is never a channel here.
+      scope: 'openid profile offline_access lifeplatform',
       // Tokens in memory; only the single-use PKCE verifier touches sessionStorage.
       userStore: createUserStore(),
       stateStore: createStateStore(),
       automaticSilentRenew: true,
-      // Keycloak's userinfo adds nothing the access token does not already carry,
+      // Revocation goes through the console's own origin (see signOut.ts): Authentik's revoke endpoint answers no
+      // CORS. Discovery supplies every other endpoint; the seed overrides only this one.
+      metadataSeed: { revocation_endpoint: `${window.location.origin}${REVOCATION_PATH}` },
+      // The userinfo endpoint adds nothing the access token does not already carry,
       // and it costs a request per load.
       loadUserInfo: false,
       onSigninCallback: () => {
@@ -66,6 +74,9 @@ function HttpAuthBridge({ children }: { children: ReactNode }) {
       void auth.signinSilent().catch(() => undefined);
     });
   }, [auth]);
+
+  // Ten hours after the person typed their password, the console signs them out, however often the token renewed.
+  useSessionCap(auth.user, () => void signOut(auth).catch(() => undefined));
 
   return <>{children}</>;
 }

@@ -2,7 +2,7 @@
 # Ndoto -- the fixed-term deposit, configured in the dev platform and sold to one client.
 #
 # Authored 2026-10-15 from the product owner's printed rate card ("Kiasi cha Uwekezaji na Faida").
-# It speaks the REAL REST API with a REAL Keycloak token, the way seed-dev-data.sh does, so what
+# It speaks the REAL REST API with a REAL Authentik token, the way seed-dev-data.sh does, so what
 # appears in the console got there the way a person's clicks would.
 #
 # THE RATE CARD, exactly as printed:
@@ -18,7 +18,7 @@
 # band, so each band below starts one cent above the previous band's top. An amount of 5,500,000
 # therefore earns the 6,000,000 band's rate, not the 500,000 band's.
 #
-# Run it with the dev stack up (infra, backend on 8080, Keycloak on 8081):
+# Run it with the dev stack up (infra, backend on 8080, Authentik on 9100):
 #   ./scripts/ndoto-demo.sh
 #
 # Deliberately not idempotent: re-running creates another product and another deposit, for the
@@ -27,7 +27,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 
 # The client: an existing, KYC-verified party in the dev database.
@@ -47,12 +46,6 @@ uuid() {
   fi
 }
 
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
 
 api() {         # api <token> <method> <path> [json-body]
   local token="$1" method="$2" path="$3" body="${4:-}"
@@ -66,11 +59,11 @@ api() {         # api <token> <method> <path> [json-body]
 
 jsonval() { grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 
-STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
-STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
-STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
-STAFF_SENIOR_TOKEN=$(token_for staff staff.senior "$STAFF_SECRET")
-STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
+source scripts/seed-lib.sh   # token_for: a real Authentik token for a dev test user (ticket 09 of .scratch/authentik-cutover)
+STAFF_ADMIN_TOKEN=$(token_for staff.admin)
+STAFF_FINANCE_TOKEN=$(token_for staff.finance)
+STAFF_SENIOR_TOKEN=$(token_for staff.senior)
+STAFF_UNDERWRITER_TOKEN=$(token_for staff.underwriter)
 [ -n "$STAFF_ADMIN_TOKEN" ] || { echo "Could not get a staff.admin token" >&2; exit 1; }
 
 SUFFIX=$(date +%H%M%S)
@@ -160,7 +153,7 @@ if [ -n "$INVOICE_ID" ]; then
     -H "Authorization: Bearer $STAFF_FINANCE_TOKEN" -H 'Content-Type: application/json' \
     -H "Idempotency-Key: $(uuid)" -d '{"payerRef":"+255747577461"}' >/dev/null
   # A request the rail accepts is money in only once a second finance person confirms it (2026-10-27).
-  APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+  APPROVER_TOKEN=$(token_for staff.finance-approver)
   RECEIPT_ID=""
   for i in $(seq 1 20); do
     RECEIPT_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/receipts?invoiceId=$INVOICE_ID")" receiptId)

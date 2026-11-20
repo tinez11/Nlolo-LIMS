@@ -16,15 +16,21 @@ class ProductionSettingsGuardTest {
         s.put("spring.datasource.password", "Zq8-real-db-password");
         s.put("minio.access-key", "platform-docs");
         s.put("minio.secret-key", "Lk2-real-object-store-secret");
-        s.put("app.portal.keycloak.client-secret", "Pt7-real-portal-secret");
-        s.put("app.staff-admin.keycloak.client-secret", "Sa3-real-staff-admin-secret");
-        s.put("app.agent-logins.keycloak.client-secret", "Ag6-real-agents-admin-secret");
+        s.put("app.authentik.api-token", "Ak9-real-authentik-api-token");
+        s.put("app.staff-sign-in-code.webhook-secret", "Sc2-real-sign-in-code-secret");
+        s.put("app.password-changed.webhook-secret", "Pc4-real-password-changed-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
         s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
         s.put("communication.sms-gateway.live", "true");
         s.put("communication.sms-gateway.authorization", "Basic cmVhbA==");
         s.put("app.portal.url", "https://portal.example.tz/customers");
-        s.put("app.security.issuer", "https://login.example.tz/realms/lifeplatform");
+        s.put("app.security.issuer", "https://login.example.tz/application/o/lifeplatform/");
+        s.put("app.authentik.public-url", "https://login.example.tz");
+        // The reset page (Authentik cut-over, ticket 10) always needs these, whether or not the quote link is on.
+        s.put("app.public-quote.turnstile.enabled", "true");
+        s.put("app.public-quote.turnstile.secret", "0x4AAAAAAA-real-turnstile-secret");
+        s.put("app.public-quote.visit-secret", "a-real-visit-secret-of-at-least-32-characters");
+        s.put("app.public-quote.tenant-id", "6f1d2c34-5a6b-4c7d-8e9f-0a1b2c3d4e5f");
         s.put("app.support-phone", "+255 22 000 0000");
         s.put("app.staff-sign-in-code.enabled", "true");
         return s;
@@ -41,6 +47,38 @@ class ProductionSettingsGuardTest {
         assertThat(ProductionSettingsGuard.problems(s::get)).hasSize(1);
     }
 
+    /** 2026-11-19 (Authentik cut-over, ticket 03): the backend's Authentik API token replaces the staff admin secret. */
+    @Test
+    void theDevAuthentikApiTokenOrNoneIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.authentik.api-token", "dev-only-authentik-api-token");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.authentik.api-token still holds the dev value");
+        s.remove("app.authentik.api-token");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly("app.authentik.api-token is not set");
+    }
+
+    /** 2026-11-19 (Authentik cut-over, ticket 05): Authentik's sign-in code calls carry their own bearer secret. */
+    @Test
+    void theDevSignInCodeSecretOrNoneIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.staff-sign-in-code.webhook-secret", "dev-only-sign-in-code-secret");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.staff-sign-in-code.webhook-secret still holds the dev value");
+        s.remove("app.staff-sign-in-code.webhook-secret");
+        assertThat(ProductionSettingsGuard.problems(s::get))
+            .containsExactly("app.staff-sign-in-code.webhook-secret is not set");
+    }
+
+    /** 2026-11-19 (Authentik cut-over, ticket 06): the password-changed notices carry their own bearer secret. */
+    @Test
+    void theDevPasswordChangedSecretIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.password-changed.webhook-secret", "dev-only-password-changed-secret");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.password-changed.webhook-secret still holds the dev value");
+    }
+
     @Test
     void realLookingSettingsPass() {
         assertThat(ProductionSettingsGuard.problems(realLooking()::get)).isEmpty();
@@ -51,13 +89,13 @@ class ProductionSettingsGuardTest {
         Map<String, String> s = realLooking();
         s.put("spring.datasource.password", "devapppassword");
         s.put("minio.secret-key", "minioadmin");
-        s.put("app.portal.keycloak.client-secret", "dev-secret-portal-admin");
+        s.put("app.authentik.api-token", "dev-only-authentik-api-token");
         s.put("mobile-money.callback-hmac-secret", "dev-only-placeholder-secret");
         s.put("password-reset.sms-secret", "dev-only-reset-sms-secret");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password still holds the dev value",
             "minio.secret-key still holds the dev value",
-            "app.portal.keycloak.client-secret still holds the dev value",
+            "app.authentik.api-token still holds the dev value",
             "mobile-money.callback-hmac-secret still holds the dev value",
             "password-reset.sms-secret still holds the dev value");
     }
@@ -68,7 +106,7 @@ class ProductionSettingsGuardTest {
         s.remove("spring.datasource.password");
         s.remove("app.support-phone");
         s.put("communication.sms-gateway.authorization", "");
-        s.put("app.security.issuer", "http://localhost:8081/realms/lifeplatform");
+        s.put("app.security.issuer", "http://localhost:9100/application/o/lifeplatform/");
         s.put("app.portal.url", "http://localhost:5173/customers");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password is not set",
@@ -78,29 +116,56 @@ class ProductionSettingsGuardTest {
             "app.portal.url must be an https:// address");
     }
 
-    /** The public quote link (2026-11-02): on in production only with real secrets and the deployment's insurer. */
+    /**
+     * The reset page (Authentik cut-over, ticket 10): agents and customers reset a forgotten password at /reset, which
+     * checks visitors with Turnstile, signs their visit, and works in the insurer's tenant -- always, so these settings
+     * are needed whether or not the public quote link is on.
+     */
     @Test
-    void thePublicQuoteLinkNeedsRealSecretsWhenSwitchedOn() {
+    void theResetPageNeedsRealVisitorChecksAndTheInsurerEvenWithTheQuoteLinkOff() {
         Map<String, String> s = realLooking();
-        s.put("app.public-quote.enabled", "true");
-        s.put("app.public-quote.turnstile.enabled", "true");
+        s.put("app.public-quote.enabled", "false");
         s.put("app.public-quote.turnstile.secret", "1x0000000000000000000000000000000AA");
         s.put("app.public-quote.visit-secret", "short");
         s.put("app.public-quote.tenant-id", "11111111-1111-1111-1111-111111111111");
+        s.put("app.public-quote.turnstile.enabled", "false");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
-            "app.public-quote is enabled but app.public-quote.turnstile.secret is a Cloudflare test secret or empty",
-            "app.public-quote.visit-secret must be at least 32 characters",
-            "app.public-quote.tenant-id must name this deployment's insurer");
+            "app.public-quote.turnstile.secret is a Cloudflare test secret or empty (TURNSTILE_SECRET: /reset and the"
+                + " quote link check visitors with it)",
+            "app.public-quote.turnstile.enabled is off (/reset and the quote link must check visitors)",
+            "app.public-quote.visit-secret must be at least 32 characters (PUBLIC_VISIT_SECRET)",
+            "app.public-quote.tenant-id must name this deployment's insurer (PUBLIC_QUOTE_TENANT_ID)");
 
-        s.put("app.public-quote.turnstile.secret", "0x4AAAAAAA-real-turnstile-secret");
-        s.put("app.public-quote.visit-secret", "a-real-visit-secret-of-at-least-32-characters");
-        s.put("app.public-quote.tenant-id", "6f1d2c34-5a6b-4c7d-8e9f-0a1b2c3d4e5f");
-        assertThat(ProductionSettingsGuard.problems(s::get)).isEmpty();
+        s.remove("app.public-quote.turnstile.secret");
+        s.remove("app.public-quote.visit-secret");
+        s.remove("app.public-quote.tenant-id");
+        s.remove("app.public-quote.turnstile.enabled");
+        assertThat(ProductionSettingsGuard.problems(s::get)).hasSize(4);
+    }
 
-        // Off, nothing about it is asked.
-        Map<String, String> off = realLooking();
-        off.put("app.public-quote.enabled", "false");
-        assertThat(ProductionSettingsGuard.problems(off::get)).isEmpty();
+    /**
+     * Authentik's issuer (ticket 10): https, and with its trailing slash -- a token's iss must match it exactly, so
+     * without the slash every sign-in is refused. The backend's own default is the dev address on localhost.
+     */
+    @Test
+    void anIssuerWithoutItsTrailingSlashOrTheLocalhostDefaultIsRefused() {
+        Map<String, String> s = realLooking();
+        s.put("app.security.issuer", "https://login.example.tz/application/o/lifeplatform");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactly(
+            "app.security.issuer must end with a slash (AUTHENTIK_ISSUER: Authentik's issuer is"
+                + " https://<auth domain>/application/o/lifeplatform/)");
+        s.put("app.security.issuer", "http://localhost:9100/application/o/lifeplatform/");
+        assertThat(ProductionSettingsGuard.problems(s::get))
+            .containsExactly("app.security.issuer must be an https:// address");
+    }
+
+    /** Recovery links are put on Authentik's public address (ticket 07), which a browser must reach over https. */
+    @Test
+    void authentiksPublicAddressMustBeHttps() {
+        Map<String, String> s = realLooking();
+        s.put("app.authentik.public-url", "http://localhost:9100");
+        assertThat(ProductionSettingsGuard.problems(s::get))
+            .containsExactly("app.authentik.public-url must be an https:// address");
     }
 
     @Test

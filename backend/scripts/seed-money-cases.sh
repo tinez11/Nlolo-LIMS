@@ -8,17 +8,15 @@
 # case themselves.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 source scripts/seed-lib.sh
 
-STAFF_SECRET=$(realm_secret staff)
-FINANCE=$(token_for staff staff.finance "$STAFF_SECRET")
-SERVICE=$(token_for staff staff.service "$STAFF_SECRET")   # customer service verifies KYC (clients.kyc)
-APPROVER=$(token_for staff staff.finance-approver "$STAFF_SECRET")
-SENIOR=$(token_for staff staff.senior "$STAFF_SECRET")
-UNDERWRITER=$(token_for staff staff.underwriter "$STAFF_SECRET")
-AGENT=$(token_for agents agent.senior "$(realm_secret agents)")
+FINANCE=$(token_for staff.finance)
+SERVICE=$(token_for staff.service)   # customer service verifies KYC (clients.kyc)
+APPROVER=$(token_for staff.finance-approver)
+SENIOR=$(token_for staff.senior)
+UNDERWRITER=$(token_for staff.underwriter)
+AGENT=$(token_for agent.senior)
 
 if [ -z "${PRODUCT_ID:-}" ]; then
   # On stdin, not as an argument: a long-lived stack's product list is longer than a command line may be.

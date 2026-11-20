@@ -1,7 +1,6 @@
 import { expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { apiToken } from './signIn';
 
 /**
  * A credit-life scheme with one pending enrolment file, built over the API for the browser to
@@ -32,44 +31,9 @@ import { resolve } from 'node:path';
  */
 
 const API = 'http://localhost:8080';
-const KEYCLOAK = 'http://localhost:8081';
-const PASSWORD = 'devpassword';
-
-/**
- * The confidential client's secret, read from the realm import rather than hardcoded.
- *
- * `lifeplatform-spa` — the client the SPA itself uses — is public with direct access grants
- * DISABLED, so it cannot mint a token outside a browser and is the wrong tool here.
- * `lifeplatform-app` is confidential with grants enabled, which is exactly what a server-side
- * fixture needs. Resolved from the repo root because Playwright runs with `frontend/` as its
- * working directory, the same assumption `playwright.config.ts` already makes about
- * `../backend/infra/docker-compose.yml`.
- */
-function staffClientSecret(): string {
-  const realm = JSON.parse(
-    readFileSync(resolve('../backend/keycloak/lifeplatform-realm.json'), 'utf8'),
-  ) as { clients?: { clientId?: string; secret?: string }[] };
-  const secret = realm.clients?.find((c) => c.clientId === 'lifeplatform-app')?.secret;
-  if (!secret) throw new Error('lifeplatform-app has no secret in backend/keycloak/lifeplatform-realm.json');
-  return secret;
-}
-
-/** A real access token for a real staff user. */
+/** A real access token for a real staff user: Authentik's password grant, through ./signIn. */
 export async function staffToken(http: APIRequestContext, username: string): Promise<string> {
-  const response = await http.post(`${KEYCLOAK}/realms/lifeplatform/protocol/openid-connect/token`, {
-    form: {
-      grant_type: 'password',
-      client_id: 'lifeplatform-app',
-      client_secret: staffClientSecret(),
-      username,
-      password: PASSWORD,
-    },
-  });
-  expect(response.ok(), `Keycloak refused a token for ${username}`).toBeTruthy();
-  const body = (await response.json()) as { access_token?: string };
-  const token = body.access_token;
-  if (!token) throw new Error(`No access_token for ${username}`);
-  return token;
+  return apiToken(http, username);
 }
 
 export interface CreditLifeScheme {

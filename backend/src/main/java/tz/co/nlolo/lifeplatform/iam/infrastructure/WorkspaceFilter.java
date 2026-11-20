@@ -40,7 +40,7 @@ class WorkspaceFilter extends OncePerRequestFilter {
             .anyMatch(a -> a.getAuthority().startsWith("ROLE_REALM_"));
         if (!resolved && authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
             Workspace.Resolution resolution =
-                Workspace.resolve(SecurityConfig.realmRoles(jwt), request.getHeader(Workspace.HEADER));
+                Workspace.resolve(SecurityConfig.workspaceRoles(jwt), request.getHeader(Workspace.HEADER));
             switch (resolution) {
                 case Workspace.Resolution.Active ignored -> { }
                 case Workspace.Resolution.Ambiguous ambiguous -> {

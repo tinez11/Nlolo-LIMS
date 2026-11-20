@@ -62,31 +62,54 @@ class SecurityConfigDecoderTest {
         exchange.close();
     }
 
-    private static String signedToken(String tokenIssuer) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+    private static final String AUDIENCE = "lifeplatform-spa";
+
+    private static String signedToken(String tokenIssuer, String... audience) throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
             .issuer(tokenIssuer)
             .subject("00000000-0000-0000-0000-000000000001")
             .issueTime(Date.from(Instant.now()))
-            .expirationTime(Date.from(Instant.now().plusSeconds(300)))
-            .build();
-        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
+            .expirationTime(Date.from(Instant.now().plusSeconds(300)));
+        if (audience.length > 0) claims.audience(java.util.List.of(audience));
+        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
+            claims.build());
         jwt.sign(new RSASSASigner(key));
         return jwt.serialize();
     }
 
     @Test
-    void aTokenFromTheConfiguredIssuerIsAccepted() throws Exception {
-        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer);
+    void aTokenFromTheConfiguredIssuerForThisClientIsAccepted() throws Exception {
+        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer, AUDIENCE);
 
-        assertThat(decoder.decode(signedToken(issuer)).getIssuer().toString()).isEqualTo(issuer);
+        assertThat(decoder.decode(signedToken(issuer, AUDIENCE)).getIssuer().toString()).isEqualTo(issuer);
     }
 
     @Test
     void aTokenNamingAnotherIssuerIsRefusedEvenWhenTheSignatureIsGood() {
-        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer);
+        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer, AUDIENCE);
 
-        assertThatThrownBy(() -> decoder.decode(signedToken("https://other.example/realms/lifeplatform")))
+        assertThatThrownBy(() -> decoder.decode(signedToken("https://other.example/realms/lifeplatform", AUDIENCE)))
             .isInstanceOf(JwtValidationException.class)
             .hasMessageContaining("iss");
+    }
+
+    // Authentik (2026-11-19, cut-over ticket 01): every application of the same Authentik signs with keys this backend
+    // trusts, so the token must also be meant for this client.
+    @Test
+    void aTokenForAnotherClientIsRefused() {
+        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer, AUDIENCE);
+
+        assertThatThrownBy(() -> decoder.decode(signedToken(issuer, "some-other-application")))
+            .isInstanceOf(JwtValidationException.class)
+            .hasMessageContaining("aud");
+    }
+
+    @Test
+    void aTokenNamingNoAudienceIsRefused() {
+        JwtDecoder decoder = SecurityConfig.lazyDecoder(issuer, AUDIENCE);
+
+        assertThatThrownBy(() -> decoder.decode(signedToken(issuer)))
+            .isInstanceOf(JwtValidationException.class)
+            .hasMessageContaining("aud");
     }
 }

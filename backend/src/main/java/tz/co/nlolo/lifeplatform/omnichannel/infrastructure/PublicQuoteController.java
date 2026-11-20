@@ -130,6 +130,7 @@ public class PublicQuoteController {
     @PostMapping("/public/phone-codes/check")
     public ResponseEntity<ConfirmedPhone> checkCode(@RequestBody(required = false) CodeCheck body,
             @RequestHeader(value = VISIT_HEADER, required = false) String visitToken, HttpServletRequest http) {
+        access.tenant(); // the quote link's own switch: visits also serve the reset page (2026-11-19)
         String visit = access.visit(visitToken);
         access.limit("code-check:" + http.getRemoteAddr(), 30, Duration.ofMinutes(10));
         String phone = PhoneCodes.phone(body == null ? null : body.phoneNumber());

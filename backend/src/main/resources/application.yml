@@ -86,49 +86,43 @@ spring:
       connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
-  # A texted code after the password on every staff sign-in (2026-11-14). Off in dev and the test suites; Keycloak then
-  # lets staff in on their password as before. Production refuses to start with it off (ProductionSettingsGuard).
+  # A texted code after the password on every staff sign-in (2026-11-14). Authentik asks for it (2026-11-19): the same
+  # STAFF_SIGN_IN_CODE switch is passed to Authentik, whose blueprint reads it. Off in dev and the test suites. The
+  # backend keeps the setting only so production refuses to start with it off (ProductionSettingsGuard).
   staff-sign-in-code:
     enabled: ${STAFF_SIGN_IN_CODE:false}
+    # The bearer secret Authentik's SMS stage sends with each code; Authentik holds the same value.
+    webhook-secret: ${SIGN_IN_CODE_WEBHOOK_SECRET:dev-only-sign-in-code-secret}
+  # "Your password was changed" (2026-11-06): the bearer secret Authentik's notification sends (2026-11-19).
+  password-changed:
+    webhook-secret: ${PASSWORD_CHANGED_WEBHOOK_SECRET:dev-only-password-changed-secret}
   # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
   # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
   access:
     source: ${APP_ACCESS_SOURCE:platform}
-  # Staff logins (2026-10-26): administrators add, close and reset staff logins from the Users screen, through the
-  # lifeplatform-admin service account of the one realm (2026-11-06; manage-users and view-users only).
+  # Authentik's users API (2026-11-19, the Authentik cut-over), as the lifeplatform-backend service account: it may add
+  # logins, and change only those it created. The token is non-expiring; the blueprint gives the account the same key.
+  authentik:
+    base-url: ${AUTHENTIK_BASE_URL:http://localhost:9100}
+    api-token: ${AUTHENTIK_API_TOKEN:dev-only-authentik-api-token}
+    # Authentik's address as a browser reaches it: recovery links are handed to the browser on it (2026-11-19).
+    public-url: ${AUTHENTIK_PUBLIC_URL:http://localhost:9100}
+  # Staff logins (2026-10-26): administrators add, close and reset staff logins from the Users screen, in Authentik
+  # (2026-11-19).
   staff-admin:
-    keycloak:
-      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
-      realm: lifeplatform
-      client-id: lifeplatform-admin
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:dev-secret-admin}
-      console-client-id: lifeplatform-spa
-    # Where a set-your-password email sends a new staff member once they have chosen one.
+    # The sign-in address a new staff member's texted password names.
     console-url: ${STAFF_CONSOLE_URL:http://localhost:5173/staff}
-  # Agent logins (2026-10-28): staff give an agent a login from the agent's page, through the same lifeplatform-admin
-  # service account of the one realm (2026-11-06).
+  # Agent logins (2026-10-28): staff give an agent a login from the agent's page, in Authentik (2026-11-19) through
+  # app.authentik above.
   agent-logins:
-    keycloak:
-      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
-      realm: lifeplatform
-      client-id: lifeplatform-admin
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:dev-secret-admin}
-      console-client-id: lifeplatform-spa
-    # Where a set-your-password email sends a new agent once they have chosen one.
+    # The sign-in address a new agent's texted password names.
     console-url: ${AGENT_CONSOLE_URL:http://localhost:5173/agents}
-  # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in the one realm
-  # (2026-11-06) through the lifeplatform-admin service account. The secret is never committed for a real environment;
-  # the default is the dev realm's own placeholder.
+  # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in Authentik
+  # (2026-11-19) through app.authentik above.
   portal:
     url: ${PORTAL_URL:http://localhost:5173/customers}
     # A new client's login is texted when their first premium starts their cover (2026-11-08, the user).
     auto-invite: ${PORTAL_AUTO_INVITE:true}
-    keycloak:
-      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
-      realm: lifeplatform
-      client-id: lifeplatform-admin
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:dev-secret-admin}
-      portal-client-id: lifeplatform-spa
   # The public quote link (2026-11-02): anyone may price the portal's online products with no login. OFF unless a
   # deployment turns it on and names its insurer -- the tenant is never taken from a request. A real deployment sets
   # its own Cloudflare Turnstile secret and a visit secret; with none, visits end on every restart.
@@ -145,7 +139,11 @@ app:
   support-phone: ${SUPPORT_PHONE:}
   security:
     # One realm for everyone (2026-11-06, universal login); the workspace comes from the X-Workspace header.
-    issuer: ${KEYCLOAK_ISSUER:http://localhost:8081/realms/lifeplatform}
+    # Authentik (2026-11-19): the provider's own issuer, trailing slash included -- tokens must match it exactly.
+    issuer: ${AUTHENTIK_ISSUER:http://localhost:9100/application/o/lifeplatform/}
+    # The console's client id, which Authentik puts in every token's aud: a token from any other application of the
+    # same Authentik is refused.
+    audience: ${AUTHENTIK_AUDIENCE:lifeplatform-spa}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

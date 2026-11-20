@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Malengo -- the savings plan, configured in the dev platform so it can be shown on screen.
 #
-# Authored 2026-10-15 for a product demo. It speaks the REAL REST API with a REAL Keycloak token,
+# Authored 2026-10-15 for a product demo. It speaks the REAL REST API with a REAL Authentik token,
 # the same way seed-dev-data.sh does, so what appears in the console went in the way a person's
 # clicks would -- not by writing rows behind the application's back.
 #
@@ -15,7 +15,7 @@
 #   that number. The same convention the fixed-term deposit already uses.
 #   Entry ages 18 to 60.
 #
-# Run it with the dev stack up (infra, backend on 8080, Keycloak on 8081):
+# Run it with the dev stack up (infra, backend on 8080, Authentik on 9100):
 #   ./scripts/malengo-demo.sh
 #
 # Re-running creates a SECOND product: it is deliberately not idempotent, for the reason
@@ -24,7 +24,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 
 # The client this demo is for: an existing, KYC-verified party in the dev database.
@@ -40,12 +39,6 @@ uuid() {
   fi
 }
 
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
 
 api() {         # api <token> <method> <path> [json-body]
   local token="$1" method="$2" path="$3" body="${4:-}"
@@ -61,9 +54,9 @@ jsonval() {     # jsonval <json> <field> -- first match, single level.
   grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'
 }
 
-STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
-STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
-STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
+source scripts/seed-lib.sh   # token_for: a real Authentik token for a dev test user (ticket 09 of .scratch/authentik-cutover)
+STAFF_ADMIN_TOKEN=$(token_for staff.admin)
+STAFF_FINANCE_TOKEN=$(token_for staff.finance)
 [ -n "$STAFF_ADMIN_TOKEN" ] || { echo "Could not get a staff.admin token" >&2; exit 1; }
 
 SUFFIX=$(date +%H%M%S)

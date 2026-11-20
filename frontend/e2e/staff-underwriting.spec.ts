@@ -118,7 +118,7 @@ test.describe('staff underwriting', () => {
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
 
     // A real token for the same person the browser is signed in as -- see ./creditLife for
-    // why it is minted from Keycloak and never fabricated.
+    // why it is minted from Authentik and never fabricated.
     const caseId = page.url().split('/').pop() as string;
     const http = await apiRequest.newContext();
     try {
@@ -328,6 +328,9 @@ test.describe('staff underwriting', () => {
   });
 
   test('a postponed case is not finished: further evidence re-decides it', async ({ page }) => {
+    // Two sessions and four reloads, each a silent sign-in through Authentik (about 3s idle, against Keycloak's well
+    // under one): past the one-sign-in budget since ticket 09 of .scratch/authentik-cutover.
+    test.slow();
     // POSTPONED is the engine's way of saying "come back with more evidence", and the UI used
     // to treat every decided case as final -- which made it the one outcome that could never
     // be resolved, on a real case, through the only screen that can assess one.

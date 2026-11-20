@@ -1,0 +1,994 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+#
+# The platform's Authentik configuration (2026-11-19, the Authentik migration;
+# backend/docs/superpowers/specs/2026-11-19-authentik-migration-design.md). Baked into the -auth image for production
+# and mounted by the dev compose; applied by the worker at start and on every change, idempotently.
+#
+# Ticket 01 of .scratch/authentik-cutover: groups, the sign-in flow, the token's claims, the provider, the application
+# and the brand's sign-in flow. Ticket 02 added PKCE S256 and the superuser refusal. The sign-in code, notifications,
+# recovery and the look come in later tickets.
+version: 1
+metadata:
+  name: lifeplatform
+  labels:
+    blueprints.goauthentik.io/description: Nlolo Life platform -- sign-in, tokens, groups
+
+entries:
+  # ---- The backend's own login (ticket 03): a service account whose API token the backend holds as
+  # AUTHENTIK_API_TOKEN. Its role may add users anywhere, but may only see, change, delete and reset the password of
+  # the users it created itself (initial permissions). It is never given a global reset-password right: a leaked token
+  # could then reset an administrator's password. Workspace rights are per group, below.
+  - model: authentik_rbac.role
+    id: role-backend
+    identifiers: {name: lifeplatform-backend}
+    attrs:
+      permissions:
+        - authentik_core.add_user
+
+  - model: authentik_rbac.initialpermissions
+    identifiers: {name: lifeplatform-backend-created-users}
+    attrs:
+      role: !KeyOf role-backend
+      permissions:
+        - !Find [auth.permission, [codename, view_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, change_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, delete_user], [content_type__app_label, authentik_core]]
+        - !Find [auth.permission, [codename, reset_user_password], [content_type__app_label, authentik_core]]
+
+  - model: authentik_core.user
+    id: user-backend
+    identifiers: {username: lifeplatform-backend}
+    attrs:
+      name: Nlolo Life backend
+      type: service_account
+      path: lifeplatform/service
+      is_active: true
+      roles:
+        - !KeyOf role-backend
+
+  # Non-expiring: an expiring token gets a new key when it lapses and the backend silently loses access. The key comes
+  # from the environment, with no default: unset, Authentik generates one nobody holds, and the backend fails loudly.
+  - model: authentik_core.token
+    identifiers: {identifier: lifeplatform-backend-api}
+    attrs:
+      user: !KeyOf user-backend
+      intent: api
+      expiring: false
+      description: The platform backend's access to the users API
+      key: !Env AUTHENTIK_API_TOKEN
+
+  # ---- The four workspaces. Job roles are NOT groups: they live in the platform's iam tables, and reach it once at a
+  # staff member's first sign-in through the login's job_roles attribute (see the claims mapping below).
+  # The backend may add people to staff, never remove them (a closed staff login is disabled instead), and has no
+  # right at all on regulator: regulator logins are made by hand on the server.
+  - model: authentik_core.group
+    id: group-staff
+    identifiers: {name: staff}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+  # Agent and customer access are opened and closed from the platform (ticket 04), so the backend may add and remove.
+  - model: authentik_core.group
+    id: group-agent
+    identifiers: {name: agent}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.remove_user_from_group, role: !KeyOf role-backend}
+  - model: authentik_core.group
+    id: group-customer
+    identifiers: {name: customer}
+    permissions:
+      - {permission: authentik_core.view_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.add_user_to_group, role: !KeyOf role-backend}
+      - {permission: authentik_core.remove_user_from_group, role: !KeyOf role-backend}
+  - model: authentik_core.group
+    id: group-regulator
+    identifiers: {name: regulator}
+
+  # ---- Sign-in: the username, then (unless the login is locked) the password, then the session.
+  - model: authentik_stages_password.passwordstage
+    id: stage-password
+    identifiers: {name: lifeplatform-password}
+    attrs:
+      backends: [authentik.core.auth.InbuiltBackend]
+      failed_attempts_before_cancel: 5
+
+  # "Forgot your password?" on the sign-in page (ticket 07): a one-step flow sending the browser to the platform's own
+  # bilingual /reset page, where the reset starts (see "Password reset" further down).
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-to-reset-page
+    identifiers: {name: lifeplatform-to-reset-page}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/reset", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-forgot-password
+    identifiers: {slug: lifeplatform-forgot-password}
+    attrs:
+      name: Nlolo Life forgot password
+      title: Forgot your password?
+      designation: recovery
+      authentication: none
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-forgot-password, stage: !KeyOf stage-to-reset-page, order: 10}
+
+  # The username alone (2026-11-20, ticket 10: the user's Q3b). The password is its own page, because the lockout
+  # below must look at the login BEFORE its password is checked: on one page, a locked account would still have its
+  # password checked, and an attacker would learn when they had guessed it. An unknown username goes on to the password
+  # page too (pretend_user_exists), so the pages never tell a real login from a made-up one.
+  - model: authentik_stages_identification.identificationstage
+    id: stage-identification
+    identifiers: {name: lifeplatform-identification}
+    attrs:
+      recovery_flow: !KeyOf flow-forgot-password
+      user_fields: [username]
+      password_stage: null
+      pretend_user_exists: true
+      case_insensitive_matching: true
+      show_matched_user: false
+
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-user-login
+    identifiers: {name: lifeplatform-user-login}
+    attrs:
+      session_duration: hours=10
+
+  - model: authentik_flows.flow
+    id: flow-sign-in
+    identifiers: {slug: lifeplatform-sign-in}
+    attrs:
+      name: Nlolo Life sign-in
+      title: Welcome back.
+      designation: authentication
+      # The look (ticket 08, variant A "Split leaf"): the brand photo on the left, the form on a white panel right.
+      layout: content_right
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-identification, order: 10}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-password, order: 20}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-user-login, order: 100}
+
+  # ---- Account lockout (2026-11-20, ticket 10; Keycloak's brute-force lockout, the user's D5 and Q3b): five wrong
+  # passwords for a login within 15 minutes lock it until the oldest of them is 15 minutes old, from whatever address
+  # they came. Counted from Authentik's own record of each failed password (one login_failed event each, for a real
+  # login and a made-up one alike, so the lock never tells them apart), and only those since the login last signed in.
+  # Not by address: mobile networks put many customers behind one address, and one person's mistakes would lock them
+  # all out. While locked, the deny stage stands between the username and the password page, so no password is checked
+  # at all -- right or wrong, the answer is the same.
+  #
+  # Not Authentik's reputation policy, tried first: it charges a made-up username twice per attempt (unknown user, then
+  # wrong password), which tells real logins from invented ones, and it lets past sign-ins buy extra tries.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-locked
+    identifiers: {name: lifeplatform-login-locked}
+    attrs:
+      expression: |
+        from datetime import timedelta
+        from django.utils.timezone import now
+        from authentik.events.models import Event, EventAction
+
+        user = request.context.get("pending_user") or request.user
+        username = getattr(user, "username", "") or ""
+        if not username:
+            return False
+        since = now() - timedelta(minutes=15)
+        last_sign_in = (
+            Event.objects.filter(action=EventAction.LOGIN, user__username__iexact=username, created__gte=since)
+            .order_by("-created").values_list("created", flat=True).first()
+        )
+        if last_sign_in:
+            since = last_sign_in
+        failures = Event.objects.filter(
+            action=EventAction.LOGIN_FAILED, context__username__iexact=username, created__gt=since
+        ).count()
+        return failures >= 5
+
+  - model: authentik_stages_deny.denystage
+    id: stage-deny-locked
+    identifiers: {name: lifeplatform-deny-locked}
+    attrs:
+      deny_message: Too many wrong passwords. Wait 15 minutes, then try again.
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-deny-locked
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-deny-locked, order: 15}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-deny-locked, policy: !KeyOf policy-locked, order: 0}
+
+
+  # ---- Superusers never sign in here (ticket 02; replaces Keycloak's 404 on the master realm). The deny stage runs
+  # only when its policy passes, judged once the login is known: the policy's user is the pending user, not the
+  # anonymous visitor the flow was planned for. Authentik's administrators sign in through the stock
+  # default-authentication-flow instead (/if/flow/default-authentication-flow/?next=/if/admin/).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-is-superuser
+    identifiers: {name: lifeplatform-login-is-superuser}
+    attrs:
+      expression: |
+        return request.user.is_superuser
+
+  - model: authentik_stages_deny.denystage
+    id: stage-deny-superuser
+    identifiers: {name: lifeplatform-deny-superuser}
+    attrs:
+      deny_message: This login cannot sign in here.
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-deny-superuser
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-deny-superuser, order: 50}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-deny-superuser, policy: !KeyOf policy-is-superuser, order: 0}
+
+  # ---- The staff sign-in code (ticket 05; today's texted code, 2026-11-14). Authentik makes the code and checks it; the
+  # backend texts it -- to the phone on the staff record, else the login's `phone` attribute -- with its own wording,
+  # and caps it at 5 an hour and 1 a minute. Its refusals ("No phone number is on file for you...", "Too many
+  # codes...") come back as plain text, which Authentik shows as it is.
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-sign-in-code
+    identifiers: {name: lifeplatform-sign-in-code}
+    attrs:
+      expression: |
+        attributes = user.attributes or {}
+        return {
+            "tenantId": attributes.get("tenant_id"),
+            "userId": str(user.uuid),
+            "code": token,
+            "phone": attributes.get("phone"),
+        }
+
+  - model: authentik_stages_authenticator_sms.authenticatorsmsstage
+    id: stage-sms-setup
+    identifiers: {name: lifeplatform-sms-setup}
+    attrs:
+      provider: generic
+      from_number: Nlolo
+      account_sid: !Format ["%s/internal/staff-sign-in-code/sms", !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]]
+      auth_type: bearer
+      auth: !Env SIGN_IN_CODE_WEBHOOK_SECRET
+      mapping: !KeyOf mapping-sign-in-code
+      verify_only: false
+
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    id: stage-sign-in-code
+    identifiers: {name: lifeplatform-sign-in-code}
+    attrs:
+      device_classes: [sms]
+      not_configured_action: configure
+      configuration_stages: [!KeyOf stage-sms-setup]
+      last_auth_threshold: seconds=0
+
+  # Who is asked: staff, while the STAFF_SIGN_IN_CODE switch is on (production refuses to start with it off), and the
+  # dev-only e2e-sign-in-code group always, so its test runs with the switch off. The policy also puts the login's
+  # username into the prompt data as the "phone", so the first sign-in sets the SMS device up with no phone screen:
+  # the device's number is only a key; the backend decides where the text goes (proven in the migration's ticket 13).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-needs-sign-in-code
+    identifiers: {name: lifeplatform-needs-sign-in-code}
+    attrs:
+      expression: !Format
+        - |
+          switch_on = "%s".strip().lower() == "true"
+          user = request.context.get("pending_user") or request.user
+          asked = ak_is_group_member(user, name="e2e-sign-in-code") or (
+              switch_on and ak_is_group_member(user, name="staff"))
+          if not asked:
+              return False
+          request.context["flow_plan"].context.setdefault("prompt_data", {})["phone"] = user.username
+          return True
+        - !Env [STAFF_SIGN_IN_CODE, "false"]
+
+  # Why a code can't be sent, shown before the code step (2026-11-19, the user's choice). Authentik's own code pages do
+  # not show a refused send: over the cap they still say a code was sent, and with no phone the first sign-in shows a
+  # phone screen. So the backend is asked first; when it says no (422 no phone, 429 too many), this deny stage ends the
+  # sign-in with its words. The send stays capped by the backend all the same. If the backend can't be asked, the code
+  # step goes ahead and the send itself decides.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-code-refused
+    identifiers: {name: lifeplatform-sign-in-code-refused}
+    attrs:
+      expression: !Format
+        - |
+          switch_on = "%s".strip().lower() == "true"
+          user = request.context.get("pending_user") or request.user
+          asked = ak_is_group_member(user, name="e2e-sign-in-code") or (
+              switch_on and ak_is_group_member(user, name="staff"))
+          if not asked:
+              return False
+          attributes = user.attributes or {}
+          try:
+              answer = requests.post(
+                  "%s/internal/staff-sign-in-code/check",
+                  json={"tenantId": attributes.get("tenant_id"), "userId": str(user.uuid),
+                        "phone": attributes.get("phone")},
+                  headers={"Authorization": "Bearer %s"},
+                  timeout=10,
+              )
+          except Exception as error:
+              ak_logger.warning("Sign-in code check failed", error=str(error))
+              return False
+          if answer.status_code in (422, 429):
+              request.context["flow_plan"].context["deny_message"] = answer.text
+              return True
+          return False
+        - !Env [STAFF_SIGN_IN_CODE, "false"]
+        - !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]
+        - !Env SIGN_IN_CODE_WEBHOOK_SECRET
+
+  - model: authentik_stages_deny.denystage
+    id: stage-no-sign-in-code
+    identifiers: {name: lifeplatform-no-sign-in-code}
+    attrs:
+      deny_message: We couldn't send your code. Try again.
+
+  # Runs only for someone asked for a code (the same rule as the code step's) whom the backend can't send one; agents
+  # and customers never reach the backend call.
+  - model: authentik_flows.flowstagebinding
+    id: binding-no-sign-in-code
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-no-sign-in-code, order: 54}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-no-sign-in-code, policy: !KeyOf policy-code-refused, order: 0}
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-sign-in-code
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-sign-in-code, order: 55}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-sign-in-code, policy: !KeyOf policy-needs-sign-in-code, order: 0}
+
+  # ---- A temporary password must be replaced at the next sign-in (ticket 03; Keycloak's UPDATE_PASSWORD required
+  # action). Authentik has no such flag: the backend sets the password, then the login's reset_password attribute to
+  # true. These two stages run only while that attribute is exactly true -- judged once the login is known -- and the
+  # user-write stage saves the new password and sets the attribute to the string "false": a hidden field's value is
+  # its placeholder, taken from the server, never from the browser, and never evaluated as an expression.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-must-change-password
+    identifiers: {name: lifeplatform-must-change-password}
+    attrs:
+      expression: |
+        return (request.user.attributes or {}).get("reset_password") is True
+
+  # Keycloak's password rules, carried over: at least 8 characters and not the username. Its "not one of the last 3"
+  # needs Authentik's enterprise unique-password policy; what stays is "not the temporary password itself", without
+  # which the administrator who issued it would still know the password.
+  - model: authentik_policies_password.passwordpolicy
+    id: policy-password-rules
+    identifiers: {name: lifeplatform-password-rules}
+    attrs:
+      password_field: password
+      check_static_rules: true
+      length_min: 8
+      error_message: Use at least 8 characters.
+
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-password-not-reused
+    identifiers: {name: lifeplatform-password-not-username-or-temporary}
+    attrs:
+      expression: |
+        new = request.context.get("prompt_data", {}).get("password") or ""
+        if new.lower() == request.user.username.lower():
+            ak_message("Your password can't be your username.")
+            return False
+        if request.user.check_password(new):
+            ak_message("Choose a password different from the one you were given.")
+            return False
+        return True
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-new-password
+    identifiers: {name: lifeplatform-new-password}
+    attrs:
+      field_key: password
+      label: New password
+      type: password
+      required: true
+      placeholder: New password
+      order: 0
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-new-password-repeat
+    identifiers: {name: lifeplatform-new-password-repeat}
+    attrs:
+      field_key: password_repeat
+      label: New password again
+      type: password
+      required: true
+      placeholder: New password again
+      order: 1
+
+  - model: authentik_stages_prompt.prompt
+    id: prompt-clear-reset-flag
+    identifiers: {name: lifeplatform-clear-reset-password}
+    attrs:
+      field_key: attributes.reset_password
+      label: reset_password
+      type: hidden
+      required: false
+      placeholder: "false"
+      placeholder_expression: false
+      order: 2
+
+  - model: authentik_stages_prompt.promptstage
+    id: stage-choose-password
+    identifiers: {name: lifeplatform-choose-password}
+    attrs:
+      fields:
+        - !KeyOf prompt-new-password
+        - !KeyOf prompt-new-password-repeat
+        - !KeyOf prompt-clear-reset-flag
+      validation_policies:
+        - !KeyOf policy-password-rules
+        - !KeyOf policy-password-not-reused
+
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-save-password
+    identifiers: {name: lifeplatform-save-password}
+    attrs:
+      user_creation_mode: never_create
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-choose-password
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-choose-password, order: 60}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-choose-password, policy: !KeyOf policy-must-change-password, order: 0}
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-save-password
+    identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-save-password, order: 70}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-save-password, policy: !KeyOf policy-must-change-password, order: 0}
+
+  # ---- Sign-out ends the Authentik session (ticket 02), as Keycloak's did. The stock provider invalidation flow only
+  # signs the person out of the application: with the session still alive, the console's next sign-in redirect came
+  # straight back signed in. The end-session endpoint then returns to the console's registered logout address.
+  - model: authentik_stages_user_logout.userlogoutstage
+    id: stage-user-logout
+    identifiers: {name: lifeplatform-user-logout}
+
+  - model: authentik_flows.flow
+    id: flow-sign-out
+    identifiers: {slug: lifeplatform-sign-out}
+    attrs:
+      name: Nlolo Life sign-out
+      title: Signed out
+      designation: invalidation
+      authentication: none
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-sign-out, stage: !KeyOf stage-user-logout, order: 0}
+
+  # ---- What the token says about the person. roles: the workspace groups only, so Authentik's own groups never reach
+  # a token. tenant_id / party_id / home_branch: from the login's attributes. job_roles: read once by the platform at a
+  # staff member's first sign-in, nowhere else.
+  - model: authentik_providers_oauth2.scopemapping
+    id: mapping-claims
+    identifiers: {name: lifeplatform-claims}
+    attrs:
+      scope_name: lifeplatform
+      description: Workspaces, tenant and party
+      expression: |
+        workspaces = {"staff", "agent", "customer", "regulator"}
+        claims = {"roles": sorted({g.name for g in request.user.all_groups()} & workspaces)}
+        attributes = request.user.attributes or {}
+        for key in ("tenant_id", "party_id", "home_branch"):
+            if attributes.get(key):
+                claims[key] = str(attributes[key])
+        job_roles = attributes.get("job_roles")
+        if job_roles:
+            claims["job_roles"] = [str(r) for r in job_roles]
+        return claims
+
+  # ---- One public client for every console (universal login). The issuer is per provider:
+  # <auth origin>/application/o/lifeplatform/ -- trailing slash included.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers: {name: lifeplatform}
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !KeyOf flow-sign-out
+      client_type: public
+      client_id: lifeplatform-spa
+      # 2026.8 lists the allowed grants on the provider, and an empty list allows none (found 2026-11-19: the
+      # authorize endpoint answered "Invalid grant_type for provider"). The console needs the code flow and refresh;
+      # nothing else (no password or client-credentials grant on the public client).
+      grant_types: [authorization_code, refresh_token]
+      # One exact address to come back to after sign-in, and one after sign-out (the console's post_logout_redirect_uri;
+      # without it Authentik leaves the person on its own "signed out" page).
+      redirect_uris:
+        - matching_mode: strict
+          url: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+        - matching_mode: strict
+          redirect_uri_type: logout
+          url: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      sub_mode: user_uuid
+      include_claims_in_id_token: true
+      issuer_mode: per_provider
+      access_token_validity: minutes=5
+      refresh_token_validity: minutes=30
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !KeyOf mapping-claims
+
+  # ---- "Your password was changed" (ticket 06; the text since 2026-11-06). Authentik's password_set event fires for
+  # every password set: a person's own change, a forced change, a recovery -- and also an administrator's or the
+  # backend's set through the API, and a blueprint's. Only the first kind texts, as with Keycloak: the policy passes an
+  # event raised by the flow executor and nothing else (API and blueprint sets have another path, or none).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-own-password-change
+    identifiers: {name: lifeplatform-own-password-change}
+    attrs:
+      expression: |
+        event = request.context.get("event")
+        if event is None or event.action != "password_set":
+            return False
+        path = (event.context.get("http_request") or {}).get("path", "")
+        return path.startswith("/api/v3/flows/executor/")
+
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-password-changed-body
+    identifiers: {name: lifeplatform-password-changed-body}
+    attrs:
+      expression: |
+        event = notification.event
+        attributes = user.attributes or {}
+        return {
+            "eventId": str(event.pk),
+            "userId": str(user.uuid),
+            "tenantId": attributes.get("tenant_id"),
+            "partyId": attributes.get("party_id"),
+            "at": event.created.isoformat(),
+        }
+
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-password-changed-headers
+    identifiers: {name: lifeplatform-password-changed-headers}
+    attrs:
+      expression: !Format
+        - |
+          return {"Authorization": "Bearer %s"}
+        - !Env PASSWORD_CHANGED_WEBHOOK_SECRET
+
+  # Retried by Authentik up to five times on anything but a 2xx; the backend dedupes on the event id.
+  - model: authentik_events.notificationtransport
+    id: transport-password-changed
+    identifiers: {name: lifeplatform-password-changed}
+    attrs:
+      mode: webhook
+      webhook_url: !Format ["%s/internal/password-changed", !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]]
+      webhook_mapping_body: !KeyOf mapping-password-changed-body
+      webhook_mapping_headers: !KeyOf mapping-password-changed-headers
+      send_once: false
+
+  - model: authentik_events.notificationrule
+    id: rule-password-changed
+    identifiers: {name: lifeplatform-password-changed}
+    attrs:
+      transports: [!KeyOf transport-password-changed]
+      destination_event_user: true
+      severity: notice
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf rule-password-changed, policy: !KeyOf policy-own-password-change, order: 0}
+
+  # ---- The console's Change password (ticket 06; Keycloak's update-password action until now): the current password,
+  # then a new one twice under the same rules as a forced change, saved, then back to the console page it came from.
+  # The console opens /if/flow/lifeplatform-change-password/?return_to=<path>. Authentik only follows a relative
+  # `next`, so the last step is a redirect stage, and its policy builds the address: the console's own origin plus that
+  # path -- never anywhere else.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-return-to-console
+    identifiers: {name: lifeplatform-return-to-console}
+    attrs:
+      expression: !Format
+        - |
+          query = request.http_request.GET.get("query", "") if request.http_request else ""
+          path = "/"
+          for pair in query.split("&"):
+              if pair.startswith("return_to="):
+                  path = pair[len("return_to="):]
+          # A console page's path only: letters, digits and / - _ . -- never another site, never encoded tricks.
+          if not regex_match(path, r"^/(?!/)[A-Za-z0-9/_.-]*$"):
+              path = "/"
+          request.context["flow_plan"].context["redirect_stage_target"] = "%s" + path
+          return True
+        - !Env [LP_APP_ORIGIN, "http://localhost:5173"]
+
+  # Keycloak signed the person's other devices out when they changed their password (its default); Authentik doesn't.
+  # Once the new password is saved, this ends every other sign-in session and refresh token of theirs, keeping the one
+  # they are using.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-sign-out-other-devices
+    identifiers: {name: lifeplatform-sign-out-other-devices}
+    attrs:
+      expression: |
+        from authentik.core.models import AuthenticatedSession
+        from authentik.providers.oauth2.models import RefreshToken
+        user = request.context.get("pending_user")
+        session = request.http_request.session if request.http_request else None
+        if user is None or session is None or not session.session_key:
+            return True
+        current = session.session_key
+        RefreshToken.objects.filter(user=user).exclude(session__session__session_key=current).delete()
+        AuthenticatedSession.objects.filter(user=user).exclude(session__session_key=current).delete()
+        return True
+
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-back-to-console
+    identifiers: {name: lifeplatform-back-to-console}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-change-password
+    identifiers: {slug: lifeplatform-change-password}
+    attrs:
+      name: Nlolo Life change password
+      title: Change your password
+      designation: stage_configuration
+      authentication: require_authenticated
+      layout: content_right
+
+  # A flow started by a signed-in person has no pending user, and the password stage then fails ("Unknown error",
+  # found 2026-11-19): this policy makes the signed-in person the pending user before the current password is asked.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-signed-in-person
+    identifiers: {name: lifeplatform-signed-in-person-is-pending}
+    attrs:
+      expression: |
+        user = request.http_request.user if request.http_request else None
+        if user is None or not user.is_authenticated:
+            return False
+        request.context["flow_plan"].context["pending_user"] = user
+        return True
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-current-password
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-password, order: 10}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-current-password, policy: !KeyOf policy-signed-in-person, order: 0}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-choose-password, order: 20}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-save-password, order: 30}
+  - model: authentik_flows.flowstagebinding
+    id: binding-back-to-console
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-back-to-console, order: 40}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+      # Both policies run: sign the other devices out, and set where to come back to.
+      policy_engine_mode: all
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-back-to-console, policy: !KeyOf policy-sign-out-other-devices, order: 0}
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-back-to-console, policy: !KeyOf policy-return-to-console, order: 1}
+
+  - model: authentik_core.application
+    id: application
+    identifiers: {slug: lifeplatform}
+    attrs:
+      name: Nlolo Life
+      provider: !KeyOf provider
+      # Every bound policy must pass.
+      policy_engine_mode: all
+
+  # ---- PKCE S256 is required (ticket 02). The authorize endpoint hands the application's policies the request's
+  # challenge and method; a request with no challenge reports the method "plain". The token endpoint does not run
+  # these policies for a refresh, and other callers (the user's library page) carry no OAuth context, so the check
+  # applies only where that context exists.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-pkce-s256
+    identifiers: {name: lifeplatform-require-pkce-s256}
+    attrs:
+      expression: |
+        if "oauth_code_challenge_method" not in request.context:
+            return True
+        if request.context.get("oauth_code_challenge") and request.context["oauth_code_challenge_method"] == "S256":
+            return True
+        ak_message("Sign-in needs PKCE (S256).")
+        return False
+
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf application, policy: !KeyOf policy-pkce-s256, order: 0}
+
+  # ---- Password reset (ticket 07). It starts on the platform's own bilingual /reset page, not in Authentik: the
+  # sign-in page's "Forgot your password?" is a one-step flow that sends the browser there. /reset texts a code, checks
+  # it, and asks the API for a 15-minute recovery link; that link opens the brand's recovery flow below, where the
+  # person chooses a new password (same rules as a forced change) and lands on the console root, to sign in.
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-to-console-root
+    identifiers: {name: lifeplatform-to-console-root}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-set-password
+    identifiers: {slug: lifeplatform-set-password}
+    attrs:
+      name: Nlolo Life set a new password
+      title: Choose a new password
+      designation: recovery
+      authentication: none
+      layout: content_right
+
+  # Only from a recovery link (found in ticket 08): opened directly -- for example from the password stage's own
+  # "Forgot password?" -- the flow would let a signed-in session set a new password without the current one. The API
+  # plans a recovery link with the person as the pending user; a direct visit has none.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-from-recovery-link
+    identifiers: {name: lifeplatform-only-from-a-recovery-link}
+    attrs:
+      expression: |
+        if request.context.get("pending_user") is None:
+            ak_message("This link is invalid or has expired. Ask for a new code on the reset page.")
+            return False
+        return True
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf flow-set-password, policy: !KeyOf policy-from-recovery-link, order: 0}
+
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-choose-password, order: 10}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-save-password, order: 20}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-to-console-root, order: 30}
+
+  # ---- The default brand signs people in through the flow above, and its recovery links (from the API) open the
+  # set-a-new-password flow.
+  # The look (ticket 08; variant A "Split leaf", chosen by the user in the prototype): the wordmark-free brand photo
+  # behind every flow, the 48px N-leaf mark above the form, our favicon, and the CSS below. The files are in
+  # deploy/authentik/branding, served from Authentik's media as lifeplatform/<file>.
+  # Accepted differences from the Keycloak page: no photo on phones; the panel isn't flush right or full height; bold
+  # labels and required stars; the system font; Authentik's language switcher; no "Accounts are issued by your
+  # administrator" line.
+  - model: authentik_brands.brand
+    identifiers: {domain: authentik-default}
+    attrs:
+      branding_title: Nlolo Life
+      branding_logo: lifeplatform/mark.svg
+      branding_favicon: lifeplatform/favicon.svg
+      branding_default_flow_background: lifeplatform/brand.jpg
+      flow_authentication: !KeyOf flow-sign-in
+      flow_recovery: !KeyOf flow-set-password
+      # Injected into every component's shadow root, and the page's own. The Keycloak theme's "Split leaf" carried onto
+      # Authentik's PatternFly markup (backend/keycloak/themes/lifeplatform/login/resources/css/login.css is the source
+      # of truth for every token and rule here). Polished 2026-11-20 against the impeccable craft floor: dark mode
+      # authored, browser-drawn surfaces themed, the error and the language switcher brought into the world.
+      branding_custom_css: |
+        /* 1. Tokens: the Nlolo mark's greens, and the form surface, which alone inverts in dark. */
+        :root, :host {
+          color-scheme: light dark;
+          --n-green: oklch(0.6 0.19 145);
+          --n-green-deep: oklch(0.24 0.065 150);
+          --n-green-deeper: oklch(0.18 0.05 150);
+          --n-lime: oklch(0.86 0.16 138);
+          --n-lime-ink: oklch(0.24 0.07 150);
+          --n-on-deep: oklch(0.97 0.008 150);
+
+          --n-paper: oklch(1 0 0);
+          --n-ink: oklch(0.2 0.012 150);
+          --n-ink-muted: oklch(0.46 0.015 150);
+          --n-ink-subtle: oklch(0.55 0.012 150);
+          --n-rule: oklch(0.9 0.004 150);
+          --n-hover: oklch(0.97 0.004 150);
+          --n-field-rule: oklch(0.32 0.02 150);
+          --n-field-bg: oklch(1 0 0);
+          --n-ring: oklch(0.4 0.13 148);
+          --n-danger-bg: oklch(0.96 0.03 25);
+          --n-danger-fg: oklch(0.45 0.18 25);
+          --n-radius: 0.75rem;
+          --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+          --pf-global--primary-color--100: var(--n-green);
+          --pf-global--primary-color--200: var(--n-green-deep);
+          --pf-global--link--Color: var(--n-ink);
+          --pf-global--link--Color--hover: var(--n-green-deep);
+          --pf-global--FontFamily--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--heading--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--redhatfont--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--redhatfont--heading--sans-serif: var(--n-sans);
+          --pf-global--Color--100: var(--n-ink);
+          --pf-global--Color--200: var(--n-ink-muted);
+          --pf-c-form__label--Color: var(--n-ink);
+        }
+
+        /* Dark: only the form surface inverts. The lime action and its deep-green ink are held exactly -- that pair is
+           the brand -- and the focus ring turns lime so it reads on the dark field. */
+        @media (prefers-color-scheme: dark) {
+          :root, :host {
+            --n-paper: oklch(0.19 0.014 150);
+            --n-ink: oklch(0.96 0.008 150);
+            --n-ink-muted: oklch(0.74 0.012 150);
+            --n-ink-subtle: oklch(0.66 0.01 150);
+            --n-rule: oklch(1 0 0 / 14%);
+            --n-hover: oklch(1 0 0 / 6%);
+            --n-field-rule: oklch(1 0 0 / 45%);
+            --n-field-bg: oklch(0.22 0.016 150);
+            --n-ring: oklch(0.86 0.16 138);
+            --n-danger-bg: oklch(0.29 0.075 25);
+            --n-danger-fg: oklch(0.84 0.12 22);
+            --pf-global--link--Color--hover: var(--n-lime);
+          }
+        }
+
+        /* 2. The parts nobody draws: a blue selection, a grey scrollbar and a yellow autofill patch are where a page
+           still looks assembled rather than built. */
+        ::selection { background-color: var(--n-lime); color: var(--n-lime-ink); }
+        :host, :root { scrollbar-width: thin; scrollbar-color: var(--n-green) transparent; }
+        .pf-c-form-control { caret-color: var(--n-ink); accent-color: var(--n-green); }
+        .pf-c-form-control:-webkit-autofill,
+        .pf-c-form-control:-webkit-autofill:hover,
+        .pf-c-form-control:-webkit-autofill:focus {
+          -webkit-text-fill-color: var(--n-ink);
+          -webkit-box-shadow: inset 0 0 0 1000px var(--n-field-bg);
+          box-shadow: inset 0 0 0 1000px var(--n-field-bg);
+          transition: background-color 100000s ease-in-out 0s;
+        }
+
+        /* 3. Type: the theme's headline voice -- 600, tight, balanced -- over Authentik's own size and weight modifiers. */
+        h1.pf-c-title.pf-m-3xl,
+        h1.pf-c-title {
+          font-family: var(--n-sans);
+          font-size: clamp(1.5rem, 2.6vw, 1.875rem);
+          font-weight: 600;
+          letter-spacing: -0.03em;
+          line-height: 1.1;
+          color: var(--n-ink);
+          text-align: center;
+          text-wrap: balance;
+        }
+        .pf-c-form__label, .pf-c-form__label-text { color: var(--n-ink); }
+
+        /* 4. Fields: 48px, a dark hairline, the brand green on hover, one clean ring on focus. */
+        .pf-c-form-control {
+          min-height: 48px;
+          border: 1px solid var(--n-field-rule);
+          border-radius: var(--n-radius);
+          padding-inline: 16px;
+          background: var(--n-field-bg);
+          color: var(--n-ink);
+          font-size: 1rem;
+          transition: border-color 150ms ease;
+        }
+        .pf-c-form-control:hover { border-color: var(--n-green); }
+        .pf-c-form-control:focus,
+        .pf-c-form-control:focus-visible {
+          outline: 2px solid var(--n-ring);
+          outline-offset: 2px;
+          border-color: var(--n-field-rule);
+        }
+        .pf-c-form-control::placeholder { color: transparent; }
+        .pf-c-form-control[aria-invalid='true'] { border-color: var(--n-danger-fg); }
+        /* The six-digit sign-in code reads better spaced out, and the field is for nothing else. */
+        input[name='code'] {
+          font-size: 1.25rem;
+          letter-spacing: 0.3em;
+          text-align: center;
+          font-variant-numeric: tabular-nums;
+        }
+
+        /* 5. The action: the lime pill, a real one-pixel press, a ring that clears the pill. */
+        .pf-c-button.pf-m-primary {
+          min-height: 48px;
+          border: 0;
+          border-radius: 999px;
+          background: var(--n-lime);
+          color: var(--n-lime-ink);
+          font-weight: 600;
+          font-size: 1rem;
+          transition: background-color 150ms ease;
+        }
+        .pf-c-button.pf-m-primary:hover {
+          background: color-mix(in oklch, var(--n-lime) 88%, var(--n-green));
+          color: var(--n-lime-ink);
+        }
+        .pf-c-button.pf-m-primary:active { transform: translateY(1px); }
+        .pf-c-button.pf-m-primary:focus-visible { outline: 2px solid var(--n-ring); outline-offset: 3px; }
+        .pf-c-button.pf-m-primary:disabled,
+        .pf-c-button.pf-m-primary.pf-m-disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* 6. Links: the theme's underline, weight and hover green. */
+        a[data-ouia-component-id='recovery'],
+        .pf-c-login__main-footer-band-item a {
+          color: var(--n-ink);
+          font-size: 0.875rem;
+          font-weight: 500;
+          text-decoration-line: underline;
+          text-decoration-thickness: 1.5px;
+          text-underline-offset: 3px;
+          transition: color 150ms ease;
+        }
+        a[data-ouia-component-id='recovery']:hover,
+        .pf-c-login__main-footer-band-item a:hover { color: var(--n-green); }
+
+        /* 7. Alerts and errors in the world's shape: rounded, the theme's danger pair, no PatternFly top bar. */
+        .pf-c-alert.pf-m-inline {
+          border: 0;
+          border-radius: var(--n-radius);
+          background-color: var(--n-danger-bg);
+          color: var(--n-danger-fg);
+          box-shadow: none;
+          padding: 12px 16px;
+        }
+        .pf-c-alert.pf-m-inline::before { display: none; }
+        .pf-c-alert.pf-m-inline .pf-c-alert__title,
+        .pf-c-alert.pf-m-inline .pf-c-alert__icon { color: var(--n-danger-fg); }
+        .pf-c-form__helper-text.pf-m-error { color: var(--n-danger-fg); }
+
+        /* "Powered by authentik" and the stock footer links. */
+        .pf-c-login__footer { display: none; }
+
+        /* The password stage's own "Forgot password?" (on Change password) opens the set-new-password flow, which only
+           a recovery link may open. Staff can't reset their own password; agents and customers reset at /reset. */
+        a[href*="/if/flow/lifeplatform-set-password/"] { display: none; }
+
+        /* 8. Variant A "Split leaf": the photo on the left (the flow background), the form panel on the right. */
+        ak-flow-executor::part(main) {
+          background: var(--n-paper) !important;
+          color: var(--n-ink);
+          border-radius: 2.5rem 0 0 2.5rem !important;
+          min-height: 100vh !important;
+          margin: 0 !important;
+          display: flex !important;
+          flex-direction: column;
+          justify-content: center;
+          padding-inline: clamp(1.5rem, 4vw, 4rem) !important;
+          box-shadow: -24px 0 64px oklch(0.18 0.05 150 / 35%) !important;
+        }
+        ak-flow-executor::part(footer) { display: none !important; }
+        /* The language switcher sits on the photo: on a deep-green pill so its words keep their contrast on any sky.
+           (Its width is the dropdown's own, inside a shadow root these rules can't size.) Phones show no photo, so
+           there it stays plain on the page. */
+        @media (min-width: 761px) {
+          ak-flow-executor::part(locale-select) {
+            background-color: oklch(0.18 0.05 150 / 78%);
+            color: var(--n-on-deep);
+            border-radius: 999px;
+            padding: 4px 14px 4px 10px;
+            box-shadow: 0 2px 8px oklch(0.18 0.05 150 / 25%);
+          }
+        }
+        @media (max-width: 760px) {
+          ak-flow-executor::part(main) {
+            border-radius: 2rem 2rem 0 0 !important;
+            min-height: auto !important;
+            margin-top: 28vh !important;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { transition-duration: 0.01ms !important; }
+          .pf-c-button.pf-m-primary:active { transform: none; }
+        }

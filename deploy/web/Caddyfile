@@ -15,8 +15,8 @@
 		X-Frame-Options "DENY"
 		# What the console may load (2026-11-16, security audit M1). Tokens live in memory, so injected script is the
 		# way left to steal one; this is the second line against it. Scripts only from this origin (index.html has no
-		# inline script -- its two boot scripts are files in public/) and Cloudflare Turnstile, which the public quote
-		# link uses when it is on. Styles allow inline: React's style={{}} attributes need it, and a style cannot run.
+		# inline script -- its two boot scripts are files in public/) and Cloudflare Turnstile, which the reset page and
+		# the public quote link use. Styles allow inline: React's style={{}} attributes need it, and a style cannot run.
 		# Calls go to this origin and to the sign-in server; documents open from blob: URLs, PDFs in an <object>.
 		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://{$AUTH_DOMAIN}; frame-src 'self' blob: https://{$AUTH_DOMAIN} https://challenges.cloudflare.com; object-src 'self' blob:; worker-src 'self' blob:; base-uri 'self'; form-action 'self' https://{$AUTH_DOMAIN}; frame-ancestors 'none'"
 		# Nothing in the console uses the camera, microphone, location or payment request; no page it loads may either.
@@ -26,8 +26,8 @@
 	# The console calls /api on its own origin and the prefix is stripped here -- exactly what the Vite dev proxy
 	# does, so dev and production differ in no way the code can see. One origin also means no CORS: the backend has
 	# never had a CORS configuration, and this is why it does not need one.
-	# Keycloak's calls into the platform (2026-10-28: texting a reset code) come over the private network. Signed as
-	# they are, they have no business arriving from outside.
+	# Authentik's calls into the platform (the staff sign-in code, the password-changed notice) come over the private
+	# network with bearer secrets, straight to the backend on 127.0.0.1:8080. They have no business arriving from outside.
 	# A handle, not a bare respond: Caddy runs handle before handle_path, and a bare respond after it, where it would
 	# never be reached.
 	handle /api/internal/* {
@@ -35,11 +35,22 @@
 	}
 
 	handle_path /api/* {
-		reverse_proxy backend:8080
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Sign-out revokes the console's refresh token here, on the console's own origin (2026-11-19, ticket 02 of
+	# .scratch/authentik-cutover): Authentik 2026.8.5's revoke endpoint sends no CORS headers, so the browser cannot
+	# call it on the sign-in address. Exactly this one path is forwarded, as the Vite dev server does. Without it
+	# sign-out still ends the session, but the refresh token lives on for up to 30 idle minutes.
+	handle /oauth/revoke/ {
+		rewrite * /application/o/revoke/
+		reverse_proxy 127.0.0.1:9000 {
+			header_up Host {$AUTH_DOMAIN}
+		}
 	}
 
 	handle {
-		root * /srv
+		root * /opt/platform/current/console
 		# A single-page app: every unknown path is a route inside it, not a missing file. index.html itself must not
 		# be cached, or a release leaves browsers loading the previous build's asset names.
 		@html path / /index.html
@@ -50,18 +61,30 @@
 }
 
 {$AUTH_DOMAIN} {
-	# The admin console is reached through an SSH tunnel (deploy/README.md), never from the internet: it is the one
-	# door where a stolen password owns every realm, and it has no business being on a public address.
-	@admin path /admin /admin/*
-	respond @admin 404
-
-	# Keycloak's own `master` realm -- the Keycloak administrator's login -- shut too (2026-11-14, security audit H1).
-	# Moving the console off the public address left master's token endpoint on it, where anyone could guess the
-	# administrator's password as fast as the network allows, and one right guess owns every account. Nothing on the
-	# internet needs master: the console comes through the SSH tunnel, and kcadm and keycloak-config reach Keycloak on
-	# the private network. Staff, agents and customers sign in through `lifeplatform`, untouched.
-	@master path /realms/master /realms/master/*
-	respond @master 404
-
-	reverse_proxy keycloak:8080
+	# An allow-list (2026-11-20, ticket 10 of .scratch/authentik-cutover): only what the platform's sign-in pages use,
+	# found by recording every request in every journey -- sign-in with the texted code, sign-out, Change password,
+	# "Forgot your password?" and the recovery link's new password. Everything else answers 404 from the internet:
+	#
+	#  - the admin UI (/if/admin/) and the admin API: reached through the SSH tunnel only (DEPLOYMENT-GUIDE.md)
+	#  - Authentik's stock flows, default-authentication-flow above all: it signs in without the platform's flow (no
+	#    sign-in code, no superuser refusal), so on a public address any login could use it to skip them
+	#  - Authentik's own user pages (/if/user/), where a person could change settings around the platform's flows
+	#
+	# A flow is reachable only by a slug starting lifeplatform-, page and API alike.
+	@signin {
+		path /static/* /files/media/public/* /media/public/*
+		path /if/flow/lifeplatform-*
+		path /api/v3/flows/executor/lifeplatform-*
+		# "Not you?" on the sign-in page
+		path /flows/-/cancel/*
+		# The OAuth provider: discovery, keys, authorize, token, userinfo, sign-out. The backend fetches the keys here
+		# too, through the /etc/hosts line remote-release.sh writes.
+		path /application/o/*
+	}
+	handle @signin {
+		reverse_proxy 127.0.0.1:9000
+	}
+	handle {
+		respond 404
+	}
 }

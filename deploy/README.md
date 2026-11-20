@@ -1,229 +1,90 @@
 # Running the platform on a server
 
-The pilot deployment: one Linux server, Docker Compose, releases pushed from a developer's machine.
-**Doing it for the first time? Follow `DEPLOYMENT-GUIDE.md`** -- step by step, with why and how to check each step.
-This file is the short reference.
-Design: `backend/docs/superpowers/specs/2026-10-13-deployment-pilot-design.md`.
-
-Hostnames are **settings**, never spelled out in code or config. `APP_DOMAIN` is the console and the API;
-`AUTH_DOMAIN` is Keycloak. Both live in the server's `.env`; renaming either is step 9 below.
+The short reference. `DEPLOYMENT-GUIDE.md` is the full walk-through, with the why and the checks; start there the
+first time.
 
 ## 1. What runs where
 
-| Service | What it is | Reachable from the internet |
-|---|---|---|
-| `caddy` | Caddy with the built console inside it. TLS for both hostnames; `/api/*` proxied to the backend with the prefix stripped | **yes**, 80 and 443 only |
-| `backend` | The platform. **Exactly one instance** — 32 scheduled jobs have no cluster lock, so a second would double every reminder | no |
-| `keycloak` | Keycloak 26, production mode, login theme baked in | through caddy; `/admin` is 404 from outside |
-| `postgres` | PostgreSQL 16 with pg_partman and pg_cron. Two databases, `lifeplatform` and `keycloak`, each with its own login | no |
-| `objectstore` | SeaweedFS, S3 API. The four document buckets | no |
-| `mock-mobile-money` | WireMock. The money rail is still a mock — see §12 | no |
+One Debian 13 server, everything as systemd services, no Docker (2026-11-20, ticket 10 of .scratch/authentik-cutover):
 
-Because the console and the API share one origin, **no CORS configuration is needed**, which is why the backend
-has never had one.
+| Service | What | Listens on |
+|---|---|---|
+| `caddy` | HTTPS for `APP_DOMAIN` (console + `/api`) and `AUTH_DOMAIN` (the sign-in pages only) | 80, 443 |
+| `platform-backend` | The system (`/opt/platform/current/lifeplatform.jar`) | 127.0.0.1:8080, management :9090 |
+| `authentik-server`, `authentik-worker` | Sign-in, built from source (`/opt/authentik/current`) | 127.0.0.1:9000 and :9001 |
+| `postgresql@16-main` | `lifeplatform` and `authentik` databases | localhost:5432 |
+| `seaweedfs` | Documents (S3) | 127.0.0.1:8333 |
+| `platform-mock-mobile-money` | The money mock: no money moves | 127.0.0.1:8089 |
+
+Files on the server:
+
+| Where | What |
+|---|---|
+| `~/platform` (deploy user) | `.env`, the scripts below, `backups/`, `RELEASED` |
+| `/opt/platform/releases/<v>`, `current` | The last five releases; `current` is in service |
+| `/opt/authentik/<version>`, `current` | The last two Authentik builds |
+| `/etc/platform/*.env` | Each service's own settings, written from `.env` by every release |
+| `/var/lib/authentik`, `/var/lib/seaweedfs` | Authentik's files and blueprints; the documents |
 
 ## 2. First deploy
 
-1. **A server**: Ubuntu 24.04 LTS, at least 4 vCPU, 8 GB RAM, 80 GB SSD.
-2. **Bootstrap it**, once, as root:
-   ```bash
-   scp deploy/bootstrap-server.sh deploy/server/.env.example root@SERVER:
-   ssh root@SERVER bash bootstrap-server.sh
-   ```
-   It installs Docker, creates the key-only `deploy` user, closes the firewall to everything but 22/80/443,
-   generates every secret into `/home/deploy/platform/.env`, and installs the nightly backup.
-3. **Fill in the rest of `.env`**: `APP_DOMAIN`, `AUTH_DOMAIN`, `ACME_EMAIL`, `IMAGE_PREFIX`, the `SMS_GATEWAY_*`
-   settings, the `BACKUP_S3_*` settings, and `SUPPORT_PHONE` -- the number "your password was changed -- if this
-   wasn't you, call ..." gives. The backend refuses to start without it.
-4. **DNS**: an `A` record for each hostname pointing at the server. Caddy cannot obtain certificates until they
-   resolve.
-5. **Registry access**: `ssh deploy@SERVER` then `docker login ghcr.io` with a token that has `read:packages`.
-6. **Release**, from your machine:
-   ```bash
-   cp deploy/release.env.example deploy/release.env   # fill in DEPLOY_HOST, IMAGE_PREFIX, AUTH_DOMAIN
-   deploy/release.sh v0.1.0
-   ```
-7. It prints the **first staff login's one-time password, once**. Sign in at `https://$APP_DOMAIN/` as
-   `staff.admin` and change it immediately. Staff cannot reset their own password: an administrator does it from
-   Users & access, and it is texted to the phone on their staff record. Keep a second administrator.
-
-## 3. Releasing
-
 ```bash
-deploy/release.sh v0.2.0
+scp deploy/bootstrap-server.sh deploy/server/.env.example root@SERVER:
+ssh root@SERVER bash bootstrap-server.sh       # Debian 13 only
+ssh deploy@SERVER nano platform/.env           # domains, SMS, SUPPORT_PHONE, TURNSTILE_SECRET, FIRST_ADMIN_PHONE, backups
+cp deploy/release.env.example deploy/release.env   # DEPLOY_HOST, AUTH_DOMAIN, TURNSTILE_SITE_KEY
+deploy/release.sh v1.0.0                       # first time 45-90 min: the server builds Authentik
 ```
 
-Builds and pushes the four images, copies the server files over, and then on the server: backup → pull →
-migrate → configure-db → Keycloak → realm configuration → restart → smoke check. It stops at the first failure,
-and nothing restarts the backend until the database has migrated, so a failed migration leaves the previous
-version running against the schema it was built for.
+It prints `platform.admin`'s one-time password once. Sign in, enter the texted code, choose a password, then create a
+second administrator.
 
-The git tag is created locally and **not pushed**. Push it when the release proves good: `git push origin v0.2.0`.
-
-## 4. Rolling back
+## 3. Releasing and rolling back
 
 ```bash
-deploy/release.sh --rollback v0.1.0
+deploy/release.sh v1.1.0                # builds backend + console here, ships, runs remote-release.sh there
+deploy/release.sh --rollback v1.0.0     # relinks /opt/platform/current and restarts; migrations are not undone
 ```
 
-Points the containers back at the earlier images. **Migrations are not undone** — they only go forward. If a
-release's migration has to be reversed, restore the pre-release backup (§5); `release.sh` prints its name before
-it touches anything.
+On the server, `./remote-release.sh --rollback "$(cat RELEASED)"` re-applies `.env` to the services without a build.
 
-## 5. Backups and restoring
-
-Nightly at 02:30, and before every release. Each backup holds both databases and every document, and is copied
-off the server when the `BACKUP_S3_*` settings are filled in. Kept: 7 on the server, 14 daily and 8 weekly off it.
-
-Keycloak's database is backed up *with* the platform's, and the two must be restored together — portal logins
-live in Keycloak and the people they belong to live in the platform.
+## 4. Backups and restoring
 
 ```bash
-ssh deploy@SERVER 'cd platform && ./backup.sh manual'           # on demand
-ssh deploy@SERVER 'cd platform && ./restore.sh backups/STAMP --scratch'   # prove a backup, touching nothing live
-ssh deploy@SERVER 'cd platform && ./restore.sh backups/STAMP'            # REPLACES the live data; asks first
+./backup.sh manual                         # lifeplatform + authentik + documents, then encrypted off-server
+./restore.sh backups/STAMP --scratch       # into a throwaway database, touching nothing live
+./restore.sh backups/STAMP                 # REPLACES live data (asks first)
+./fetch-backup.sh [daily/STAMP]            # lists, or brings back, an off-server copy
 ```
 
-**Run the `--scratch` restore before go-live and once a month.** A backup nobody has restored is a file, not a
-backup.
-
-**The off-server copy is encrypted** (2026-11-16) with `BACKUP_CRYPT_PASSWORD`, which `bootstrap-server.sh` generates:
-file contents and names, before they leave the server. **Keep a copy of that password off the server** (a password
-manager, the company safe). The off-server copy is for the day the server is lost, and the `.env` is lost with it;
-without the password no off-server backup can be read. `backup.sh` refuses to send anything off the server while
-`BACKUP_S3_*` is filled and the password is empty.
-
-To bring an off-server backup back (a new server, or a backup older than the seven kept on this one):
+## 5. Logins the console cannot make
 
 ```bash
-ssh deploy@SERVER 'cd platform && ./fetch-backup.sh'                       # lists daily/... and weekly/...
-ssh deploy@SERVER 'cd platform && ./fetch-backup.sh daily/STAMP'           # decrypts it into backups/STAMP
-ssh deploy@SERVER 'cd platform && ./restore.sh backups/STAMP --scratch'
+./add-user.sh staff asha.juma --roles ADMIN --home-branch DSM --phone +255712345678 --first-name Asha --last-name Juma
+./add-user.sh regulator tira.inspector --first-name Salum --last-name Tira
+./add-user.sh agent john.mwita --party-id 7ddd05c3-... --first-name John --last-name Mwita
 ```
 
-## 6. Adding a staff, agent or regulator login
+Prints a one-time password; the person chooses their own at first sign-in. Staff, agents and customers are normally
+added from the console.
+
+## 6. The Authentik admin
+
+Never on the internet. `ssh -L 9000:127.0.0.1:9000 deploy@SERVER`, then
+`http://localhost:9000/if/flow/default-authentication-flow/?next=/if/admin/` as `akadmin` with
+`AUTHENTIK_BOOTSTRAP_PASSWORD`. Configuration lives in the blueprint
+(`deploy/authentik/blueprints/production/lifeplatform.yaml`) and changes by release only; see the guide, Part 7, also
+for rotating the signing key.
+
+## 7. Watching it
 
 ```bash
-ssh deploy@SERVER 'cd platform && ./add-user.sh staff asha.juma \
-    --roles ADMIN --home-branch DSM --phone +255712345678 --first-name Asha --last-name Juma'
+./status.sh                                # version, services, disk, last backup, backend health
+sudo journalctl -u platform-backend -f     # or authentik-server, authentik-worker, caddy, seaweedfs, postgresql@16-main
+./smoke.sh                                 # the release's last gate, any time
 ```
 
-Staff need `--phone` (2026-11-14): every staff sign-in asks for a code texted to it (`STAFF_SIGN_IN_CODE=true`, which
-the backend requires in production). Make the first administrator here with their own phone; they then add every
-other staff member from Users and roles, phone included. Before switching codes on for an existing install, give every
-active staff login a phone there — the users list marks the ones without.
+## 8. Versions
 
-Everyone signs in at the same address, `https://APP_DOMAIN/`, through one Keycloak realm, `lifeplatform`
-(2026-11-06). The first argument is the **workspace** the login opens: `staff`, `agent` or `regulator`. After
-sign-in the console opens that workspace; an account holding two (an agent who is also a policyholder) is offered a
-choice. A staff login never holds a second workspace.
-
-Job roles are the realm's own: `UNDERWRITER`, `SENIOR_UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`,
-`FINANCE_OFFICER`, `FINANCE_APPROVER`, `CUSTOMER_SERVICE_REP`, `ADMIN`. Comma-separate several; `ALL` means every
-job role (never a workspace).
-
-- **Staff need `--home-branch`** — it goes in the token, and without it they cannot post a journal.
-- **Agents need `--party-id`**, the agent's party id from their record in the console. Usually staff give an agent a
-  login from the agent's page instead; this is for the first ones.
-- **Customers are not created here.** Staff invite them from the console, which creates the login and writes the
-  party id from the record on screen, so nobody transcribes an id.
-
-The script prints a one-time password; Keycloak requires a new one at first sign-in.
-
-## 7. The Keycloak admin console
-
-It is not on the internet. Tunnel to it:
-
-```bash
-ssh -L 8081:localhost:8081 deploy@SERVER
-```
-
-then open `http://localhost:8081/admin` — user `admin`, password `KC_ADMIN_PASSWORD` from the server's `.env`.
-
-The realm itself is configuration, not console work: it is generated from `backend/keycloak/lifeplatform-realm.json`
-by `deploy/keycloak/build-realms.mjs` and applied on every release. A change made by hand in the console will be
-overwritten by the next release unless it is a user (users are never deleted).
-
-**Upgrading a server from the four realms (2026-11-06).** Before the first release that carries the one realm, add
-`ADMIN_CLIENT_SECRET=<a new random secret>` to the server's `.env` (`openssl rand -base64 36 | tr -d '/+=' | cut
--c1-32`) and remove `PORTAL_ADMIN_CLIENT_SECRET`, `STAFF_ADMIN_CLIENT_SECRET` and `AGENTS_ADMIN_CLIENT_SECRET`. The
-release creates `lifeplatform`; the old `staff`, `agents`, `customers` and `regulators` realms are no longer read and
-can be deleted from the admin console. Their users are not moved: there were no real users when this changed.
-
-## 8. Switching email on
-
-Email is not in use (`MAIL_ENABLED=false`): every first password and every reset goes by SMS, and nothing shows email
-as a way of sending. Agents and customers sign in with their phone number as the username, the sign-in page asks for
-"Your username", and "Forgot your password?" texts a six-digit code (staff are sent nothing; an administrator resets
-theirs). Email addresses may still be recorded on clients, branches and the letterhead as contact details.
-Turning email on needs no code change and no new release of the images:
-
-1. Open an account with a transactional email provider (Brevo, Mailgun, SES, Zoho).
-2. Add their SPF and DKIM records to the domain.
-3. Fill `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM` in `.env` and set
-   `MAIL_ENABLED=true`.
-4. Release again. Both the platform and Keycloak's SMTP follow that one setting.
-
-Clients with an email address then get an emailed set-your-password link instead of an SMS.
-
-## 9. Changing a hostname
-
-1. `APP_DOMAIN` and/or `AUTH_DOMAIN` in the server's `.env`.
-2. `AUTH_DOMAIN` in your local `deploy/release.env` — it is compiled into the console.
-3. DNS `A` records for the new names.
-4. `deploy/release.sh v0.x.0`.
-
-Everyone signs in again once; nothing else is affected. The realm's redirect URIs follow `APP_DOMAIN`
-automatically.
-
-## 10. The SMS allowlist
-
-During the pilot `SMS_GATEWAY_ALLOWED_RECIPIENTS` holds the team's numbers in `255...` form, comma-separated, so
-a stray notification cannot text a real customer. Any other recipient is refused and recorded as a FAILED
-dispatch.
-
-**Empty means every recipient is delivered to.** Empty it only when real customers are onboarding:
-
-```bash
-ssh deploy@SERVER 'cd platform && sed -i "s/^SMS_GATEWAY_ALLOWED_RECIPIENTS=.*/SMS_GATEWAY_ALLOWED_RECIPIENTS=/" .env \
-  && docker compose --env-file .env --env-file versions.env -f compose.yml up -d backend'
-```
-
-## 11. Watching it
-
-- An external uptime monitor (UptimeRobot or similar) on both hostnames, every 5 minutes.
-- `ssh deploy@SERVER 'cd platform && ./status.sh'` — what is deployed, container health, disk, the age of the
-  last backup, and the backend's own health including the scheduled-jobs and partition checks.
-- `docker compose --env-file .env --env-file versions.env -f compose.yml logs -f backend` for the log.
-
-## 12. Known limits of the pilot
-
-- **One backend instance.** The scheduled jobs have no cluster lock; a second instance would duplicate them.
-- **Mobile money is a mock.** The mock answers every request ACCEPTED, so a payout sent by mobile money is recorded
-  as paid although no money moved, and a mobile-money collection waits for finance's approval as if the money had
-  come. Record premiums as cash, bank or field receipts, and pay out by bank transfer or cash, until a real rail is
-  integrated.
-- **No rate limiting at the edge.** Keycloak locks an account after 5 wrong passwords and the reset sends at most
-  3 codes an hour, but nothing limits one address trying many accounts. Putting Cloudflare (free tier) in front of
-  both hostnames is the least work; it also absorbs floods.
-- **A second factor for staff only.** Every staff sign-in asks for a texted code (2026-11-14); agents and customers
-  sign in on a password, with the realm's password policy and brute-force lockout.
-- **No Grafana, no alerting, no JSON logs, no tracing.** The uptime monitor and `status.sh` are the pilot's
-  whole observability story.
-- **No staging server.** The dress rehearsal (running this stack locally) stands in for one.
-
-## 13. Go-live checklist
-
-- [ ] DNS resolves for both hostnames
-- [ ] `.env` complete — the backend refuses to start on any leftover dev secret, so a successful release proves this
-- [ ] First admin's password changed
-- [ ] A `--scratch` restore has been run and reported data
-- [ ] Uptime monitor on both hostnames
-- [ ] `SMS_GATEWAY_ALLOWED_RECIPIENTS` set for the pilot
-- [ ] `BACKUP_S3_*` filled in, and one nightly backup seen in the off-server bucket
-- [ ] `BACKUP_CRYPT_PASSWORD` copied somewhere off the server, and `./fetch-backup.sh daily/STAMP` then
-      `./restore.sh backups/STAMP --scratch` run once, proving the off-server copy can be read back
-- [ ] Signed in through a browser on each workspace (staff with the texted code, an agent, a customer) and opened a
-      document: the console's Content-Security-Policy is enforced, and anything it blocks shows in the browser console
-- [ ] "Forgot your password?" tried once for an agent or customer login: the code arrives by SMS
-- [ ] `deploy/release.sh --rollback` to the previous release tried once, then forward again
+`server/versions.env` pins Authentik and its build tools, Postgres's major version, Flyway, SeaweedFS, WireMock and
+rclone. Change one there and release; `install-tools.sh` and `install-authentik.sh` install exactly that.
