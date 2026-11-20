@@ -724,17 +724,33 @@ entries:
       branding_default_flow_background: lifeplatform/brand.jpg
       flow_authentication: !KeyOf flow-sign-in
       flow_recovery: !KeyOf flow-set-password
-      # Injected into every component's shadow root. Today's login tokens (the Keycloak theme's login.css) mapped onto
-      # Authentik's PatternFly variables, then variant A's panel.
+      # Injected into every component's shadow root, and the page's own. The Keycloak theme's "Split leaf" carried onto
+      # Authentik's PatternFly markup (backend/keycloak/themes/lifeplatform/login/resources/css/login.css is the source
+      # of truth for every token and rule here). Polished 2026-11-20 against the impeccable craft floor: dark mode
+      # authored, browser-drawn surfaces themed, the error and the language switcher brought into the world.
       branding_custom_css: |
+        /* 1. Tokens: the Nlolo mark's greens, and the form surface, which alone inverts in dark. */
         :root, :host {
+          color-scheme: light dark;
           --n-green: oklch(0.6 0.19 145);
           --n-green-deep: oklch(0.24 0.065 150);
+          --n-green-deeper: oklch(0.18 0.05 150);
           --n-lime: oklch(0.86 0.16 138);
           --n-lime-ink: oklch(0.24 0.07 150);
+          --n-on-deep: oklch(0.97 0.008 150);
+
+          --n-paper: oklch(1 0 0);
           --n-ink: oklch(0.2 0.012 150);
+          --n-ink-muted: oklch(0.46 0.015 150);
+          --n-ink-subtle: oklch(0.55 0.012 150);
+          --n-rule: oklch(0.9 0.004 150);
+          --n-hover: oklch(0.97 0.004 150);
           --n-field-rule: oklch(0.32 0.02 150);
+          --n-field-bg: oklch(1 0 0);
           --n-ring: oklch(0.4 0.13 148);
+          --n-danger-bg: oklch(0.96 0.03 25);
+          --n-danger-fg: oklch(0.45 0.18 25);
+          --n-radius: 0.75rem;
           --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
           --pf-global--primary-color--100: var(--n-green);
@@ -745,45 +761,133 @@ entries:
           --pf-global--FontFamily--heading--sans-serif: var(--n-sans);
           --pf-global--FontFamily--redhatfont--sans-serif: var(--n-sans);
           --pf-global--FontFamily--redhatfont--heading--sans-serif: var(--n-sans);
+          --pf-global--Color--100: var(--n-ink);
+          --pf-global--Color--200: var(--n-ink-muted);
+          --pf-c-form__label--Color: var(--n-ink);
         }
 
+        /* Dark: only the form surface inverts. The lime action and its deep-green ink are held exactly -- that pair is
+           the brand -- and the focus ring turns lime so it reads on the dark field. */
+        @media (prefers-color-scheme: dark) {
+          :root, :host {
+            --n-paper: oklch(0.19 0.014 150);
+            --n-ink: oklch(0.96 0.008 150);
+            --n-ink-muted: oklch(0.74 0.012 150);
+            --n-ink-subtle: oklch(0.66 0.01 150);
+            --n-rule: oklch(1 0 0 / 14%);
+            --n-hover: oklch(1 0 0 / 6%);
+            --n-field-rule: oklch(1 0 0 / 45%);
+            --n-field-bg: oklch(0.22 0.016 150);
+            --n-ring: oklch(0.86 0.16 138);
+            --n-danger-bg: oklch(0.29 0.075 25);
+            --n-danger-fg: oklch(0.84 0.12 22);
+            --pf-global--link--Color--hover: var(--n-lime);
+          }
+        }
+
+        /* 2. The parts nobody draws: a blue selection, a grey scrollbar and a yellow autofill patch are where a page
+           still looks assembled rather than built. */
+        ::selection { background-color: var(--n-lime); color: var(--n-lime-ink); }
+        :host, :root { scrollbar-width: thin; scrollbar-color: var(--n-green) transparent; }
+        .pf-c-form-control { caret-color: var(--n-ink); accent-color: var(--n-green); }
+        .pf-c-form-control:-webkit-autofill,
+        .pf-c-form-control:-webkit-autofill:hover,
+        .pf-c-form-control:-webkit-autofill:focus {
+          -webkit-text-fill-color: var(--n-ink);
+          -webkit-box-shadow: inset 0 0 0 1000px var(--n-field-bg);
+          box-shadow: inset 0 0 0 1000px var(--n-field-bg);
+          transition: background-color 100000s ease-in-out 0s;
+        }
+
+        /* 3. Type: the theme's headline voice -- 600, tight, balanced -- over Authentik's own size and weight modifiers. */
+        h1.pf-c-title.pf-m-3xl,
         h1.pf-c-title {
           font-family: var(--n-sans);
-          font-weight: 700;
-          letter-spacing: -0.01em;
+          font-size: clamp(1.5rem, 2.6vw, 1.875rem);
+          font-weight: 600;
+          letter-spacing: -0.03em;
+          line-height: 1.1;
           color: var(--n-ink);
           text-align: center;
-          font-size: 1.75rem;
+          text-wrap: balance;
         }
+        .pf-c-form__label, .pf-c-form__label-text { color: var(--n-ink); }
 
-        .pf-c-form__label { font-weight: 400; color: var(--n-ink); }
-        .pf-c-form__label-required { display: none; }
-
+        /* 4. Fields: 48px, a dark hairline, the brand green on hover, one clean ring on focus. */
         .pf-c-form-control {
           min-height: 48px;
           border: 1px solid var(--n-field-rule);
-          border-radius: 0.75rem;
-          padding-inline: 14px;
-          background: #fff;
+          border-radius: var(--n-radius);
+          padding-inline: 16px;
+          background: var(--n-field-bg);
+          color: var(--n-ink);
+          font-size: 1rem;
+          transition: border-color 150ms ease;
         }
+        .pf-c-form-control:hover { border-color: var(--n-green); }
         .pf-c-form-control:focus,
         .pf-c-form-control:focus-visible {
           outline: 2px solid var(--n-ring);
-          outline-offset: 1px;
-          border-color: var(--n-ring);
+          outline-offset: 2px;
+          border-color: var(--n-field-rule);
         }
         .pf-c-form-control::placeholder { color: transparent; }
+        .pf-c-form-control[aria-invalid='true'] { border-color: var(--n-danger-fg); }
+        /* The six-digit sign-in code reads better spaced out, and the field is for nothing else. */
+        input[name='code'] {
+          font-size: 1.25rem;
+          letter-spacing: 0.3em;
+          text-align: center;
+          font-variant-numeric: tabular-nums;
+        }
 
+        /* 5. The action: the lime pill, a real one-pixel press, a ring that clears the pill. */
         .pf-c-button.pf-m-primary {
           min-height: 48px;
+          border: 0;
           border-radius: 999px;
           background: var(--n-lime);
           color: var(--n-lime-ink);
           font-weight: 600;
           font-size: 1rem;
-          border: 0;
+          transition: background-color 150ms ease;
         }
-        .pf-c-button.pf-m-primary:hover { background: oklch(0.82 0.17 138); }
+        .pf-c-button.pf-m-primary:hover {
+          background: color-mix(in oklch, var(--n-lime) 88%, var(--n-green));
+          color: var(--n-lime-ink);
+        }
+        .pf-c-button.pf-m-primary:active { transform: translateY(1px); }
+        .pf-c-button.pf-m-primary:focus-visible { outline: 2px solid var(--n-ring); outline-offset: 3px; }
+        .pf-c-button.pf-m-primary:disabled,
+        .pf-c-button.pf-m-primary.pf-m-disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* 6. Links: the theme's underline, weight and hover green. */
+        a[data-ouia-component-id='recovery'],
+        .pf-c-login__main-footer-band-item a {
+          color: var(--n-ink);
+          font-size: 0.875rem;
+          font-weight: 500;
+          text-decoration-line: underline;
+          text-decoration-thickness: 1.5px;
+          text-underline-offset: 3px;
+          transition: color 150ms ease;
+        }
+        a[data-ouia-component-id='recovery']:hover,
+        .pf-c-login__main-footer-band-item a:hover { color: var(--n-green); }
+
+        /* 7. Alerts and errors in the world's shape: rounded, the theme's danger pair, no PatternFly top bar. */
+        .pf-c-alert.pf-m-inline {
+          border: 0;
+          border-radius: var(--n-radius);
+          background-color: var(--n-danger-bg);
+          color: var(--n-danger-fg);
+          box-shadow: none;
+          padding: 12px 16px;
+        }
+        .pf-c-alert.pf-m-inline::before { display: none; }
+        .pf-c-alert.pf-m-inline .pf-c-alert__title,
+        .pf-c-alert.pf-m-inline .pf-c-alert__icon { color: var(--n-danger-fg); }
+        .pf-c-form__helper-text.pf-m-error { color: var(--n-danger-fg); }
 
         /* "Powered by authentik" and the stock footer links. */
         .pf-c-login__footer { display: none; }
@@ -792,9 +896,10 @@ entries:
            a recovery link may open. Staff can't reset their own password; agents and customers reset at /reset. */
         a[href*="/if/flow/lifeplatform-set-password/"] { display: none; }
 
-        /* Variant A "Split leaf": photo on the left (the flow background), a full-height white panel on the right. */
+        /* 8. Variant A "Split leaf": the photo on the left (the flow background), the form panel on the right. */
         ak-flow-executor::part(main) {
-          background: #fff !important;
+          background: var(--n-paper) !important;
+          color: var(--n-ink);
           border-radius: 2.5rem 0 0 2.5rem !important;
           min-height: 100vh !important;
           margin: 0 !important;
@@ -805,10 +910,26 @@ entries:
           box-shadow: -24px 0 64px oklch(0.18 0.05 150 / 35%) !important;
         }
         ak-flow-executor::part(footer) { display: none !important; }
+        /* The language switcher sits on the photo: on a deep-green pill so its words keep their contrast on any sky.
+           (Its width is the dropdown's own, inside a shadow root these rules can't size.) Phones show no photo, so
+           there it stays plain on the page. */
+        @media (min-width: 761px) {
+          ak-flow-executor::part(locale-select) {
+            background-color: oklch(0.18 0.05 150 / 78%);
+            color: var(--n-on-deep);
+            border-radius: 999px;
+            padding: 4px 14px 4px 10px;
+            box-shadow: 0 2px 8px oklch(0.18 0.05 150 / 25%);
+          }
+        }
         @media (max-width: 760px) {
           ak-flow-executor::part(main) {
             border-radius: 2rem 2rem 0 0 !important;
             min-height: auto !important;
             margin-top: 28vh !important;
           }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { transition-duration: 0.01ms !important; }
+          .pf-c-button.pf-m-primary:active { transform: none; }
         }

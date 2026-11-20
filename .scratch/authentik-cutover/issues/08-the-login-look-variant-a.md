@@ -26,14 +26,14 @@ Spec: Part 1 "Branding". The decision is in ticket 09 of `.scratch/authentik-mig
 
 **Blocked by:** 01
 
-**Status:** ready-for-human (built 2026-11-20; waiting for the user to accept the photo and the screenshots)
+**Status:** resolved (2026-11-20, branch `authentik-cutover`)
 
 - [x] At desktop width the sign-in page matches the prototype's variant A screenshot, with the new wordmark-free photo
 - [x] At phone width the page shows the mark and the form, with no photo (accepted)
 - [x] The sign-in code page and the set-new-password page carry the same CSS
 - [x] The branding lives entirely in the production blueprint and image assets, with nothing configured by hand in Authentik's admin
-- [ ] The user has seen and accepted the screenshots
-- [ ] The sign-in page's recovery link reads "Forgot your password?" (found in ticket 07: Authentik's stock wording is "Forgot username or password?", but the username is the phone and isn't what's forgotten)
+- [x] The user has seen and accepted the screenshots, and approved the edited photo (2026-11-20)
+- [x] ~~The sign-in page's recovery link reads "Forgot your password?"~~ The user kept Authentik's "Forgot username or password?" as an accepted difference (2026-11-20): it can't be reworded without garbling what screen readers announce
 
 ## Comments
 
@@ -60,3 +60,19 @@ Found while building:
   - CSS hides that "Forgot password?" link, which only appears on Change password
   - checked: an anonymous and a signed-in direct visit are refused, a recovery link still opens the form, and the sign-in page's link remains
 - **The recovery link's wording can't be changed cleanly.** Authentik has no setting for "Forgot username or password?". CSS can draw other words, but screen readers then hear both phrases run together ("Forgot username or password?Forgot your password?"). That relabel was taken back out, and the wording is put to the user.
+
+**2026-11-20, the user's answers:** the edited photo is approved, the look is accepted, and Authentik's recovery wording is kept as an accepted difference.
+
+**2026-11-20, polished with the impeccable skill** (Operate mode; the source of truth is the Keycloak theme's `login.css` and its brief, `.impeccable/surfaces/…login-ftl.md`). There was one batched inspection: the markup, light and dark, desktop and phone, a wrong password, and keyboard focus. Every defect it showed was fixed in one pass, then a confirming round. Fixed:
+
+- **Dark mode was broken.** The labels vanished (Authentik's light text on the forced-white panel). Dark is now authored as the theme authored it: only the form panel inverts to the dark paper, the lime pill and its ink are held exactly, and the focus ring turns lime. This was a contrast failure, not a preference.
+- **The heading's voice:** Authentik's own size and weight modifiers beat the prototype's selector, so "Welcome back." rendered at 400. It now carries the theme's 600, -0.03em, balanced.
+- **The error:** PatternFly's square alert with a red top bar became the theme's rounded danger pair.
+- **The browser-drawn surfaces:** a lime selection (it was blue), the caret, the autofill ground, and a thin green scrollbar.
+- **The fields:** the brand green on hover, one ring at a 2px offset on focus, and the invalid border. The six-digit sign-in code field is spaced, tabular and centred, as the theme's was.
+- **The action:** a real one-pixel press, a focus ring that clears the pill, and a disabled state.
+- **The links:** the theme's underline (1.5px, offset 3px), weight 500, and hover green.
+- **The language switcher's contrast:** it sat as white words on a light sky. On wider screens it now sits on a deep-green pill; phones, with no photo, keep it plain. Its width is the dropdown's own, inside a shadow root CSS can't size.
+- **Reduced motion:** transitions and the press are dropped.
+
+The screenshots in [.scratch/authentik-cutover/look/](../look/) are refreshed, adding `7`–`10`: dark on desktop and phone, a wrong password, and keyboard focus.
