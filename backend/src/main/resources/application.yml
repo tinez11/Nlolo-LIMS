@@ -93,6 +93,9 @@ app:
     enabled: ${STAFF_SIGN_IN_CODE:false}
     # The bearer secret Authentik's SMS stage sends with each code; Authentik holds the same value.
     webhook-secret: ${SIGN_IN_CODE_WEBHOOK_SECRET:dev-only-sign-in-code-secret}
+  # "Your password was changed" (2026-11-06): the bearer secret Authentik's notification sends (2026-11-19).
+  password-changed:
+    webhook-secret: ${PASSWORD_CHANGED_WEBHOOK_SECRET:dev-only-password-changed-secret}
   # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
   # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
   access:

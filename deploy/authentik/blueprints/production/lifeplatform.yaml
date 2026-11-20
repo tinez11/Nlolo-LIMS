@@ -452,6 +452,163 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
         - !KeyOf mapping-claims
 
+  # ---- "Your password was changed" (ticket 06; the text since 2026-11-06). Authentik's password_set event fires for
+  # every password set: a person's own change, a forced change, a recovery -- and also an administrator's or the
+  # backend's set through the API, and a blueprint's. Only the first kind texts, as with Keycloak: the policy passes an
+  # event raised by the flow executor and nothing else (API and blueprint sets have another path, or none).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-own-password-change
+    identifiers: {name: lifeplatform-own-password-change}
+    attrs:
+      expression: |
+        event = request.context.get("event")
+        if event is None or event.action != "password_set":
+            return False
+        path = (event.context.get("http_request") or {}).get("path", "")
+        return path.startswith("/api/v3/flows/executor/")
+
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-password-changed-body
+    identifiers: {name: lifeplatform-password-changed-body}
+    attrs:
+      expression: |
+        event = notification.event
+        attributes = user.attributes or {}
+        return {
+            "eventId": str(event.pk),
+            "userId": str(user.uuid),
+            "tenantId": attributes.get("tenant_id"),
+            "partyId": attributes.get("party_id"),
+            "at": event.created.isoformat(),
+        }
+
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-password-changed-headers
+    identifiers: {name: lifeplatform-password-changed-headers}
+    attrs:
+      expression: !Format
+        - |
+          return {"Authorization": "Bearer %s"}
+        - !Env PASSWORD_CHANGED_WEBHOOK_SECRET
+
+  # Retried by Authentik up to five times on anything but a 2xx; the backend dedupes on the event id.
+  - model: authentik_events.notificationtransport
+    id: transport-password-changed
+    identifiers: {name: lifeplatform-password-changed}
+    attrs:
+      mode: webhook
+      webhook_url: !Format ["%s/internal/password-changed", !Env [LP_BACKEND_URL, "http://host.docker.internal:8080"]]
+      webhook_mapping_body: !KeyOf mapping-password-changed-body
+      webhook_mapping_headers: !KeyOf mapping-password-changed-headers
+      send_once: false
+
+  - model: authentik_events.notificationrule
+    id: rule-password-changed
+    identifiers: {name: lifeplatform-password-changed}
+    attrs:
+      transports: [!KeyOf transport-password-changed]
+      destination_event_user: true
+      severity: notice
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf rule-password-changed, policy: !KeyOf policy-own-password-change, order: 0}
+
+  # ---- The console's Change password (ticket 06; Keycloak's update-password action until now): the current password,
+  # then a new one twice under the same rules as a forced change, saved, then back to the console page it came from.
+  # The console opens /if/flow/lifeplatform-change-password/?return_to=<path>. Authentik only follows a relative
+  # `next`, so the last step is a redirect stage, and its policy builds the address: the console's own origin plus that
+  # path -- never anywhere else.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-return-to-console
+    identifiers: {name: lifeplatform-return-to-console}
+    attrs:
+      expression: !Format
+        - |
+          query = request.http_request.GET.get("query", "") if request.http_request else ""
+          path = "/"
+          for pair in query.split("&"):
+              if pair.startswith("return_to="):
+                  path = pair[len("return_to="):]
+          # A console page's path only: letters, digits and / - _ . -- never another site, never encoded tricks.
+          if not regex_match(path, r"^/(?!/)[A-Za-z0-9/_.-]*$"):
+              path = "/"
+          request.context["flow_plan"].context["redirect_stage_target"] = "%s" + path
+          return True
+        - !Env [LP_APP_ORIGIN, "http://localhost:5173"]
+
+  # Keycloak signed the person's other devices out when they changed their password (its default); Authentik doesn't.
+  # Once the new password is saved, this ends every other sign-in session and refresh token of theirs, keeping the one
+  # they are using.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-sign-out-other-devices
+    identifiers: {name: lifeplatform-sign-out-other-devices}
+    attrs:
+      expression: |
+        from authentik.core.models import AuthenticatedSession
+        from authentik.providers.oauth2.models import RefreshToken
+        user = request.context.get("pending_user")
+        session = request.http_request.session if request.http_request else None
+        if user is None or session is None or not session.session_key:
+            return True
+        current = session.session_key
+        RefreshToken.objects.filter(user=user).exclude(session__session__session_key=current).delete()
+        AuthenticatedSession.objects.filter(user=user).exclude(session__session_key=current).delete()
+        return True
+
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-back-to-console
+    identifiers: {name: lifeplatform-back-to-console}
+    attrs:
+      mode: static
+      target_static: !Format ["%s/", !Env [LP_APP_ORIGIN, "http://localhost:5173"]]
+      keep_context: false
+
+  - model: authentik_flows.flow
+    id: flow-change-password
+    identifiers: {slug: lifeplatform-change-password}
+    attrs:
+      name: Nlolo Life change password
+      title: Change your password
+      designation: stage_configuration
+      authentication: require_authenticated
+
+  # A flow started by a signed-in person has no pending user, and the password stage then fails ("Unknown error",
+  # found 2026-11-19): this policy makes the signed-in person the pending user before the current password is asked.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-signed-in-person
+    identifiers: {name: lifeplatform-signed-in-person-is-pending}
+    attrs:
+      expression: |
+        user = request.http_request.user if request.http_request else None
+        if user is None or not user.is_authenticated:
+            return False
+        request.context["flow_plan"].context["pending_user"] = user
+        return True
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-current-password
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-password, order: 10}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-current-password, policy: !KeyOf policy-signed-in-person, order: 0}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-choose-password, order: 20}
+  - model: authentik_flows.flowstagebinding
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-save-password, order: 30}
+  - model: authentik_flows.flowstagebinding
+    id: binding-back-to-console
+    identifiers: {target: !KeyOf flow-change-password, stage: !KeyOf stage-back-to-console, order: 40}
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+      # Both policies run: sign the other devices out, and set where to come back to.
+      policy_engine_mode: all
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-back-to-console, policy: !KeyOf policy-sign-out-other-devices, order: 0}
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf binding-back-to-console, policy: !KeyOf policy-return-to-console, order: 1}
+
   - model: authentik_core.application
     id: application
     identifiers: {slug: lifeplatform}

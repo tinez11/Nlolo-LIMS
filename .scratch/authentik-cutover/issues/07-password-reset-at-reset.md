@@ -24,3 +24,4 @@ Spec: Part 2 "Password reset", Part 3 `/reset`, Part 1 "Recovery". The decisions
 - [ ] Five wrong codes spend the code; the hourly cap shows "Too many codes for this number. Try again in an hour."
 - [ ] The recovery link never appears in a text and expires after 15 minutes
 - [ ] The page refuses a request without a valid Turnstile token and visit token
+- [ ] Completing a reset sends the "your password was changed" text once (moved here from ticket 06, whose notification rule texts any password set through the flow executor)

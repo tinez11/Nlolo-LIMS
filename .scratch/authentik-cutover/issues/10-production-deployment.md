@@ -23,6 +23,7 @@
   - `LP_BACKEND_URL`, the backend's address on the internal Docker network, e.g. `http://app:8080`. The dev default, `host.docker.internal`, is wrong there.
 
   Both `/internal/staff-sign-in-code/sms` and `/internal/staff-sign-in-code/check` stay behind Caddy's `/api/internal/*` block. Authentik reaches them directly on the internal network.
+- **`PASSWORD_CHANGED_WEBHOOK_SECRET`** (found in ticket 06), the same on the backend and on the Authentik worker, which sends the notification. `/internal/password-changed` stays behind Caddy's internal block.
 - **`LP_APP_ORIGIN`** must be set on the server and worker: it builds both the sign-in return address and the sign-out return address in the blueprint.
 - **The backend's settings:** `AUTHENTIK_ISSUER` and `AUTHENTIK_AUDIENCE` replace `KEYCLOAK_ISSUER`. The backend currently falls back to the localhost issuer if they aren't set, so the server compose must set them, and `ProductionSettingsGuard` must refuse the localhost default.
 

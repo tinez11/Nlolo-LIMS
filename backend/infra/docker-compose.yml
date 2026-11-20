@@ -114,6 +114,8 @@ services:
       STAFF_SIGN_IN_CODE: ${STAFF_SIGN_IN_CODE:-false}
       LP_BACKEND_URL: ${LP_BACKEND_URL:-http://host.docker.internal:8080}
       SIGN_IN_CODE_WEBHOOK_SECRET: ${SIGN_IN_CODE_WEBHOOK_SECRET:-dev-only-sign-in-code-secret}
+      # "Your password was changed" (ticket 06): the bearer secret the notification sends, which the backend checks.
+      PASSWORD_CHANGED_WEBHOOK_SECRET: ${PASSWORD_CHANGED_WEBHOOK_SECRET:-dev-only-password-changed-secret}
     ports:
       - "9100:9000"
     # Mounted on the server too, not only the worker: the admin API's "apply" runs here, and without the files it
