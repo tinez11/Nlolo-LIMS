@@ -139,6 +139,8 @@ entries:
       name: Nlolo Life sign-in
       title: Welcome back.
       designation: authentication
+      # The look (ticket 08, variant A "Split leaf"): the brand photo on the left, the form on a white panel right.
+      layout: content_right
 
   - model: authentik_flows.flowstagebinding
     identifiers: {target: !KeyOf flow-sign-in, stage: !KeyOf stage-identification, order: 10}
@@ -593,6 +595,7 @@ entries:
       title: Change your password
       designation: stage_configuration
       authentication: require_authenticated
+      layout: content_right
 
   # A flow started by a signed-in person has no pending user, and the password stage then fails ("Unknown error",
   # found 2026-11-19): this policy makes the signed-in person the pending user before the current password is asked.
@@ -680,6 +683,22 @@ entries:
       title: Choose a new password
       designation: recovery
       authentication: none
+      layout: content_right
+
+  # Only from a recovery link (found in ticket 08): opened directly -- for example from the password stage's own
+  # "Forgot password?" -- the flow would let a signed-in session set a new password without the current one. The API
+  # plans a recovery link with the person as the pending user; a direct visit has none.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-from-recovery-link
+    identifiers: {name: lifeplatform-only-from-a-recovery-link}
+    attrs:
+      expression: |
+        if request.context.get("pending_user") is None:
+            ak_message("This link is invalid or has expired. Ask for a new code on the reset page.")
+            return False
+        return True
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf flow-set-password, policy: !KeyOf policy-from-recovery-link, order: 0}
 
   - model: authentik_flows.flowstagebinding
     identifiers: {target: !KeyOf flow-set-password, stage: !KeyOf stage-choose-password, order: 10}
@@ -690,9 +709,106 @@ entries:
 
   # ---- The default brand signs people in through the flow above, and its recovery links (from the API) open the
   # set-a-new-password flow.
+  # The look (ticket 08; variant A "Split leaf", chosen by the user in the prototype): the wordmark-free brand photo
+  # behind every flow, the 48px N-leaf mark above the form, our favicon, and the CSS below. The files are in
+  # deploy/authentik/branding, served from Authentik's media as lifeplatform/<file>.
+  # Accepted differences from the Keycloak page: no photo on phones; the panel isn't flush right or full height; bold
+  # labels and required stars; the system font; Authentik's language switcher; no "Accounts are issued by your
+  # administrator" line.
   - model: authentik_brands.brand
     identifiers: {domain: authentik-default}
     attrs:
       branding_title: Nlolo Life
+      branding_logo: lifeplatform/mark.svg
+      branding_favicon: lifeplatform/favicon.svg
+      branding_default_flow_background: lifeplatform/brand.jpg
       flow_authentication: !KeyOf flow-sign-in
       flow_recovery: !KeyOf flow-set-password
+      # Injected into every component's shadow root. Today's login tokens (the Keycloak theme's login.css) mapped onto
+      # Authentik's PatternFly variables, then variant A's panel.
+      branding_custom_css: |
+        :root, :host {
+          --n-green: oklch(0.6 0.19 145);
+          --n-green-deep: oklch(0.24 0.065 150);
+          --n-lime: oklch(0.86 0.16 138);
+          --n-lime-ink: oklch(0.24 0.07 150);
+          --n-ink: oklch(0.2 0.012 150);
+          --n-field-rule: oklch(0.32 0.02 150);
+          --n-ring: oklch(0.4 0.13 148);
+          --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+          --pf-global--primary-color--100: var(--n-green);
+          --pf-global--primary-color--200: var(--n-green-deep);
+          --pf-global--link--Color: var(--n-ink);
+          --pf-global--link--Color--hover: var(--n-green-deep);
+          --pf-global--FontFamily--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--heading--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--redhatfont--sans-serif: var(--n-sans);
+          --pf-global--FontFamily--redhatfont--heading--sans-serif: var(--n-sans);
+        }
+
+        h1.pf-c-title {
+          font-family: var(--n-sans);
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          color: var(--n-ink);
+          text-align: center;
+          font-size: 1.75rem;
+        }
+
+        .pf-c-form__label { font-weight: 400; color: var(--n-ink); }
+        .pf-c-form__label-required { display: none; }
+
+        .pf-c-form-control {
+          min-height: 48px;
+          border: 1px solid var(--n-field-rule);
+          border-radius: 0.75rem;
+          padding-inline: 14px;
+          background: #fff;
+        }
+        .pf-c-form-control:focus,
+        .pf-c-form-control:focus-visible {
+          outline: 2px solid var(--n-ring);
+          outline-offset: 1px;
+          border-color: var(--n-ring);
+        }
+        .pf-c-form-control::placeholder { color: transparent; }
+
+        .pf-c-button.pf-m-primary {
+          min-height: 48px;
+          border-radius: 999px;
+          background: var(--n-lime);
+          color: var(--n-lime-ink);
+          font-weight: 600;
+          font-size: 1rem;
+          border: 0;
+        }
+        .pf-c-button.pf-m-primary:hover { background: oklch(0.82 0.17 138); }
+
+        /* "Powered by authentik" and the stock footer links. */
+        .pf-c-login__footer { display: none; }
+
+        /* The password stage's own "Forgot password?" (on Change password) opens the set-new-password flow, which only
+           a recovery link may open. Staff can't reset their own password; agents and customers reset at /reset. */
+        a[href*="/if/flow/lifeplatform-set-password/"] { display: none; }
+
+        /* Variant A "Split leaf": photo on the left (the flow background), a full-height white panel on the right. */
+        ak-flow-executor::part(main) {
+          background: #fff !important;
+          border-radius: 2.5rem 0 0 2.5rem !important;
+          min-height: 100vh !important;
+          margin: 0 !important;
+          display: flex !important;
+          flex-direction: column;
+          justify-content: center;
+          padding-inline: clamp(1.5rem, 4vw, 4rem) !important;
+          box-shadow: -24px 0 64px oklch(0.18 0.05 150 / 35%) !important;
+        }
+        ak-flow-executor::part(footer) { display: none !important; }
+        @media (max-width: 760px) {
+          ak-flow-executor::part(main) {
+            border-radius: 2rem 2rem 0 0 !important;
+            min-height: auto !important;
+            margin-top: 28vh !important;
+          }
+        }

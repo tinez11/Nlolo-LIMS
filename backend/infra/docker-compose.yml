@@ -124,6 +124,9 @@ services:
     volumes:
       - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
       - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+      # The sign-in pages' photo, mark and favicon (ticket 08): Authentik serves media from /media/public, and the
+      # brand names these files lifeplatform/<file>. The -auth image bakes the same folder in.
+      - ../../deploy/authentik/branding:/media/public/lifeplatform:ro
     mem_limit: 1g
     depends_on:
       postgres:
@@ -136,6 +139,7 @@ services:
     volumes:
       - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
       - ../../deploy/authentik/blueprints/dev:/blueprints/lifeplatform-dev:ro
+      - ../../deploy/authentik/branding:/media/public/lifeplatform:ro
     mem_limit: 512m
     depends_on:
       postgres:

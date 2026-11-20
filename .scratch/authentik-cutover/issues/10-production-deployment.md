@@ -46,3 +46,5 @@ Spec: Part 5. The decision is in ticket 15 of `.scratch/authentik-migration/`.
 - [ ] The admin UI answers 404 through Caddy, and the sign-in page still works
 - [ ] The production guard refuses each dev default and each bad setting it names
 - [ ] The guide's new sections were followed literally in the dry run
+
+**Added 2026-11-20 (ticket 08):** the `-auth` image bakes `deploy/authentik/branding/` in at `/media/public/lifeplatform/`, where the brand finds `lifeplatform/brand.jpg`, `mark.svg` and `favicon.svg`. A media volume mounted over `/media` in production would hide them: mount it elsewhere, or copy the files into it at first boot.
