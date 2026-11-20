@@ -23,20 +23,12 @@
 set -euo pipefail
 
 API="${API:-http://localhost:8080}"
-KEYCLOAK="${KEYCLOAK:-http://localhost:8081}"
 PSQL=(docker compose -f infra/docker-compose.yml exec -T postgres psql -U postgres -d lifeplatform -tAc)
 
-AGENTS_SECRET=$(source scripts/seed-lib.sh; realm_secret agents)
-
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
+source scripts/seed-lib.sh   # token_for: a real Authentik token for a dev test user (ticket 09 of .scratch/authentik-cutover)
 
 echo "=== Step 1: agent token and agent id ==="
-AGENT_TOKEN=$(token_for agents agent.senior "$AGENTS_SECRET")
+AGENT_TOKEN=$(token_for agent.senior)
 [ -n "$AGENT_TOKEN" ] || { echo "could not mint an agents token -- is the stack up and seeded?" >&2; exit 1; }
 
 # /agents/me is the only way an agent discovers its own agentId: the token carries party_id,

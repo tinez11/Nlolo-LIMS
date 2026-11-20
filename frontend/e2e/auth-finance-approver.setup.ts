@@ -1,30 +1,17 @@
-import { expect, test as setup } from '@playwright/test';
+import { test as setup } from '@playwright/test';
+import { signIn } from './signIn';
 
 /**
  * Signs in as the finance approver (IFRS 17 I4): FINANCE_OFFICER and FINANCE_APPROVER, the only role that approves
  * or rejects a manual journal -- and never one it prepared, which is why it is a second, separate identity from
- * staff.finance. Seeded by keycloak/lifeplatform-realm.json.
+ * staff.finance. Seeded by deploy/authentik/blueprints/dev/dev-users.yaml.
  */
 const FINANCE_USER = 'staff.finance-approver';
-const FINANCE_PASSWORD = 'devpassword';
 
 setup(`authenticate as ${FINANCE_USER}`, async ({ page }) => {
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
-  await page.goto('/staff');
-
-  await page.waitForURL(/\/realms\/lifeplatform\/protocol\/openid-connect\/auth/, {
-    timeout: 30_000,
-    // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
-    waitUntil: 'domcontentloaded',
+  await signIn(page, {
+    console: '/staff',
+    username: FINANCE_USER,
+    state: 'e2e/.auth/staff-finance-approver.json',
   });
-
-  await page.locator('#username').fill(FINANCE_USER);
-  await page.locator('#password').fill(FINANCE_PASSWORD);
-  await page.locator('#kc-login').click();
-
-  await page.waitForURL(/localhost:5173\/staff/, { timeout: 30_000 });
-  // Every staff role lands on the Dashboard (2026-10-14); it replaced Today, which replaced the module landings (review C5).
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
-
-  await page.context().storageState({ path: 'e2e/.auth/staff-finance-approver.json' });
 });

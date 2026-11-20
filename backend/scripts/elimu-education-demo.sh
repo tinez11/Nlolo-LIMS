@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ELIMU -- the five-year education plan, set up from the printed rate card and sold to one client.
 #
-# Authored 2026-10-15. Real REST API, real Keycloak token, the way seed-dev-data.sh works.
+# Authored 2026-10-15. Real REST API, real Authentik token, the way seed-dev-data.sh works.
 #
 # THE RATE CARD, as printed ("Muda wa Mkataba wa Bima: MIAKA MITANO"):
 #
@@ -36,12 +36,11 @@
 # If the business needs all six exact, the card has to become six priced options rather than a
 # rate -- say so and it is a different setup, not a tweak to this one.
 #
-# Run it with the dev stack up (infra, backend on 8080, Keycloak on 8081):
+# Run it with the dev stack up (infra, backend on 8080, Authentik on 9100):
 #   ./scripts/elimu-education-demo.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 
 # The client: an existing, KYC-verified party. MALE, born 1990-02-01, so 36 at entry.
@@ -58,12 +57,6 @@ uuid() {
   fi
 }
 
-token_for() {
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
 
 api() {
   local token="$1" method="$2" path="$3" body="${4:-}"
@@ -77,11 +70,11 @@ api() {
 
 jsonval() { grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 
-STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
-STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
-STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
-STAFF_SENIOR_TOKEN=$(token_for staff staff.senior "$STAFF_SECRET")
-STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
+source scripts/seed-lib.sh   # token_for: a real Authentik token for a dev test user (ticket 09 of .scratch/authentik-cutover)
+STAFF_ADMIN_TOKEN=$(token_for staff.admin)
+STAFF_FINANCE_TOKEN=$(token_for staff.finance)
+STAFF_SENIOR_TOKEN=$(token_for staff.senior)
+STAFF_UNDERWRITER_TOKEN=$(token_for staff.underwriter)
 [ -n "$STAFF_ADMIN_TOKEN" ] || { echo "Could not get a staff.admin token" >&2; exit 1; }
 
 SUFFIX=$(date +%H%M%S)

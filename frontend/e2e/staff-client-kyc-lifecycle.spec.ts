@@ -1,40 +1,14 @@
-import { test, expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { test, expect, request as apiRequest } from '@playwright/test';
+import { apiToken } from './signIn';
 
 /**
  * The three builds, against the running stack, as a real agent and a real staff member.
  *
- * Real Keycloak tokens from the real realm -- a fabricated JWT would prove the code path and
+ * Real Authentik tokens -- a fabricated JWT would prove the code path and
  * not the credential path, and this platform has been bitten by exactly that twice.
  */
 
 const API = 'http://localhost:8080';
-const KEYCLOAK = 'http://localhost:8081';
-const PASSWORD = 'devpassword';
-
-function clientSecret(): string {
-  const realm = JSON.parse(readFileSync(resolve('../backend/keycloak/lifeplatform-realm.json'), 'utf8')) as {
-    clients?: { clientId?: string; secret?: string }[];
-  };
-  const secret = realm.clients?.find((c) => c.clientId === 'lifeplatform-app')?.secret;
-  if (!secret) throw new Error('no secret in lifeplatform-realm.json');
-  return secret;
-}
-
-async function token(http: APIRequestContext, username: string) {
-  const res = await http.post(`${KEYCLOAK}/realms/lifeplatform/protocol/openid-connect/token`, {
-    form: {
-      grant_type: 'password',
-      client_id: 'lifeplatform-app',
-      client_secret: clientSecret(),
-      username,
-      password: PASSWORD,
-    },
-  });
-  expect(res.ok(), `token for ${username} -> ${res.status()} ${await res.text()}`).toBeTruthy();
-  return (await res.json()).access_token as string;
-}
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -45,8 +19,8 @@ test('client reference, required fields, and who may file or verify KYC', async 
   const http = await apiRequest.newContext();
   const stamp = Date.now().toString().slice(-6);
   try {
-    const agent = await token(http, 'agent.senior');
-    const staff = await token(http, 'staff.admin');
+    const agent = await apiToken(http, 'agent.senior');
+    const staff = await apiToken(http, 'staff.admin');
 
     // ---- 1. an agent registers a full client, carrying their own reference ----
     const reference = `CLT-${stamp}`;

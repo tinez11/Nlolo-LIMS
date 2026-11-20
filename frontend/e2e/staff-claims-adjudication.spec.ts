@@ -7,7 +7,7 @@ import { fillPolicyNumberManually } from './guards';
  * Claims adjudication e2e coverage against the real backend.
  *
  * `CLAIMS_ASSESSOR` and `CLAIMS_MANAGER` are separate, single-role seeded staff
- * users (`backend/keycloak/lifeplatform-realm.json`) -- `staff.underwriter`, this
+ * users (`deploy/authentik/blueprints/dev/dev-users.yaml`) -- `staff.underwriter`, this
  * project's default identity, carries neither. So this file is the one place on
  * this console that logs in as more than one real identity within a single
  * test, via `browser.newContext({ storageState })` for the two extra

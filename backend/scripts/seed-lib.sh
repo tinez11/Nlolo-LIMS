@@ -1,5 +1,10 @@
-# Shared by the seed scripts (seed-dev-data.sh, seed-money-cases.sh, books-match.sh): sourced, never run. Each script
-# sets KEYCLOAK and API before calling these. Moved out of seed-dev-data.sh unchanged (money movement step 7).
+# Shared by the seed scripts (seed-dev-data.sh, seed-money-cases.sh, books-match.sh and the demo scripts): sourced,
+# never run. Each script sets API before calling these; AUTHENTIK defaults to the dev stack's. Moved out of
+# seed-dev-data.sh (money movement step 7); from Keycloak to Authentik in ticket 09 of .scratch/authentik-cutover.
+
+AUTHENTIK="${AUTHENTIK_URL:-http://localhost:9100}"
+# The dev stack's bootstrap token (backend/infra/docker-compose.yml), an Authentik administrator. Only set_party_id uses it.
+AUTHENTIK_ADMIN_TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-dev-only-authentik-bootstrap-token}"
 
 uuid() {
   # macOS/Linux both have python3 or /proc/sys/kernel/random/uuid; Git-Bash on Windows has
@@ -13,11 +18,17 @@ uuid() {
   fi
 }
 
-token_for() {   # token_for <workspace, unused since 2026-11-06: one realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
+token_for() {   # token_for <username>  -- a real access token for a dev test user
+  # Authentik's password grant takes an app-password token, not the login's password. The dev blueprint
+  # (deploy/authentik/blueprints/dev/dev-users.yaml) gives each test user one, keyed dev-app-password-<username>, and
+  # allows the grant on the console's client in dev only. Fails loudly: an empty token would turn every later call
+  # into a 401 that looks like the API's fault.
+  local body
+  body=$(curl -sf -X POST "$AUTHENTIK/application/o/token/" \
+    -d grant_type=password -d client_id=lifeplatform-spa -d username="$1" -d password="dev-app-password-$1" \
+    --data-urlencode "scope=openid profile lifeplatform") \
+    || { echo "Authentik refused a token for $1 (is the dev blueprint applied?)" >&2; return 1; }
+  sed 's/.*"access_token": *"\([^"]*\)".*/\1/' <<<"$body"
 }
 
 api() {         # api <token> <method> <path> [json-body]
@@ -37,13 +48,22 @@ jsonval() {     # jsonval <json> <field>  -- crude, dependency-free single-level
   grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'
 }
 
-realm_secret() {   # realm_secret <anything> -- lifeplatform-app's secret, the client token_for uses
-  # One realm since 2026-11-06, so the argument no longer matters; kept so the call sites need no edit. By client id,
-  # not "the first secret in the file": the first-match version once handed every agent token the wrong secret.
+set_party_id() {   # set_party_id <username> <partyId>  -- the login's party_id, which its tokens then carry
+  # Authentik replaces a user's attributes whole on PATCH, so this reads them, adds party_id, and writes them all back.
+  local user
+  user=$(curl -sf "$AUTHENTIK/api/v3/core/users/?username=$1" -H "Authorization: Bearer $AUTHENTIK_ADMIN_TOKEN") \
+    || { echo "Authentik refused the user lookup for $1" >&2; return 1; }
   node -e '
-    const realm = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-    const app = (realm.clients || []).find((c) => c.clientId === "lifeplatform-app");
-    if (!app || !app.secret) { console.error("no lifeplatform-app secret in " + process.argv[1]); process.exit(1); }
-    process.stdout.write(app.secret);
-  ' "keycloak/lifeplatform-realm.json"
+    const [username, partyId, base, token] = process.argv.slice(1);
+    const user = JSON.parse(require("fs").readFileSync(0, "utf8")).results.find((u) => u.username === username);
+    if (!user) { console.error("Authentik has no user " + username); process.exit(1); }
+    fetch(base + "/api/v3/core/users/" + user.pk + "/", {
+      method: "PATCH",
+      headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+      body: JSON.stringify({ attributes: { ...user.attributes, party_id: partyId } }),
+    }).then(async (r) => {
+      if (!r.ok) { console.error("PATCH " + username + " -> " + r.status + " " + (await r.text())); process.exit(1); }
+    });
+  ' "$1" "$2" "$AUTHENTIK" "$AUTHENTIK_ADMIN_TOKEN" <<<"$user" || return 1
+  echo "wrote party_id=$2 onto $1"
 }

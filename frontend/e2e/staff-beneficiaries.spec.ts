@@ -6,7 +6,7 @@ import { issueRealPolicy } from './policies';
 test.use({ storageState: 'e2e/.auth/staff-admin.json' });
 
 /**
- * The first mutation's e2e coverage: real Keycloak session, real PUT against the
+ * The first mutation's e2e coverage: real Authentik session, real PUT against the
  * real backend, real Postgres row change -- confirmed by reloading the page after
  * a save and re-reading the persisted result, not just trusting the in-memory
  * store update.

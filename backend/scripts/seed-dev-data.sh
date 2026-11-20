@@ -6,30 +6,27 @@
 # cession, GL journal entries and four reporting projections. Inserting a policy row directly
 # produces none of that, and the resulting "policy with no invoices" looks like a frontend bug.
 #
-# It is also the only artefact on this platform that proves a REAL Keycloak-issued token works
+# It is also the only artefact on this platform that proves a REAL Authentik-issued token works
 # against real endpoints -- every test fabricates its own JWT, so a broken claim mapper is
 # invisible to the whole suite. If this script 403s at its first call, the mappers are wrong.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 DEV_TENANT="11111111-1111-1111-1111-111111111111"
 
-source scripts/seed-lib.sh   # uuid, token_for, api, jsonval (money movement step 7: shared with the money-case scripts)
+# uuid, token_for, api, jsonval, set_party_id (money movement step 7: shared with the money-case scripts). Tokens come
+# from Authentik since ticket 09 of .scratch/authentik-cutover, with each dev test user's app password.
+source scripts/seed-lib.sh
 
-STAFF_SECRET=$(realm_secret staff)
-CUSTOMERS_SECRET=$(realm_secret customers)
-AGENTS_SECRET=$(realm_secret agents)
-
-STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
+STAFF_FINANCE_TOKEN=$(token_for staff.finance)
 # Minted early, deliberately: party_id is NOT required to CALL /parties/individuals (only to
 # later scope reads of the resulting party), so an agents-realm token obtained before Task 8's
 # party_id write-back is already fully usable here. party.infrastructure.PartyController gates
 # POST /parties/individuals on `hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS')` -- NOT
 # REALM_STAFF -- discovered empirically (a real 403) rather than by re-reading the brief, which
 # assumed staff.finance could do this.
-AGENT_SENIOR_TOKEN=$(token_for agents agent.senior "$AGENTS_SECRET")
+AGENT_SENIOR_TOKEN=$(token_for agent.senior)
 
 # Product AUTHORING is ADMIN-only and staff.finance cannot do it. ProductController gates both
 # createProduct and publishVersion on `hasRole('REALM_STAFF') and hasRole('ADMIN')`, and
@@ -41,7 +38,7 @@ AGENT_SENIOR_TOKEN=$(token_for agents agent.senior "$AGENTS_SECRET")
 # ever ran Step 1 against the tightened gate again. The e2e suite hit the same wall and fixed it
 # separately ("mint product fixtures as admin, since only admin may author one") -- this script was
 # missed, because nothing re-runs it.
-STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
+STAFF_ADMIN_TOKEN=$(token_for staff.admin)
 
 # Not idempotent on purpose: re-running would create a second set of parties and policies, and
 # silently doubling seed data is worse than refusing. Detect and refuse.
@@ -480,7 +477,7 @@ echo "juniorAgentPartyId=$JUNIOR_AGENT_PARTY_ID"
 echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.service) ==="
 # Customer service verifies KYC (clients.kyc): a finance officer only reads clients. The old dev database had
 # granted staff.finance more, which hid this until the 2026-11-05 reset.
-STAFF_SERVICE_TOKEN=$(token_for staff staff.service "$STAFF_SECRET")
+STAFF_SERVICE_TOKEN=$(token_for staff.service)
 # Discovered empirically (a real 422), not in the brief: DistributionApiImpl.onboardAgent
 # requires the party's KYC status to already be VERIFIED ("Party ... has KYC status PENDING;
 # an agent must be VERIFIED to onboard") -- every freshly-registered party starts PENDING, so
@@ -515,61 +512,26 @@ JUNIOR_AGENT_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/agents" \
 JUNIOR_AGENT_ID=$(jsonval "$JUNIOR_AGENT_JSON" agentId)
 echo "juniorAgentId=$JUNIOR_AGENT_ID"
 
-echo "=== Step 4: Write party_id back into Keycloak (closes Task 8's open loop) ==="
-ADMIN_TOKEN=$(curl -sf -X POST "$KEYCLOAK/realms/master/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id=admin-cli -d username=admin -d password=devadmin \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
-
-write_party_id() {   # write_party_id <workspace, unused since 2026-11-06> <username> <partyId>
-  local realm=lifeplatform username="$2" partyId="$3"
-  local user_id user_json
-  user_json=$(curl -sf "$KEYCLOAK/admin/realms/$realm/users?username=$username&exact=true" \
-    -H "Authorization: Bearer $ADMIN_TOKEN")
-  # The search endpoint returns a JSON ARRAY ([{...}]); the PUT endpoint below needs the single
-  # OBJECT inside it, not the array -- stripping the outer brackets is safe because &exact=true
-  # guarantees exactly one element.
-  user_json="${user_json#\[}"
-  user_json="${user_json%\]}"
-  user_id=$(jsonval "$user_json" id)
-  # Discovered empirically, not in the brief: a PUT carrying ONLY {"attributes": {...}} silently
-  # nulls out every OTHER UserRepresentation field the JSON body omits (email, firstName,
-  # lastName all vanished from a follow-up GET) -- and a user missing those fields then fails
-  # the password grant entirely with "invalid_grant: Account is not fully set up" (Keycloak's
-  # declarative User Profile validation kicking in at authentication time), even though
-  # `enabled`/`emailVerified`/`requiredActions` all still read as healthy. Fixed by GET-modify-
-  # PUT on the FULL representation -- splicing the new attributes object into the JSON Keycloak
-  # itself just returned -- rather than constructing a minimal body from scratch. attributes is a
-  # flat map of string arrays (no nested braces), so a bounded `{[^}]*}` replacement is safe.
-  local new_attrs="\"attributes\":{\"tenant_id\":[\"$DEV_TENANT\"],\"party_id\":[\"$partyId\"]}"
-  local updated_json
-  if echo "$user_json" | grep -q '"attributes"'; then
-    updated_json=$(echo "$user_json" | sed -E "s/\"attributes\":\{[^}]*\}/${new_attrs//\//\\/}/")
-  else
-    updated_json=$(echo "$user_json" | sed -E "s/^\{/{${new_attrs//\//\\/},/")
-  fi
-  curl -sf -X PUT "$KEYCLOAK/admin/realms/$realm/users/$user_id" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-    -d "$updated_json"
-  echo "wrote party_id=$partyId onto $realm/$username (userId=$user_id)"
-}
-
-write_party_id customers customer.owner "$OWNER_PARTY_ID"
-write_party_id customers customer.other "$OTHER_PARTY_ID"
-write_party_id agents agent.senior "$SENIOR_AGENT_PARTY_ID"
-write_party_id agents agent.junior "$JUNIOR_AGENT_PARTY_ID"
+echo "=== Step 4: Write party_id onto the Authentik logins (closes Task 8's open loop) ==="
+# Agents and customers sign in as the person their party_id names. The dev blueprint makes these logins without one,
+# because the parties only exist from Step 2 on. (Its users are `state: created`, so a re-apply leaves this alone.)
+set_party_id customer.owner "$OWNER_PARTY_ID"
+set_party_id customer.other "$OTHER_PARTY_ID"
+set_party_id agent.senior "$SENIOR_AGENT_PARTY_ID"
+set_party_id agent.junior "$JUNIOR_AGENT_PARTY_ID"
 
 # AGENT_SENIOR_TOKEN was minted before party_id existed at all (see its mint site above) and is
 # reused as-is below purely for its REALM_AGENTS role -- none of its remaining uses need the
 # party_id claim. CUSTOMER_OWNER_TOKEN, by contrast, genuinely needs the claim written just above
 # (claims/loans enforce customer-owns-this-resource against it), so it MUST be minted fresh here,
 # after the write-back, not reused from any earlier point.
-CUSTOMER_OWNER_TOKEN=$(token_for customers customer.owner "$CUSTOMERS_SECRET")
+CUSTOMER_OWNER_TOKEN=$(token_for customer.owner)
 
 echo "=== Step 5: Underwriting -> auto-issue ==="
-STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
+STAFF_UNDERWRITER_TOKEN=$(token_for staff.underwriter)
 # Separation of duties: whoever assesses a case may not decide it. staff.senior writes the
 # evidence so that staff.underwriter can record the ordinary, in-line decision below.
-STAFF_SENIOR_TOKEN=$(token_for staff staff.senior "$STAFF_SECRET")
+STAFF_SENIOR_TOKEN=$(token_for staff.senior)
 
 # Sum assured 1,500,000 TZS. It resolves to NO sum assured band at all, and that is now a
 # deliberate neutral rather than an accident: the seeded SUM_ASSURED_BAND row above carries the
@@ -679,7 +641,7 @@ echo "invoiceId=$INVOICE_ID"
 
 # A second finance person confirms money before it counts (2026-10-27): a mobile-money request the rail accepts waits
 # for them exactly as a typed deposit does. Every confirmation below is staff.finance-approver's, never the recorder's.
-STAFF_APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+STAFF_APPROVER_TOKEN=$(token_for staff.finance-approver)
 # The demo share issue recorded above, approved by the second person (2026-11-14, shareholders register).
 api "$STAFF_APPROVER_TOKEN" POST "/finance/share-register/issues/$(jsonval "$DEMO_ISSUE_JSON" issueId)/approval" >/dev/null
 
@@ -736,8 +698,8 @@ EVIDENCE_JSON=$(curl -sf -X POST "$API/claims/$CLAIM_ID/evidence" \
 DOCUMENT_REF=$(jsonval "$EVIDENCE_JSON" documentRef)
 echo "documentRef=$DOCUMENT_REF"
 
-STAFF_ASSESSOR_TOKEN=$(token_for staff staff.assessor "$STAFF_SECRET")
-STAFF_MANAGER_TOKEN=$(token_for staff staff.manager "$STAFF_SECRET")
+STAFF_ASSESSOR_TOKEN=$(token_for staff.assessor)
+STAFF_MANAGER_TOKEN=$(token_for staff.manager)
 
 ASSESSMENT2_JSON=$(api "$STAFF_ASSESSOR_TOKEN" POST "/claims/$CLAIM_ID/assessments" \
   '{"findings":"Documentation in order, recommend approval","recommendedAmount":{"amount":"1500000.00","currencyCode":"TZS"},"fraudIndicator":false}')
