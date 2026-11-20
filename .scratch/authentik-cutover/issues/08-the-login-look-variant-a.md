@@ -55,7 +55,7 @@ What was done:
 
 Found while building:
 
-- **The set-new-password flow could be opened without a recovery link.** The password stage on Change password shows Authentik's own "Forgot password?", which opened it straight away. A signed-in session could then set a new password without giving the current one. Fixed:
+- **The set-new-password flow could be opened without a recovery link.** The password stage on Change password shows Authentik's own "Forgot password?", which opened its "Choose a new password" form straight away, current password unasked. Whether saving there would then have changed the signed-in person's password wasn't tried; the form being reachable at all was enough to close it. Fixed:
   - a flow policy plans it only when a pending user is already in context. The API's recovery links have one; a direct visit doesn't, and gets "This link is invalid or has expired. Ask for a new code on the reset page."
   - CSS hides that "Forgot password?" link, which only appears on Change password
   - checked: an anonymous and a signed-in direct visit are refused, a recovery link still opens the form, and the sign-in page's link remains
