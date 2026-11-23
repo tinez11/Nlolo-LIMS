@@ -132,7 +132,7 @@ export function PasswordResetPage() {
               <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void confirm(); }}>
                 <p role="status" className="rounded-xl bg-status-neutral-bg px-4 py-3 text-status-neutral-fg">{t.sent}</p>
                 <FormField required label={t.code}>
-                  <Input className="h-12 text-base tracking-widest" inputMode="numeric" autoComplete="one-time-code"
+                  <Input className="h-12 text-base" inputMode="numeric" autoComplete="one-time-code"
                     maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
                 </FormField>
                 <Button type="submit" className="h-12 w-full" disabled={busy || code.length !== 6}>{t.next}</Button>
