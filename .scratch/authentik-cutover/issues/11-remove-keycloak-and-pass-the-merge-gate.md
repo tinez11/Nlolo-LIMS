@@ -31,7 +31,7 @@ Spec: "Build order", merge gate. The decision is in ticket 16 of `.scratch/authe
 - [x] The full vitest suite passes (2026-11-23: 2022/2023, the one failure a design guard on /reset's code box, fixed fc9a4e7c and re-run green)
 - [x] The full e2e suite passes (2026-11-23: 217/225 in the full run, 5 skipped; the 3 failures were fixed or passed alone, see Comments)
 - [ ] The fresh-bootstrap rehearsal signs in to every workspace
-- [ ] The whole-branch review's findings are fixed or explicitly accepted by the user
+- [x] The whole-branch review's findings are fixed or explicitly accepted by the user (2026-11-23: no findings; accepted by the user)
 
 ## Comments
 
