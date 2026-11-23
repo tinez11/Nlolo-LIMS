@@ -19,7 +19,8 @@ test.describe('staff management overview', () => {
     await expect(page.getByText('Waiting for a decision')).toBeVisible();
 
     await page.getByRole('link', { name: 'Policies in force' }).click();
-    await expect(page).toHaveURL(/\/staff\/reports\/policies-in-force$/);
+    // The card carries the dashboard's branch choice (2026-11-23, branch views): every branch for someone based nowhere.
+    await expect(page).toHaveURL(/\/staff\/reports\/policies-in-force\?branch=all$/);
 
     // Sees the policies, but cannot issue one: the role changes nothing (the link needs policies.issue).
     await page.goto('/staff/policies');

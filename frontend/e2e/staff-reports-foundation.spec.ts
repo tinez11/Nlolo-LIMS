@@ -46,7 +46,8 @@ test.describe('reports foundation', () => {
     const card = page.getByRole('link', { name: /New policies/ });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.click();
-    await expect(page).toHaveURL(/\/staff\/reports\/new-business\?from=\d{4}-\d{2}-01&to=\d{4}-\d{2}-\d{2}$/);
+    // Every branch: the finance figures are company-wide (2026-11-23, branch views).
+    await expect(page).toHaveURL(/\/staff\/reports\/new-business\?from=\d{4}-\d{2}-01&to=\d{4}-\d{2}-\d{2}&branch=all$/);
     await expect(page.getByRole('heading', { level: 1, name: 'New business' })).toBeVisible();
   });
 });
