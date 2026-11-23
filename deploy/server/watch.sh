@@ -70,6 +70,9 @@ check_backup() {
 
 check_certificates() {
   local d end left bad=()
+  # A rehearsal (CADDY_GLOBAL_OPTIONS set, e.g. local_certs) signs with Caddy's own CA, whose certificates last hours,
+  # not months: there is no renewal to watch.
+  [ -z "${CADDY_GLOBAL_OPTIONS:-}" ] || return 0
   for d in "$APP_DOMAIN" "$AUTH_DOMAIN"; do
     end="$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null \
            | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"

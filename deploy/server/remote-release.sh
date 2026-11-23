@@ -315,5 +315,12 @@ rm -f "$PLATFORM_HOME/watch/paused"
 # Five releases are kept for rollbacks; the one in service is never removed.
 ls -1d "$PLATFORM_OPT"/releases/*/ | sort -V | head -n -5 | grep -v "/$VERSION/" | xargs -r sudo rm -rf
 echo "Released $VERSION."
+# The very first release has no backup at all (the one before a release needs a database to exist), and the nightly
+# one is hours away: take one now, so the server holds a backup from its first minute and the watcher's backup check
+# does not text about a server that is simply new.
+if ! ls backups/*/.complete > /dev/null 2>&1; then
+  echo "== first backup"
+  ./backup.sh "first-$VERSION"
+fi
 echo "== the watcher's checks now (./watch.sh --check; ./watch.sh --test-text sends a test text)"
 ./watch.sh --check || true
