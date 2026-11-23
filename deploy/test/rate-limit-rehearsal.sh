@@ -85,8 +85,8 @@ grep -qi '^retry-after:' <<<"$headers" || fail "api 429 has no Retry-After"
 grep -qi '^content-type: application/problem+json' <<<"$headers" || fail "api 429 is not problem+json"
 grep -q '"errorCode":"RATE_LIMITED"' /tmp/body || fail "api 429 body: $(cat /tmp/body)"
 
-echo "-- this address exempt"
-start_caddy 127.0.0.1/32
+echo "-- this address exempt, second in a two-entry list (the setting is space-separated)"
+start_caddy "192.0.2.1/32 127.0.0.1/32"
 expect_never "signin, exempt" 100 "$AUTH" "${SIGNIN[@]}"
 expect_never "api, exempt" 700 "$APP" "https://$APP/api/policies"
 expect_limit "public, exempt address still limited" 30 "$APP" "https://$APP/api/public/products"
