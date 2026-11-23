@@ -9,8 +9,15 @@ import { idle, success } from '@/store/createResourceSlice';
 export function grantAccess(...permissions: string[]): void {
   useAccessStore.setState({
     mine: success({ userId: '00000000-0000-0000-0000-000000000001', displayName: 'Test Staff', active: true,
-      roles: [], primaryRole: null, permissions }),
+      roles: [], primaryRole: null, permissions, homeBranch: null }),
   });
+}
+
+/** Where the signed-in test staff member is based (2026-11-23, branch views); call after grantAccess. */
+export function basedAt(homeBranch: string | null): void {
+  const mine = useAccessStore.getState().mine.data;
+  if (!mine) throw new Error('basedAt needs grantAccess first');
+  useAccessStore.setState({ mine: success({ ...mine, homeBranch }) });
 }
 
 const ALL = [

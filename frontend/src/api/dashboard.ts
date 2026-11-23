@@ -31,6 +31,9 @@ export type CountPoint = components['schemas']['CountPoint'];
 export type DaysPoint = components['schemas']['DaysPoint'];
 export type MonthPoint = components['schemas']['MonthPoint'];
 
+/** The branch a dashboard was cut by (2026-11-23, branch views); null for every branch. */
+export type BranchScope = components['schemas']['BranchScope'];
+
 /** Two months, "YYYY-MM", inclusive. Both absent asks for the year to date. */
 export interface MonthRange {
   from?: string;
@@ -42,24 +45,33 @@ export interface AgentRange extends MonthRange {
   agentId?: string;
 }
 
-const params = (range?: AgentRange) => ({
-  params: { from: range?.from, to: range?.to, ...(range?.agentId ? { agentId: range.agentId } : {}) },
+/**
+ * @param branchCode one branch (2026-11-23, branch views) for the management, underwriting and claims dashboards;
+ *                   absent for every branch
+ */
+const params = (range?: AgentRange, branchCode?: string) => ({
+  params: {
+    from: range?.from,
+    to: range?.to,
+    ...(range?.agentId ? { agentId: range.agentId } : {}),
+    ...(branchCode ? { branchCode } : {}),
+  },
 });
 
-export function getUnderwritingDashboard(range?: MonthRange): Promise<UnderwritingDashboard> {
-  return get<UnderwritingDashboard>('/dashboards/underwriting', params(range));
+export function getUnderwritingDashboard(range?: MonthRange, branchCode?: string): Promise<UnderwritingDashboard> {
+  return get<UnderwritingDashboard>('/dashboards/underwriting', params(range, branchCode));
 }
 
-export function getClaimsDashboard(range?: MonthRange): Promise<ClaimsDashboard> {
-  return get<ClaimsDashboard>('/dashboards/claims', params(range));
+export function getClaimsDashboard(range?: MonthRange, branchCode?: string): Promise<ClaimsDashboard> {
+  return get<ClaimsDashboard>('/dashboards/claims', params(range, branchCode));
 }
 
 export function getFinanceDashboard(range?: MonthRange): Promise<FinanceDashboard> {
   return get<FinanceDashboard>('/dashboards/finance', params(range));
 }
 
-export function getManagementDashboard(range?: MonthRange): Promise<ManagementDashboard> {
-  return get<ManagementDashboard>('/dashboards/overview', params(range));
+export function getManagementDashboard(range?: MonthRange, branchCode?: string): Promise<ManagementDashboard> {
+  return get<ManagementDashboard>('/dashboards/overview', params(range, branchCode));
 }
 
 export function getAgentDashboard(range?: AgentRange): Promise<AgentDashboard> {

@@ -5,9 +5,15 @@
  * `countValue` in `lib/counts`.
  */
 
-/** A report's URL with the filter it was read with -- the names `reportParams.stateFromSearch` reads back. */
-export function reportLink(key: string, params: Record<string, string>): string {
-  return `/staff/reports/${key}?${new URLSearchParams(params).toString()}`;
+/**
+ * A report's URL with the filter it was read with -- the names `reportParams.stateFromSearch` reads back.
+ *
+ * @param branch the dashboard's branch choice (2026-11-23, branch views): a code or `all`, carried so the report opens
+ *               on the same branch the figure was read for. Omitted, the report applies its own starting rule.
+ */
+export function reportLink(key: string, params: Record<string, string>, branch?: string): string {
+  const withBranch = branch ? { ...params, branch } : params;
+  return `/staff/reports/${key}?${new URLSearchParams(withBranch).toString()}`;
 }
 
 /** The last civil day of a "YYYY-MM" month, as "YYYY-MM-DD". Calendar arithmetic, not money. */
