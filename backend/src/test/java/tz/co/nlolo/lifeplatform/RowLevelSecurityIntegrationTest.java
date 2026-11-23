@@ -239,6 +239,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
             "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql",
+            "db-migrations/distribution/V13__login_user_id.sql",
             // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
             // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
             // claim_recovery's policies, plus the grants that let app_role reach the schema at all.

@@ -10,7 +10,7 @@
  *
  * Deliberately small: a module-level map, read once to seed `useState` and written on success.
  * Every mount still fetches, so nothing here decides freshness -- it only fills the wait. It lives
- * as long as the page: signing out leaves through Keycloak and reloads, which clears it. Capped so
+ * as long as the page: signing out leaves through Authentik and reloads, which clears it. Capped so
  * a long day of opening records cannot grow it without bound.
  */
 const LIMIT = 50;

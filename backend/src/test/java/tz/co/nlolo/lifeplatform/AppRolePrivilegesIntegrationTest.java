@@ -299,6 +299,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
             "db-migrations/distribution/V11__commission_payout_approval.sql", "db-migrations/distribution/V12__plan_needs_approval.sql",
+            "db-migrations/distribution/V13__login_user_id.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class

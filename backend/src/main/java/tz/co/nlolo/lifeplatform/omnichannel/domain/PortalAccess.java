@@ -10,8 +10,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One client's customer-portal access (2026-10-08): the Keycloak user the platform created for them, how the first
- * password reached them, and whether the access is open. See omnichannel V1 for why there is one row per client.
+ * One client's customer-portal access (2026-10-08): the login the platform created for them (in Authentik since
+ * 2026-11-19, Keycloak until then), how the first password reached them, and whether the access is open. See omnichannel V1 for why there is one row per client.
  */
 @Entity
 @Table(name = "portal_access", schema = "omnichannel")
@@ -24,7 +24,7 @@ public class PortalAccess {
     @Id @Column(name = "portal_access_id") private UUID portalAccessId;
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;
     @Column(name = "party_id", nullable = false) private UUID partyId;
-    @Column(name = "keycloak_user_id", nullable = false) private String keycloakUserId;
+    @Column(name = "login_user_id", nullable = false) private String loginUserId;
     @Column(nullable = false) private String username;
     @Column(nullable = false) private String delivery;
     @Column(nullable = false) private String status;
@@ -37,12 +37,12 @@ public class PortalAccess {
 
     protected PortalAccess() {}
 
-    public PortalAccess(UUID tenantId, UUID partyId, String keycloakUserId, String username, Delivery delivery,
+    public PortalAccess(UUID tenantId, UUID partyId, String loginUserId, String username, Delivery delivery,
                         String invitedBy) {
         this.portalAccessId = UUID.randomUUID();
         this.tenantId = tenantId;
         this.partyId = partyId;
-        this.keycloakUserId = keycloakUserId;
+        this.loginUserId = loginUserId;
         this.username = username;
         this.delivery = delivery.name();
         this.status = Status.INVITED.name();
@@ -50,7 +50,7 @@ public class PortalAccess {
         this.invitedAt = Instant.now();
     }
 
-    /** Invited again after a revoke: the same Keycloak user, opened and given a fresh first password. */
+    /** Invited again after a revoke: the same login, opened and given a fresh first password. */
     public void reinvited(Delivery delivery, String invitedBy) {
         this.delivery = delivery.name();
         this.status = Status.INVITED.name();
@@ -76,7 +76,7 @@ public class PortalAccess {
     }
 
     public UUID getPartyId() { return partyId; }
-    public String getKeycloakUserId() { return keycloakUserId; }
+    public String getLoginUserId() { return loginUserId; }
     public String getUsername() { return username; }
     public Status getStatus() { return Status.valueOf(status); }
     public Delivery getDelivery() { return Delivery.valueOf(delivery); }

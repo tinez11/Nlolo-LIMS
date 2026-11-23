@@ -26,7 +26,7 @@ import { PasswordResetPage, PublicQuoteApp } from '@/lazyPages';
 /**
  * Workspace-scoped routes, built from the screen manifest in `@/screens`.
  *
- * One Keycloak realm for everyone since 2026-11-06 (universal login), so one OIDC provider is mounted once, above the
+ * One sign-in for everyone since 2026-11-06 (universal login; Authentik since 2026-11-19), so one OIDC provider is mounted once, above the
  * router. "/" is the sign-in for everyone; the `/staff`, `/agents`, `/customers` prefixes name the WORKSPACE a page is
  * in, which the console sends the backend as `X-Workspace`. Each workspace's pages are lazily loaded, so a customer
  * still never downloads the finance bundle.

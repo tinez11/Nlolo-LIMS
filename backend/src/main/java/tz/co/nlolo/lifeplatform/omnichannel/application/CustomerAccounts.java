@@ -4,8 +4,8 @@ import java.util.UUID;
 
 /**
  * Customer logins in the identity provider -- since 2026-11-06 the {@code customer} workspace role on an account in the
- * one Keycloak realm, {@code lifeplatform}, which the same person's agent login may share. A port, so the invite rules
- * are tested without a Keycloak; the adapter calls the Keycloak Admin API through a service account.
+ * one sign-in, Authentik, which the same person's agent login may share. A port, so the invite rules
+ * are tested without Authentik; the adapter calls Authentik's API through a service account.
  */
 public interface CustomerAccounts {
 

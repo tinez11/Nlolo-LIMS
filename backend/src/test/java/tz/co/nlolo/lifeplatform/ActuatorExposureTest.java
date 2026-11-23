@@ -53,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>Why a separate management port.</b> See {@code application.yml}'s own comment. In short:
  * {@code infra/docker-compose.yml} publishes {@code 8080:8080} to the host; Prometheus scrapes
- * with no credentials; this app authenticates with Keycloak JWTs a scraper cannot obtain. Binding
+ * with no credentials; this app authenticates with Authentik JWTs a scraper cannot obtain. Binding
  * actuator to 9090 and not publishing 9090 keeps metrics reachable inside the Docker network and
  * absent from the host. The first two tests below are what make that claim falsifiable.
  */
@@ -80,7 +80,7 @@ class ActuatorExposureTest {
     }
 
     /** Endpoints that must never be reachable on EITHER port with the current allow-list.
-     * {@code env} would disclose SPRING_DATASOURCE_PASSWORD and every Keycloak/MinIO credential;
+     * {@code env} would disclose SPRING_DATASOURCE_PASSWORD and every Authentik/MinIO credential;
      * {@code heapdump} would disclose live JWTs and decrypted row data; {@code loggers} is
      * remotely writable; {@code beans}/{@code configprops} map the whole application. */
     private static final List<String> MUST_NOT_BE_EXPOSED =

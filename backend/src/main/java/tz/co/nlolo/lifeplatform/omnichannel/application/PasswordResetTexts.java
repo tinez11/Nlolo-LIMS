@@ -17,12 +17,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Texts a password-reset code to the phone the platform holds for a person (2026-10-28, user decision: reset by SMS
- * for agents and customers, who often have no email). Keycloak makes and checks the code; the phone number is the
- * platform's, so the platform sends. Through the unlogged path: the message log keeps the text with the code masked,
- * as it does for a portal one-time password.
+ * for agents and customers, who often have no email). {@link PasswordResets} makes and checks the code (Keycloak did,
+ * until 2026-11-19); the phone number is the platform's, so the platform sends. Through the unlogged path: the message
+ * log keeps the text with the code masked, as it does for a portal one-time password.
  *
- * <p>At most three texts an hour to one person, here as well as in Keycloak, so the phone is protected even if the
- * other side is misconfigured. Says nothing back about whether a phone existed: Keycloak shows one page either way.
+ * <p>At most three texts an hour to one person, here as well as in PasswordResets, so the phone is protected even if
+ * the caller misbehaves. Says nothing back about whether a phone existed: /reset shows one answer either way.
  */
 @Service
 public class PasswordResetTexts {

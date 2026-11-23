@@ -59,7 +59,7 @@ flyway() {
   local run
   if [ "$ENVIRONMENT" = native ]; then
     # The Flyway CLI on the server itself, reading this release's own db-migrations folder.
-    run=(/usr/local/bin/flyway -locations="filesystem:$(pwd)/db-migrations/$module")
+    run=("${FLYWAY_CLI:-/usr/local/bin/flyway}" -locations="filesystem:$(pwd)/db-migrations/$module")
   else
     run=(docker run --rm --network "$NETWORK" -v "$MOUNT:/flyway/sql:ro" "$FLYWAY_IMAGE"
          -locations="filesystem:/flyway/sql/$module")

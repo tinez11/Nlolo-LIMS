@@ -784,7 +784,7 @@ entries:
       flow_authentication: !KeyOf flow-sign-in
       flow_recovery: !KeyOf flow-set-password
       # Injected into every component's shadow root, and the page's own. The Keycloak theme's "Split leaf" carried onto
-      # Authentik's PatternFly markup (backend/keycloak/themes/lifeplatform/login/resources/css/login.css is the source
+      # Authentik's PatternFly markup (the theme's login.css, deleted in ticket 11 and kept in git history, was the source
       # of truth for every token and rule here). Polished 2026-11-20 against the impeccable craft floor: dark mode
       # authored, browser-drawn surfaces themed, the error and the language switcher brought into the world.
       branding_custom_css: |

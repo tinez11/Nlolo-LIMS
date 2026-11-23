@@ -19,7 +19,7 @@ import java.util.Set;
  * internally." Reached only after {@link MobileMoneyHmacFilter} has already verified the
  * request's signature and replay window (SecurityConfig wires the filter in ahead of this
  * controller and {@code permitAll()}s exactly this method+path) -- there is no
- * {@code @PreAuthorize} here because Keycloak authentication never applies to this path at all,
+ * {@code @PreAuthorize} here because sign-in token authentication never applies to this path at all,
  * by design, not by omission.
  *
  * <p>Deliberately thin: all tenant-resolution and transactional orchestration lives in

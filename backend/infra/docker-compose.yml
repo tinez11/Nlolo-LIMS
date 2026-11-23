@@ -91,6 +91,9 @@ services:
   authentik-server:
     image: ghcr.io/goauthentik/server:2026.8.5
     command: server
+    # host.docker.internal is Docker Desktop's name for this machine, where the backend runs; Linux (CI, a Linux dev
+    # box) has it only when mapped, and the staff sign-in code and the password-changed notice call the backend there.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment: &authentik-env
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-only-authentik-secret-key-0123456789abcdef}
       AUTHENTIK_POSTGRESQL__HOST: postgres
@@ -135,6 +138,8 @@ services:
   authentik-worker:
     image: ghcr.io/goauthentik/server:2026.8.5
     command: worker
+    # host.docker.internal is Docker Desktop's name for this machine; Linux (CI, a Linux dev box) has it only when mapped.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment: *authentik-env
     volumes:
       - ../../deploy/authentik/blueprints/production:/blueprints/lifeplatform:ro
@@ -175,43 +180,8 @@ services:
       - "8025:8025"   # web UI
       - "1025:1025"   # SMTP
 
-  app:
-    build:
-      context: ..
-      dockerfile: infra/app/Dockerfile
-    environment:
-      SPRING_PROFILES_ACTIVE: local
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lifeplatform
-      SPRING_DATASOURCE_USERNAME: app_role
-      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:-devapppassword}
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: "6379"
-      MINIO_ENDPOINT: http://objectstore:8333
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      # No AUTHENTIK_ISSUER here yet: the issuer must be the address the browser signs in at, and this container cannot
-      # reach localhost:9100. The server compose sets it (ticket 10 of .scratch/authentik-cutover); this service is not
-      # used in dev, where the backend runs on the host.
-      MOBILE_MONEY_GATEWAY_BASE_URL: http://mock-mobile-money:8080
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-    ports:
-      # ONLY the application port is published to the host. Actuator binds to 9090
-      # (management.server.port in application.yml) and is deliberately NOT published here:
-      # prometheus reaches it as app:9090 over this compose network, while the host has no
-      # route to it at all. Publishing 9090 would defeat the entire reason actuator was moved
-      # off 8080 -- see application.yml's own comment, and ActuatorExposureTest, which asserts
-      # /actuator/prometheus is absent from the application port.
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      objectstore:
-        condition: service_healthy
-      authentik-server:
-        condition: service_started
+  # No `app` service (removed 2026-11-23): the backend runs on the host with ./mvnw in dev, and as a jar under systemd
+  # on the server (deploy/README.md). There is no backend container image anywhere.
 
   pgadmin:
     image: dpage/pgadmin4:latest

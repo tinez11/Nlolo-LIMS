@@ -9,8 +9,6 @@ on:
 
 env:
   JAVA_VERSION: "21"
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
 
@@ -158,12 +156,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "21", cache: maven }
-      # Testcontainers spins up Postgres/Redis/SeaweedFS/Keycloak per test class --
+      # Testcontainers spins up Postgres/Redis/SeaweedFS per test class --
       # no shared `services:` block needed here, unlike db-migration-validation above.
       - name: Run integration test suite
         run: ./mvnw -B -q verify -Dtest=none -DfailIfNoTests=false -DskipUTs -DrunITs
 
-  # Drives the SPA through a REAL Keycloak login against the real backend. There are
+  # Drives the SPA through a REAL Authentik sign-in against the real backend. There are
   # no fabricated JWTs in this suite by design: this project has twice shipped a
   # fully green suite over a real credential path that did not work at all, because
   # every test minted its own identity.
@@ -187,8 +185,12 @@ jobs:
 
       - name: Start the platform stack
         working-directory: backend/infra
-        # objectstore-init after it: nothing in the app creates the four document buckets.
-        run: docker compose up -d --wait postgres redis objectstore keycloak && docker compose up objectstore-init
+        # objectstore-init after it: nothing in the app creates the four document buckets. Authentik's worker applies
+        # the production and dev blueprints as it starts: the flows, and the test users with their app passwords.
+        # mock-sms-gateway: the public specs read the texted sign-in and reset codes from its request journal.
+        run: >-
+          docker compose up -d --wait postgres redis objectstore mock-sms-gateway authentik-server authentik-worker
+          && docker compose up objectstore-init
 
       - name: Apply database migrations
         working-directory: backend
@@ -205,6 +207,8 @@ jobs:
           # this compose file's Postgres port mapping; the default application.yml
           # profile has no datasource at all and the process would not start.
           SPRING_PROFILES_ACTIVE: local
+          # Texts go to the compose stack's mock gateway (the default address), where the public specs read the codes.
+          SMS_GATEWAY_LIVE: "true"
         run: |
           ./mvnw -B -q package -DskipTests
           nohup java -jar target/*.jar > /tmp/app.log 2>&1 &
@@ -260,30 +264,8 @@ jobs:
           scan-type: fs
           severity: "CRITICAL,HIGH"
 
-  build-image:
-    runs-on: ubuntu-latest
-    needs: [contract-validation, integration-tests, security-scan]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: backend
-          file: backend/infra/app/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-
+  # No image job either (removed 2026-11-23): the server runs the backend as a jar under systemd, with no Docker
+  # (deploy/README.md), so the backend container image this job pushed to ghcr.io was used by nothing.
   # No deploy jobs here (removed 2026-11-15). Releases are pushed from a developer's machine with
   # deploy/release.sh (deploy/README.md), which backs up, migrates, configures the database and smoke-checks on the
   # server. The two jobs that stood here called scripts/deploy.sh, a stub that only ever exited 1.

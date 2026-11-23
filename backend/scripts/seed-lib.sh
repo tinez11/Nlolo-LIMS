@@ -27,8 +27,64 @@ token_for() {   # token_for <username>  -- a real access token for a dev test us
   body=$(curl -sf -X POST "$AUTHENTIK/application/o/token/" \
     -d grant_type=password -d client_id=lifeplatform-spa -d username="$1" -d password="dev-app-password-$1" \
     --data-urlencode "scope=openid profile lifeplatform") \
-    || { echo "Authentik refused a token for $1 (is the dev blueprint applied?)" >&2; return 1; }
+    || { echo "Authentik refused a token for $1. Is the dev blueprint applied, and does the console's client still" \
+              "allow the password grant? Applying the production blueprint after the dev one removes it" \
+              "(backend/docs/10-frontend-development.md, Gotcha 1)." >&2; return 1; }
   sed 's/.*"access_token": *"\([^"]*\)".*/\1/' <<<"$body"
+}
+
+grant_permission() {   # grant_permission <admin-token> <username> <permission>  -- adds one single permission, keeping the rest
+  # Through the Users screen's own call (PUT /access/users/{id}/access), which replaces the whole set: so the user's
+  # roles and other single permissions are read first and sent back with the new one. The staff row exists once the
+  # person has made any request (the first one imports it). Fails loudly if the change waits for a second administrator.
+  node -e '
+    const [api, token, username, permission] = process.argv.slice(1);
+    const call = async (method, path, body) => {
+      const r = await fetch(api + path, { method, headers: { authorization: "Bearer " + token,
+        "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        body: body && JSON.stringify(body) });
+      if (!r.ok) { console.error(method + " " + path + " -> " + r.status + " " + (await r.text())); process.exit(1); }
+      return r.status === 204 ? null : r.json();
+    };
+    (async () => {
+      const users = await call("GET", "/access/users");
+      const list = Array.isArray(users) ? users : (users.content ?? users.items ?? []);
+      const user = list.find((u) => u.username === username);
+      if (!user) { console.error("No staff user " + username + " yet: it is imported at its first request"); process.exit(1); }
+      if (user.extraPermissions.includes(permission)) { console.log(username + " already holds " + permission); return; }
+      const outcome = await call("PUT", "/access/users/" + user.userId + "/access", {
+        roleCodes: user.roles.map((r) => r.code), permissions: [...user.extraPermissions, permission] });
+      if (!outcome.applied) { console.error(permission + " for " + username + " waits for a second administrator"); process.exit(1); }
+      console.log("granted " + permission + " to " + username);
+    })();
+  ' "$API" "$1" "$2" "$3"
+}
+
+demo_term_version() {   # demo_term_version <effectiveDate>  -- Demo Term Life's priced version, as a JSON request body
+  # Base rates per 1,000 of sum assured a year (2026-11-23): demo figures, not an actuary's. Every age 18-75, both sexes
+  # and every smoker status (UNKNOWN priced as a smoker), so any seeded applicant can be quoted. Age and smoker status
+  # are keys of the base rates, so the rating table keeps only the sum-assured band. A rate-priced version must state
+  # its entry ages (422 otherwise): the same 18-75 the rates span.
+  local effective="$1" rates="" band sex smoker rate
+  for band in "18 39 2.50" "40 59 5.00" "60 75 12.00"; do
+    set -- $band
+    for sex in FEMALE MALE; do
+      for smoker in NON_SMOKER SMOKER UNKNOWN; do
+        rate=$3
+        [ "$smoker" = NON_SMOKER ] || rate=$(awk "BEGIN { printf \"%.2f\", $3 * 1.6 }")
+        rates+="${rates:+,}{\"ageFrom\":$1,\"ageTo\":$2,\"sex\":\"$sex\",\"smokerStatus\":\"$smoker\",\"ratePerMille\":$rate}"
+      done
+    done
+  done
+  cat <<JSON
+{"ifrsMeasurementModel":"PAA","effectiveDate":"$effective",
+ "payoutTerms":{"freeLookDays":15},
+ "eligibility":{"minEntryAge":18,"maxEntryAge":75},
+ "tiraFiling":{"reference":"TIRA/DEMO/0001","approvalDate":"2020-01-01"},
+ "ratingTable":[{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+ "baseRates":[$rates],
+ "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+JSON
 }
 
 api() {         # api <token> <method> <path> [json-body]

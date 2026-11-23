@@ -10,7 +10,7 @@ import { readReturnRouterState, readReturnTo, returnsToEntrance, returnToState }
  *
  * Because tokens are held in memory only, a page reload always starts
  * unauthenticated. That is the intended trade: instead of a refresh token sitting
- * in web storage for an XSS to lift, we redirect to Keycloak, which recognises its
+ * in web storage for an XSS to lift, we redirect to Authentik, which recognises its
  * own SSO cookie and bounces straight back without prompting.
  *
  * The redirect is fired at most once per mount. Re-firing on every render would
@@ -26,7 +26,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     if (auth.activeNavigator) return; // a redirect/renew is already in flight
     if (attempted.current) return;
     attempted.current = true;
-    // Carry the intended destination through Keycloak so the callback can restore
+    // Carry the intended destination through Authentik so the callback can restore
     // it. Without this every deep link and bookmark collapses to the realm root,
     // and because tokens are memory-only that happens on EVERY load, not just the
     // first sign-in.

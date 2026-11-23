@@ -28,7 +28,7 @@ public interface PartyApi {
      *
      * <p><b>This is what makes an agent's commission real.</b> Commission accrues off
      * {@code PolicyActivated.agentOfRecordId}, and until this existed the only record of who
-     * registered a client was {@code created_by}, holding a Keycloak subject that nothing can
+     * registered a client was {@code created_by}, holding a login subject that nothing can
      * resolve to an agent. An agent could sign up a customer and earn nothing on their policies
      * unless somebody separately named them on each case.
      *

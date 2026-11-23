@@ -5,14 +5,14 @@ info:
   description: >
     Shared schemas, security schemes, parameters, and standard responses referenced
     by every module's OpenAPI specification via $ref. Not a standalone API.
-    Base server URL and Keycloak issuer below are placeholders — confirm before Deliverable 6.
+    Base server URL and the sign-in issuer below are placeholders — confirm before Deliverable 6.
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
     description: Placeholder — confirm production/staging hosts
 paths: {}
 components:
   securitySchemes:
-    # One Keycloak realm, "lifeplatform", for everyone since 2026-11-06 (universal login). The four schemes below are
+    # One sign-in for everyone since 2026-11-06 (universal login; Authentik since 2026-11-19). The four schemes below are
     # the four WORKSPACES of that realm: the same token endpoint, told apart by the account's workspace role and the
     # request's X-Workspace header (parameter WorkspaceHeader; docs/04-api-contracts.md §3).
     customersAuth:

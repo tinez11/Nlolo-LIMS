@@ -635,7 +635,7 @@ components:
             This is what makes an agent's commission real. Commission accrues off
             PolicyActivated.agentOfRecordId, and the policy module resolves this party id to an
             agent at issuance and binds it as the agent of record. Before it existed, the only
-            record of who registered a client was createdBy — a Keycloak subject that nothing
+            record of who registered a client was createdBy — a login subject that nothing
             could resolve to an agent — so an agent could sign a customer up and earn nothing on
             their policies unless somebody separately named them on every case.
 
@@ -683,7 +683,7 @@ components:
         documentRef: { type: string }
     KycDecisionView:
       description: >-
-        One KYC decision, as taken. decidedBy is the deciding login's Keycloak subject — the
+        One KYC decision, as taken. decidedBy is the deciding login's subject — the
         identity any rule compares; decidedByName is how to show that person, captured from their
         token at the time (V7) and null for decisions taken before it, which means "not recorded"
         and never "nobody". evidenceDocumentRef is always present (the platform refuses a decision

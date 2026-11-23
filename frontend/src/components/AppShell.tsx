@@ -369,7 +369,7 @@ const ROLE_PRECEDENCE = [
 
 /**
  * The one role the badge shows under the name (2026-10-26, the user: never the whole list). For staff, the platform's
- * own answer once it arrives; until then, the most senior Keycloak role on the token, so the line does not flash empty.
+ * own answer once it arrives; until then, the most senior job role on the token, so the line does not flash empty.
  * Agents and customers hold no staff role, and are simply named for the console they are in.
  */
 function badgeRole(realm: Realm, identity: ReturnType<typeof readIdentity>, platformRole: string | null | undefined): string | null {

@@ -33,7 +33,7 @@ import java.util.UUID;
  * reach the service layer, where it would otherwise surface as a generic 500
  * via TenantContext.get()'s fail-loud IllegalStateException guard. Rejecting
  * it here, at the request boundary, with a 403 and a logged WARN turns a
- * Keycloak misconfiguration (or an attempted attack using tokens without a
+ * sign-in misconfiguration (or an attempted attack using tokens without a
  * proper tenant claim) into a clear, attributable auth signal instead of an
  * unexplained 500 spike. The response is written directly to the
  * HttpServletResponse (rather than thrown for @ExceptionHandler to catch)

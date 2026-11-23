@@ -18,11 +18,11 @@ and group funeral; group life and credit life schemes. Every product charge is o
 | `backend/` | Spring Boot 3.3 / Java 21 modular monolith (Spring Modulith), one module per package under `src/main/java/tz/co/nlolo/lifeplatform/` (party, product, underwriting, policy, billing, payment, claims, benefitpayout, accumulation, annuity, unitlinked, bonus, policyloan, distribution, reinsurance, finaccounting, regreporting, reporting, communication, document, omnichannel, audit, refdata, dashboard, iam). |
 | `backend/db-migrations/<module>/` | Flyway migrations, one history per module (`backend/scripts/migrate.sh`). Postgres with row-level security per tenant. |
 | `backend/api/openapi/` | One OpenAPI spec per module -- the contract the console's types are generated from. |
-| `backend/infra/` | Docker Compose for the local stack: Postgres, Keycloak 26, SeaweedFS, Redis, Mailpit, mobile-money and SMS stubs. |
-| `backend/keycloak/` | The one realm, `lifeplatform` (staff, agents, customers and regulators are workspaces inside it), and the login theme. |
+| `backend/infra/` | Docker Compose for the local stack: Postgres, Authentik (sign-in), SeaweedFS, Redis, Mailpit, mobile-money and SMS stubs. |
+| `deploy/authentik/` | Sign-in, Authentik 2026.8 (Keycloak until 2026-11-19): its blueprints -- the flows, the console's client, the look, and the dev test users -- and the sign-in pages' images. Staff, agents, customers and regulators are workspaces of one sign-in. |
 | `backend/docs/` | Architecture (01-08, design-era -- see the notes at the top of each), runbooks (09, 10), and `superpowers/specs` + `plans` for every feature since. |
 | `frontend/` | The console: Vite + React + TypeScript, one SPA serving the staff, agents and customers consoles. |
-| `deploy/` | The single-server deployment (Caddy, Compose, release and bootstrap scripts). |
+| `deploy/` | The single-server deployment: Debian 13, every service under systemd, Authentik built from source; release and bootstrap scripts (`deploy/DEPLOYMENT-GUIDE.md`). |
 | `PRODUCT.md`, `DESIGN.md` | Who the consoles are for, and the design system. |
 
 ## Running it locally
@@ -30,9 +30,9 @@ and group funeral; group life and credit life schemes. Every product charge is o
 1. **`backend/docs/09-local-development.md`** -- the containers, migrations, scheduled jobs, the backend
    (`./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local`, port 8080), the seeder, and the console
    (`npm run dev` in `frontend/`, port 5173). Read its "four things" section before your first run.
-2. **`backend/docs/10-frontend-development.md`** -- the console in more depth: Keycloak's console client, generated
+2. **`backend/docs/10-frontend-development.md`** -- the console in more depth: Authentik's console client, generated
    API types, Vitest and Playwright.
-3. **`backend/keycloak/README.md`** -- the dev users and what each role may do.
+3. **`deploy/authentik/blueprints/dev/dev-users.yaml`** -- the dev users (password `devpassword`) and their job roles.
 
 Deploying: **`deploy/README.md`**.
 

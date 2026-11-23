@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Which part of the platform a request acts in (2026-11-06, universal login). One Keycloak realm holds everyone; the
+ * Which part of the platform a request acts in (2026-11-06, universal login). One sign-in (Authentik since 2026-11-19) holds everyone; the
  * account's workspace roles say which consoles it may open, and the console names the one it is in with the
  * {@code X-Workspace} header. Exactly one workspace per request, so no request is ever both staff and customer.
  */
@@ -26,7 +26,7 @@ enum Workspace {
         this.marker = marker;
     }
 
-    /** The Keycloak realm role, and the header value, that names this workspace. */
+    /** The login's group (its roles claim), and the header value, that names this workspace. */
     String role() {
         return role;
     }

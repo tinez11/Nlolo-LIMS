@@ -101,7 +101,7 @@ export function ClientOverview({
 
         <Section title="Record">
           <Field label="Registered" value={formatInstant(party.createdAt) || '—'} />
-          {/* One row, never a login id: `createdBy` is a Keycloak subject nothing here can name. An agent's
+          {/* One row, never a login id: `createdBy` is a login subject nothing here can name. An agent's
               registration links to the agent, who is also who commission accrues to. */}
           {party.registeredByPartyId ? (
             <Field

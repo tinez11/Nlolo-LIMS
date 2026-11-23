@@ -64,15 +64,16 @@ echo "productId=$PRODUCT_ID"
 # Age used to be resolved by exact string equality on `band`, which underwriting could never
 # produce -- so age was not rated at all. This payload omitted them and a fresh bootstrap died on
 # a real 422: "AGE rating factor '30-39' needs an age range". `band` stays as the human label.
+# PRICED (2026-11-23): base rates for ages 18-75, both sexes, every smoker status, so a case can be quoted and
+# opened on it. Without them the product could be sold but never quoted, and the open-case form's quote gate kept
+# "Open case" disabled -- staff-underwriting's "a proposal states the contract" failed on exactly that. With base
+# rates, age is a key of the rate table, so the rating table must not carry an AGE factor as well (422). The rates
+# are demo figures, not an actuary's. DEMO_TERM_VERSION is shared with scripts/dev/price-demo-term.sh, which
+# republishes an already-seeded database's Demo Term Life the same way.
+DEMO_TERM_VERSION=$(demo_term_version 2020-01-01)
 VERSION_RESP=$(curl -sfi -X POST "$API/products/$PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $(uuid)" -d '{
-    "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
-    "payoutTerms":{"freeLookDays":15},
-    "tiraFiling":{"reference":"TIRA/DEMO/0001","approvalDate":"2020-01-01"},
-    "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
-    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
-  }')
+  -H "Idempotency-Key: $(uuid)" -d "$DEMO_TERM_VERSION")
 echo "$VERSION_RESP" | head -1
 SNAPSHOT_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/products/$PRODUCT_ID/active-snapshot")
 PRODUCT_VERSION_ID=$(jsonval "$SNAPSHOT_JSON" productVersionId)
@@ -709,6 +710,14 @@ curl -sf -X POST "$API/claims/$CLAIM_ID/settlement-decision" \
   -H "Authorization: Bearer $STAFF_MANAGER_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{"approved":true,"approvedAmount":{"amount":"1500000.00","currencyCode":"TZS"},"payeeRef":"+255712345678"}' >/dev/null
 echo "settlement-decision approved for claimId=$CLAIM_ID (assessor=staff.assessor, manager=staff.manager -- separation of duties satisfied)"
+
+echo "=== Step 9: staff.finance may approve payouts they reviewed (staff.admin) ==="
+# The user's D2 (2026-11-12, "keep it"): a company with one finance officer must be able to release a payout alone,
+# recorded against their name. staff-payouts' "a payout passes two people" e2e spec relies on dev staff.finance
+# holding it. It was once granted by hand on the Users screen, and was lost on 2026-11-19 when the staff rows were
+# rebuilt for Authentik -- so the seed grants it, through the same call. staff.finance has made requests above, so its
+# staff row exists.
+grant_permission "$STAFF_ADMIN_TOKEN" staff.finance payouts.approve-own
 
 echo ""
 echo "================================================================"

@@ -3,7 +3,7 @@ package tz.co.nlolo.lifeplatform.distribution.application;
 import java.util.UUID;
 
 /**
- * Agent logins, as the platform drives them (2026-10-28) -- the port {@code KeycloakAgentLogins} implements, as
+ * Agent logins, as the platform drives them (2026-10-28) -- the port {@code AuthentikAgentLogins} implements, as
  * {@code CustomerAccounts} is for the customer portal. Since 2026-11-06 there is one realm: an agent login is the
  * {@code agent} workspace role on an account, which the same person's portal access may share.
  */

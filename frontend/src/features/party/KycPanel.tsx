@@ -62,7 +62,7 @@ function filedOf(documents: PartyDocumentView[], type: ClientDocumentType): File
 type Registrar = Pick<PartyDetailView, 'createdBy' | 'createdByName' | 'registeredByPartyId'>;
 
 /**
- * Where a document came from. The uploader is stored as a Keycloak subject nothing can name, so it is compared, not
+ * Where a document came from. The uploader is stored as a login subject nothing can name, so it is compared, not
  * shown: the registering agent's own uploads are theirs by name; anything else came from the office.
  */
 function provenance(d: PartyDocumentView, registrar: Registrar | null): string {

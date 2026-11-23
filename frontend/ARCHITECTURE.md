@@ -8,7 +8,7 @@ and the code win.
 ## 1. What it is
 
 One single-page app that serves **three consoles**, one per workspace, behind **one sign-in** at `/` (2026-11-06:
-one Keycloak realm, `lifeplatform`, for everyone; one realm per console before). A workspace is a realm role on the
+one sign-in for everyone, Authentik since 2026-11-19; one Keycloak realm per console before). A workspace is a group on the
 account; after sign-in `/` opens the account's only workspace, offers a choice when it holds two (an agent who is
 also a policyholder), or says it has no access yet.
 
@@ -53,7 +53,7 @@ URL /staff/policies/POL-1
 | `src/lazyPages.ts` | Every page as a `React.lazy` import, so a console downloads only the screens it opens. |
 | `src/entryPath.ts` | Whether a workspace may send unknown paths to its own home. |
 | `src/navBadges.ts` | Sidebar counts of work waiting (each a real paged search's `totalElements`). |
-| `src/auth/` | Workspaces and Keycloak settings (`realms.ts`, `workspaces.ts`), the one OIDC provider, `RequireAuth`, `RequireWorkspace`, reading roles from the token (`claims.ts`), the in-memory token store, return-to-after-login. |
+| `src/auth/` | Workspaces and sign-in settings (`realms.ts`, `workspaces.ts`), the one OIDC provider, `RequireAuth`, `RequireWorkspace`, reading roles from the token (`claims.ts`), the in-memory token store, return-to-after-login. |
 | `src/api/` | One module per backend area: thin typed functions over `lib/http`. `api/types.ts` re-exports the generated schema types under readable names (about 230). |
 | `src/types/api/` | **Generated** from the 25 OpenAPI specs by `npm run generate:api`. Gitignored; never edit by hand. |
 | `src/store/` | One Zustand store per domain (about 30), all built on `createResourceSlice.ts`. |
@@ -79,8 +79,8 @@ URL /staff/policies/POL-1
   realm's `lifeplatform-spa` client (public, PKCE). `RequireWorkspace` sends an account that lacks a workspace back to
   `/`; the account card offers "Switch to …" when it holds another. Every request carries `X-Workspace` from the URL
   prefix, which the backend turns into exactly one `ROLE_REALM_*`. Tokens live **in memory only**; `sessionStorage`
-  holds just the one-time PKCE verifier. Every page load therefore re-authenticates silently against Keycloak's SSO
-  cookie.
+  holds just the one-time PKCE verifier. Every page load therefore re-authenticates silently against Authentik's
+  session cookie.
 - **The data router** (`createBrowserRouter`) is what lets `UnsavedGuard` block navigation away from a half-filled form.
 
 ## 5. Data, mutations and rules
@@ -162,15 +162,15 @@ of the same name.
 
 - **Vitest** (`npm test`): about 190 test files beside the code they cover -- schemas, gates, stores, components and
   pages, in jsdom, with MSW or stubbed stores. No backend needed.
-- **Playwright** (`npm run test:e2e`): about 60 specs against the real stack and a real Keycloak login -- 57
+- **Playwright** (`npm run test:e2e`): about 60 specs against the real stack and a real Authentik sign-in -- 57
   `staff-*` and 4 `agents-*`. **The customer portal has no end-to-end spec.** Logins are saved per role under
   `e2e/.auth/` by the `auth*.setup.ts` projects. An axe accessibility baseline lives in `e2e/a11y-baseline.json`.
 
 ## 10. Configuration
 
-- `.env.local` (copy `.env.example`): `VITE_API_BASE_URL` (`/api`), `VITE_KEYCLOAK_BASE_URL`
-  (`http://localhost:8081`), `VITE_KEYCLOAK_CLIENT_ID` (`lifeplatform-spa`).
-- `vite.config.ts`: port 5173, fixed because the Keycloak client's redirect URI is; the `/api` proxy (target
+- `.env.local` (copy `.env.example`): `VITE_API_BASE_URL` (`/api`), `VITE_AUTH_ISSUER`
+  (`http://localhost:9100/application/o/lifeplatform/`), `VITE_AUTH_CLIENT_ID` (`lifeplatform-spa`).
+- `vite.config.ts`: port 5173, fixed because the sign-in client's redirect address is; the `/api` proxy (target
   `VITE_PROXY_TARGET`, default `http://localhost:8080`); the `@` alias for `src/`.
 
 ## 11. Known gaps

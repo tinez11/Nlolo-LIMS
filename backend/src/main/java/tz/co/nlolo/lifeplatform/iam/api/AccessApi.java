@@ -5,7 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Who a staff member is on the platform and what they may do (2026-10-26). Keycloak says who signed in; this says
+ * Who a staff member is on the platform and what they may do (2026-10-26). Authentik says who signed in; this says
  * what they hold -- read on every request, so a change an administrator makes applies at once, not at the next login.
  */
 public interface AccessApi {

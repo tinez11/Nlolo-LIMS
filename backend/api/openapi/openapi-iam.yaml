@@ -3,7 +3,7 @@ info:
   title: Identity & Access API
   version: "1.0.0"
   description: >-
-    Staff users, roles and permissions held by the platform (2026-10-26). Keycloak keeps the login; what a staff
+    Staff users, roles and permissions held by the platform (2026-10-26). Authentik keeps the login; what a staff
     member may see and do is decided here, read on every request, so a change applies at once.
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1

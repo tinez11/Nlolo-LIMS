@@ -37,7 +37,7 @@ import java.util.UUID;
  *
  * <p>Registered just inside Spring Security ({@link ActivityFilterConfig}), so the person and the tenant are known, and
  * the route and its variables are read after the controller has run. Writes made without a signed-in person -- the
- * public quote link, Keycloak's internal calls, the mobile-money callback -- are not recorded here; what they cause
+ * public quote link, Authentik's internal calls, the mobile-money callback -- are not recorded here; what they cause
  * still reaches the log as System lines.
  */
 public class ActivityRecordingFilter extends OncePerRequestFilter {
@@ -57,7 +57,7 @@ public class ActivityRecordingFilter extends OncePerRequestFilter {
         this.json = json;
     }
 
-    /** Routes no person calls: visitors, Keycloak, the payment gateway. */
+    /** Routes no person calls: visitors, Authentik, the payment gateway. */
     public static boolean unrecorded(String pattern) {
         return pattern.startsWith("/public/") || pattern.startsWith("/internal/") || pattern.startsWith("/webhooks/");
     }

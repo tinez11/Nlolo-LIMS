@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Nlolo Hazina -- a unit-linked product, its three funds and one real policy, configured in the dev platform for a demo.
 //
-// Authored 2026-10-23. Like malengo-demo.sh it speaks the REAL REST API with REAL Keycloak tokens, each step as the
+// Authored 2026-10-23. Like malengo-demo.sh it speaks the REAL REST API with REAL Authentik tokens, each step as the
 // role that would click it: finance proposes fund prices, the admin (a second person) approves them, an agent opens
 // the case, a senior underwriter assesses, an underwriter decides, staff request the premium on the mock rail.
 //
@@ -15,13 +15,11 @@
 // the funds' own performance visible from the start; the policy's gain follows with the next prices.
 //
 // Not idempotent on purpose (see seed-dev-data.sh): re-running `setup` fails on the existing fund codes.
-import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const KEYCLOAK = process.env.KEYCLOAK_URL ?? "http://localhost:8081";
+const AUTHENTIK = process.env.AUTHENTIK_URL ?? "http://localhost:9100";
 const API = process.env.API_URL ?? "http://localhost:8080";
 const MARTIN = process.env.HAZINA_CLIENT_PARTY_ID ?? "498eed59-7b3a-4446-a4de-298d9961cf44"; // Martin Fredy Lema
 const PRODUCT_CODE = "UL-HAZINA";
@@ -33,15 +31,14 @@ export const FUNDS = [
   { code: "HZ-MMF", name: "Hazina Money Market Fund", assetClass: "MONEY_MARKET", charge: "0.5" },
 ];
 
-// One realm since 2026-11-06; `realm` names the workspace the caller means and only labels errors.
-function secret() {
-  const json = JSON.parse(readFileSync(resolve(ROOT, "keycloak/lifeplatform-realm.json"), "utf8"));
-  return json.clients.find((c) => c.clientId === "lifeplatform-app").secret;
-}
+// A real Authentik token for a dev test user, as seed-lib.sh's token_for mints one (2026-11-20): the password grant
+// with the user's dev app password, which the dev blueprint gives each test user. `realm` names the workspace the
+// caller means and only labels errors (one sign-in for everyone since 2026-11-06).
 async function token(realm, username) {
-  const res = await fetch(`${KEYCLOAK}/realms/lifeplatform/protocol/openid-connect/token`, {
+  const res = await fetch(`${AUTHENTIK}/application/o/token/`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "password", client_id: "lifeplatform-app", client_secret: secret(realm), username, password: "devpassword" }),
+    body: new URLSearchParams({ grant_type: "password", client_id: "lifeplatform-spa", username,
+      password: `dev-app-password-${username}`, scope: "openid profile lifeplatform" }),
   });
   if (!res.ok) throw new Error(`token ${realm}/${username}: ${res.status} ${await res.text()}`);
   return (await res.json()).access_token;

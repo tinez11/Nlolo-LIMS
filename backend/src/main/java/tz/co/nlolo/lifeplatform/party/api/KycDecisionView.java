@@ -19,7 +19,7 @@ import java.time.Instant;
  * @param evidenceDocumentRef the document the decision was recorded against. Always present —
  *     the platform refuses a decision without one — and fetchable through
  *     {@code GET /documents/{documentRef}} by staff, which is who may read this list.
- * @param decidedBy the deciding login's Keycloak subject. The identity, not the label.
+ * @param decidedBy the deciding login's subject. The identity, not the label.
  * @param decidedByName how to show that person, captured from their token at the time (V7), or
  *     null for a decision taken before V7 or without a token. Null means "not recorded" and
  *     never "nobody".

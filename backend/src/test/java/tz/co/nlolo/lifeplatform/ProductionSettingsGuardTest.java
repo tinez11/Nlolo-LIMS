@@ -20,7 +20,6 @@ class ProductionSettingsGuardTest {
         s.put("app.staff-sign-in-code.webhook-secret", "Sc2-real-sign-in-code-secret");
         s.put("app.password-changed.webhook-secret", "Pc4-real-password-changed-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
-        s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
         s.put("communication.sms-gateway.live", "true");
         s.put("communication.sms-gateway.authorization", "Basic cmVhbA==");
         s.put("app.portal.url", "https://portal.example.tz/customers");
@@ -91,13 +90,11 @@ class ProductionSettingsGuardTest {
         s.put("minio.secret-key", "minioadmin");
         s.put("app.authentik.api-token", "dev-only-authentik-api-token");
         s.put("mobile-money.callback-hmac-secret", "dev-only-placeholder-secret");
-        s.put("password-reset.sms-secret", "dev-only-reset-sms-secret");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password still holds the dev value",
             "minio.secret-key still holds the dev value",
             "app.authentik.api-token still holds the dev value",
-            "mobile-money.callback-hmac-secret still holds the dev value",
-            "password-reset.sms-secret still holds the dev value");
+            "mobile-money.callback-hmac-secret still holds the dev value");
     }
 
     @Test

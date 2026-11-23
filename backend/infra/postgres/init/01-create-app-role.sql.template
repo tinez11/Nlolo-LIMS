@@ -12,12 +12,9 @@ CREATE ROLE app_role LOGIN
     NOCREATEROLE
     PASSWORD :'app_role_password';
 
--- Keycloak gets its own database, separate from the application schemas, so a
--- Keycloak upgrade/migration never touches business data.
-CREATE DATABASE keycloak OWNER postgres;
-
--- Authentik's database (2026-11-19, the Authentik migration), for the same reason. An existing volume never runs this
--- file again: there, create it once by hand (CREATE DATABASE authentik OWNER postgres;).
+-- The sign-in system, Authentik, gets its own database (2026-11-19; Keycloak's until then), separate from the
+-- application schemas, so a sign-in upgrade never touches business data. An existing volume never runs this file
+-- again: there, create it once by hand (CREATE DATABASE authentik OWNER postgres;).
 CREATE DATABASE authentik OWNER postgres;
 
 -- pg_partman and pg_cron are enabled here (installed at image-build time in

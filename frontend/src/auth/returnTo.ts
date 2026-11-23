@@ -1,7 +1,7 @@
 import type { User } from 'oidc-client-ts';
 
 /**
- * The pre-login destination, carried through Keycloak in the OIDC `state`.
+ * The pre-login destination, carried through Authentik in the OIDC `state`.
  *
  * Needed because the auth round-trip always lands on the realm's single registered
  * redirect_uri. Without it every deep link and bookmark collapses to the realm root

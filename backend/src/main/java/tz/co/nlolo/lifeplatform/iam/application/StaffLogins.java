@@ -3,7 +3,7 @@ package tz.co.nlolo.lifeplatform.iam.application;
 import java.util.UUID;
 
 /**
- * The login half of a staff member, held by Keycloak's staff realm: created, opened, closed and reset from the Users
+ * The login half of a staff member, held by Authentik: created, opened, closed and reset from the Users
  * screen (2026-10-26). The platform holds everything else about them.
  */
 public interface StaffLogins {
