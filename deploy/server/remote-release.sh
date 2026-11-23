@@ -11,6 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 . ./platform-lib.sh
 
+# The watcher stays quiet while a release restarts things (watch-rules.sh). Removed when the release or rollback
+# succeeds; a crashed one's pause lapses after two hours.
+mkdir -p "$PLATFORM_HOME/watch"
+date +%s > "$PLATFORM_HOME/watch/paused"
+
 # --- settings: each service gets only its own, in a file only root and that service can read ---------------------
 write_env() {   # write_env <file> <owner group>   (content on stdin)
   sudo install -m 0640 -o root -g "$2" /dev/stdin "$ETC/$1"
@@ -132,6 +137,10 @@ JSON
 install_units() {
   local src="$1"
   sudo install -m 0644 "$src"/systemd/*.service /etc/systemd/system/
+  # A release from before the watcher (2026-11-23) has no timer; a rollback to it must not stop on that.
+  for timer in "$src"/systemd/*.timer; do
+    if [ -e "$timer" ]; then sudo install -m 0644 "$timer" /etc/systemd/system/; fi
+  done
   sudo install -d /etc/systemd/system/caddy.service.d
   sudo install -m 0644 "$src/systemd/caddy-platform.conf" /etc/systemd/system/caddy.service.d/platform.conf
   sudo install -m 0644 "$src/systemd/postgresql-platform.conf" "/etc/postgresql/$POSTGRES_MAJOR/main/conf.d/platform.conf"
@@ -234,8 +243,10 @@ if [ "${1:-}" = "--rollback" ]; then
   authentik_up
   sudo systemctl restart platform-mock-mobile-money caddy
   backend_up
+  sudo systemctl enable --now platform-watch.timer
   ./smoke.sh
   echo "$VERSION" > RELEASED
+  rm -f "$PLATFORM_HOME/watch/paused"
   echo "Rolled back to $VERSION."
   echo "Migrations were NOT undone -- if this version cannot read the schema, restore the pre-release backup."
   exit 0
@@ -246,6 +257,7 @@ VERSION="${1:?Usage: ./remote-release.sh <version>}"
 INCOMING="$PLATFORM_HOME/incoming/$VERSION"
 RELEASE_DIR="$PLATFORM_OPT/releases/$VERSION"
 [ -d "$INCOMING" ] || { echo "$INCOMING is missing -- run deploy/release.sh, which puts it there" >&2; exit 1; }
+[ -n "${ALERT_PHONES:-}" ] || { echo "Set ALERT_PHONES in .env: the watcher texts those numbers when something breaks" >&2; exit 1; }
 
 if systemctl is-active --quiet "$PG_SERVICE" && [ "$(psql_ -tAc "SELECT 1 FROM pg_database WHERE datname = 'lifeplatform'")" = "1" ]; then
   echo "== backup before $VERSION"
@@ -295,9 +307,13 @@ sudo ln -sfn "$RELEASE_DIR" "$PLATFORM_OPT/current"
 sudo systemctl enable platform-mock-mobile-money
 sudo systemctl restart platform-mock-mobile-money
 backend_up
+sudo systemctl enable --now platform-watch.timer
 
 ./smoke.sh
 echo "$VERSION" > RELEASED
+rm -f "$PLATFORM_HOME/watch/paused"
 # Five releases are kept for rollbacks; the one in service is never removed.
 ls -1d "$PLATFORM_OPT"/releases/*/ | sort -V | head -n -5 | grep -v "/$VERSION/" | xargs -r sudo rm -rf
 echo "Released $VERSION."
+echo "== the watcher's checks now (./watch.sh --check; ./watch.sh --test-text sends a test text)"
+./watch.sh --check || true

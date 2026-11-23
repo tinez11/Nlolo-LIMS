@@ -1,0 +1,12 @@
+# The server watches itself (2026-11-23, deploy/server/watch.sh): six checks, texted to ALERT_PHONES. One run per timer
+# tick, as the deploy user, whose sudo reads the database's readiness when the backend is unhealthy.
+[Unit]
+Description=Platform watcher: checks the server and texts ALERT_PHONES
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/home/deploy/platform
+ExecStart=/home/deploy/platform/watch.sh
+TimeoutStartSec=4min
