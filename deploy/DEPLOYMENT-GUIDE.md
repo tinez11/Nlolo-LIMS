@@ -141,6 +141,7 @@ The generated secrets are already there; leave them alone. Fill in the rest:
 | `SMS_GATEWAY_SENDER_NAME` | Your approved sender name | What the customer's phone shows as the sender |
 | `SMS_GATEWAY_ALLOWED_RECIPIENTS` | Your team's numbers, `255...` without `+`, comma-separated | **Safety net while testing:** only these numbers receive texts. See Part 5 |
 | `SUPPORT_PHONE` | The call-centre number | Required; the backend will not start without it |
+| `ALERT_PHONES` | One or two on-call mobiles, `+255...`, in quotes, space-separated | Required; the server texts them when something breaks (Step 8) |
 | `TURNSTILE_SECRET` | The Turnstile widget's **secret key** | Required; `/reset` checks visitors with it |
 | `FIRST_ADMIN_PHONE` | The first administrator's mobile, `+255...` | Their sign-in code is texted here |
 | `FIRST_ADMIN_HOME_BRANCH` | Their branch code, e.g. `DSM` | Staff need a branch to post accounting entries |
@@ -213,7 +214,7 @@ few minutes. It prints a heading for each stage:
 | `== identity` | Builds Authentik if this version is new (**the long part, the first time**), starts it, applies its configuration, starts the web server |
 | `== first staff login` | Creates `platform.admin` and **prints a one-time password, once** |
 | `== application` | Starts the backend |
-| smoke check | Automatic checks (Part 7 explains each one) |
+| smoke check | Automatic checks (Part 7 explains each one); then the watcher's six checks are printed |
 
 It stops at the first error and says which stage failed. The backend is only restarted after the database has been
 updated and the sign-in system is up, so a failed release leaves the previous version running.
@@ -258,7 +259,13 @@ Work through this list on the live server. Each item has caught a real problem b
       `./fetch-backup.sh daily/STAMP`, then `./restore.sh backups/STAMP --scratch`.
 - [ ] **A rollback works:** after your second release, `deploy/release.sh --rollback v1.0.0`, then release the newer
       version again.
-- [ ] **An uptime monitor** (UptimeRobot, free) on both addresses, alerting someone by SMS or phone.
+- [ ] **The server texts you when something breaks:** `ssh deploy@SERVER_IP 'cd platform && ./watch.sh --test-text'`
+      — every number in `ALERT_PHONES` should receive "watcher: test message". Then `./watch.sh --check` should print
+      six `ok` lines. From now on the server checks itself every 5 minutes and texts when a service stops, the backend
+      is unhealthy, the site does not answer, the disk passes 85%, a backup is missing or a certificate is about to
+      expire; again every 6 hours while it lasts; and once when it clears. Every Monday at 08:00 it texts that it is
+      still watching — **if that text stops coming, the watcher or the whole server is down**, which is the one thing
+      it cannot text about.
 - [ ] **Office addresses for the rate limits:** the web server limits each visitor address: 60 sign-in steps a
       minute (about 15 people signing in), 30 public-page calls and 600 console calls. An office where many staff
       share one internet address should be listed in `RATE_LIMIT_EXEMPT` in `.env`, in quotes and space-separated
@@ -335,6 +342,9 @@ whether the scheduled jobs are running. For a service's log:
 ssh deploy@SERVER_IP
 sudo journalctl -u platform-backend -f        # or authentik-server, authentik-worker, caddy, seaweedfs
 ```
+
+`./watch.sh --check` runs the watcher's six checks once and prints each, without texting. What the watcher did and
+texted: `sudo journalctl -u platform-watch -n 50`.
 
 ---
 
@@ -471,7 +481,8 @@ The last step asks a list of questions. Its message tells you which one failed:
 
 - **Mobile money is simulated** (Part 1). Use cash, bank and field receipts, and bank or cash payouts.
 - **One backend only.** It cannot be scaled to two servers yet.
-- **No built-in alerting.** The uptime monitor and `status.sh` are what you have; check `status.sh` weekly.
+- **A dead server cannot text.** The watcher texts from the server itself, so a server that is off or cut off from the
+  internet says nothing. The Monday 08:00 "still watching" text is the sign: if it does not come, look.
 - **No staging server.** Test a release on a copy (or at a quiet hour), knowing rollback is one command.
 - **Agents and customers sign in with a password only.** Staff also get a texted code.
 - **The sign-in system is built from source** on the server, a way of installing it its makers do not support:

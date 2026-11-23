@@ -82,7 +82,13 @@ for rotating the signing key.
 ./status.sh                                # version, services, disk, last backup, backend health
 sudo journalctl -u platform-backend -f     # or authentik-server, authentik-worker, caddy, seaweedfs, postgresql@16-main
 ./smoke.sh                                 # the release's last gate, any time
+./watch.sh --check                         # the watcher's six checks, once
+./watch.sh --test-text                     # text ALERT_PHONES a test message
 ```
+
+`platform-watch.timer` runs `./watch.sh` every 5 minutes and texts `ALERT_PHONES` through NextSMS when something breaks,
+lasts (every 6 hours) or clears, plus a Monday 08:00 "still watching" text. The rules are `server/watch-rules.sh`;
+`deploy/test/watch-test.sh` proves them.
 
 ## 8. Versions
 
