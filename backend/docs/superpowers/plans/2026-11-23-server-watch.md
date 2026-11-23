@@ -72,12 +72,13 @@ broken() { echo "$2" > "$T/problem-$1"; }
 fixed() { rm -f "$T/problem-$1"; }
 texts() { [ -f "$OUTBOX" ] && wc -l < "$OUTBOX" | tr -d ' ' || echo 0; }
 last() { tail -1 "$OUTBOX" 2>/dev/null; }
-# A Tuesday 10:00 EAT start (2026-11-24 07:00 UTC), so the weekly text stays out of the way.
-NOW=1795503600
+# A Tuesday 10:00 EAT start (2026-11-24), so the weekly text stays out of the way. (Epochs checked with
+# TZ=Africa/Dar_es_Salaam date -d; the test file is the source of truth.)
+NOW=1795514400
 run() { WATCH_NOW=$NOW watch_pass; }
 at() { NOW=$((NOW + $1)); }   # move the clock on by seconds
 
-reset() { rm -rf "$WATCH_DIR" "$OUTBOX" "$T"/problem-* "$T/send-fails"; mkdir -p "$WATCH_DIR"; NOW=1795503600; }
+reset() { rm -rf "$WATCH_DIR" "$OUTBOX" "$T"/problem-* "$T/send-fails"; mkdir -p "$WATCH_DIR"; NOW=1795514400; }
 
 echo "-- seen once: nothing; seen twice: one text"
 reset; broken disk "disk 91% full"
@@ -121,11 +122,11 @@ rm -f "$T/send-fails"; at 300; run
 
 echo "-- Monday 08:00 EAT: one weekly text, not again that week"
 reset
-NOW=1795845540; run; [ "$(texts)" = 0 ] || fail "weekly text before 08:00"     # Mon 2026-11-30 07:59 EAT
-NOW=1795845600; run; [ "$(texts)" = 1 ] || fail "no weekly text at 08:00"      # 08:00
+NOW=1796025540; run; [ "$(texts)" = 0 ] || fail "weekly text before 08:00"     # Mon 2026-11-30 07:59 EAT
+NOW=1796025600; run; [ "$(texts)" = 1 ] || fail "no weekly text at 08:00"      # 08:00
 [ "$(last)" = "Nlolo app.test watcher: all 2 checks OK." ] || fail "weekly text: $(last)"
 at 300; run; at 7200; run; [ "$(texts)" = 1 ] || fail "weekly text sent twice"
-broken disk "disk 91% full"; NOW=$((1795845600 + 604800 - 600)); run; at 300; run; at 300; run   # next Mon, 07:50-08:00
+broken disk "disk 91% full"; NOW=$((1796025600 + 604800 - 600)); run; at 300; run; at 300; run   # next Mon, 07:50-08:00
 grep -q "watcher: 1 open: disk." "$OUTBOX" || fail "weekly text with an open problem: $(cat "$OUTBOX")"
 
 [ "$FAILED" = 0 ] || { echo "WATCH TEST FAILED" >&2; exit 1; }
