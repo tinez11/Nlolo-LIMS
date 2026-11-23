@@ -3,10 +3,43 @@
 {
 	{$CADDY_GLOBAL_OPTIONS}
 	email {$ACME_EMAIL}
+	# The rate-limit module's directive runs before anything that answers (2026-11-23, edge rate limiting).
+	order rate_limit before basic_auth
 }
 
 {$APP_DOMAIN} {
 	encode zstd gzip
+
+	# Per visitor address, one minute (2026-11-23, backend/docs/superpowers/specs/2026-11-23-edge-rate-limit-design.md).
+	# The public pages (the quote link, /reset) are limited for everyone, office addresses included; the rest of /api is
+	# a flood ceiling that RATE_LIMIT_EXEMPT's office addresses skip. The console's own files are never limited.
+	rate_limit {
+		zone public {
+			match {
+				path /api/public/*
+			}
+			key {remote_host}
+			events 30
+			window 1m
+		}
+		zone api {
+			match {
+				path /api/*
+				not path /api/public/*
+				not remote_ip {$RATE_LIMIT_EXEMPT:192.0.2.255/32}
+			}
+			key {remote_host}
+			events 600
+			window 1m
+		}
+	}
+
+	# What a limited console call gets: the problem shape the console already shows (frontend/src/lib/apiError.ts).
+	handle_errors 429 {
+		header ?Retry-After 60
+		header Content-Type application/problem+json
+		respond `{"title":"Too many requests","status":429,"detail":"Too many requests from your network. Wait a minute and try again.","errorCode":"RATE_LIMITED"}` 429
+	}
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -71,6 +104,29 @@
 	#  - Authentik's own user pages (/if/user/), where a person could change settings around the platform's flows
 	#
 	# A flow is reachable only by a slug starting lifeplatform-, page and API alike.
+
+	# Sign-in steps per visitor address (2026-11-23): one sign-in is 3-4 steps, so 60 a minute is about 15 people from
+	# one address; the insurer's offices can be listed in RATE_LIMIT_EXEMPT. Only the flow executor is limited: it is
+	# the one place a password or a code is typed. /application/o/token/ is not -- in production it only exchanges an
+	# issued code or refresh token, on every page load's silent sign-in.
+	rate_limit {
+		zone signin {
+			match {
+				method POST
+				path /api/v3/flows/executor/lifeplatform-*
+				not remote_ip {$RATE_LIMIT_EXEMPT:192.0.2.255/32}
+			}
+			key {remote_host}
+			events 60
+			window 1m
+		}
+	}
+	handle_errors 429 {
+		header ?Retry-After 60
+		header Content-Type "text/plain; charset=utf-8"
+		respond "Too many requests from your network. Wait a minute and try again." 429
+	}
+
 	@signin {
 		path /static/* /files/media/public/* /media/public/*
 		path /if/flow/lifeplatform-*

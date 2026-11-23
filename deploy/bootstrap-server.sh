@@ -120,7 +120,7 @@ cat <<'NEXT'
 
 Done. Next, in order (DEPLOYMENT-GUIDE.md, Part 3, has the detail):
   1. Edit /home/deploy/platform/.env -- APP_DOMAIN, AUTH_DOMAIN, ACME_EMAIL, the SMS settings,
-     SUPPORT_PHONE, FIRST_ADMIN_PHONE, TURNSTILE_SECRET, and the BACKUP_S3_* settings.
+     SUPPORT_PHONE, FIRST_ADMIN_PHONE, ALERT_PHONES, TURNSTILE_SECRET, and the BACKUP_S3_* settings.
   2. Point DNS at this server: an A record for each of APP_DOMAIN and AUTH_DOMAIN.
      Caddy fetches the certificates itself, and cannot until those records resolve.
   3. From your machine:  deploy/release.sh v1.0.0

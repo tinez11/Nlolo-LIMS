@@ -4,7 +4,8 @@
 #
 #   the console is served, the API refuses an anonymous caller, the backend is healthy by its own account,
 #   Authentik reports the issuer the backend demands, its blueprint applied, the sign-in page is up, sign-out's revoke
-#   reaches it, everything else on the auth address is shut to the internet, and no dev test user exists.
+#   reaches it, everything else on the auth address is shut to the internet, no dev test user exists, the front
+#   door's Caddy has its rate limits, and the watcher's timer runs.
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./platform-lib.sh
@@ -65,5 +66,16 @@ blueprint=$(printf '%s\n' "$OUT" | sed -n 's/^RESULT:BLUEPRINT //p')
 [ "$blueprint" = "successful" ] || fail "Authentik's lifeplatform blueprint is '${blueprint:-unknown}', not successful"
 dev=$(printf '%s\n' "$OUT" | sed -n 's/^RESULT:DEV //p' | tr -d '\r')
 [ -z "$dev" ] || fail "dev test users exist in Authentik: $dev -- delete them; they hold a password everyone knows"
+
+# The front door's rate limits (2026-11-23): the Caddy in service has the module. Only the module, not the exact build:
+# after a rollback the build is the older release's, and this folder's versions.env names the newer one. Tripping a
+# limit here would spend real visitors' allowance, so the limits themselves are proven by
+# deploy/test/rate-limit-rehearsal.sh.
+caddy list-modules 2>/dev/null | grep -qx 'http.handlers.rate_limit' \
+  || fail "the installed Caddy has no rate limiting (run ./install-caddy.sh)"
+
+# The watcher (2026-11-23): without it, a broken server stays broken until someone looks.
+systemctl is-active --quiet platform-watch.timer || fail "the watcher's timer (platform-watch.timer) is not active"
+[ -n "${ALERT_PHONES:-}" ] || fail "ALERT_PHONES is empty in .env: the watcher has nobody to text"
 
 echo "Smoke check passed."

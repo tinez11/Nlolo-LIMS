@@ -82,9 +82,23 @@ for rotating the signing key.
 ./status.sh                                # version, services, disk, last backup, backend health
 sudo journalctl -u platform-backend -f     # or authentik-server, authentik-worker, caddy, seaweedfs, postgresql@16-main
 ./smoke.sh                                 # the release's last gate, any time
+./watch.sh --check                         # the watcher's six checks, once
+./watch.sh --test-text                     # text ALERT_PHONES a test message
 ```
+
+`platform-watch.timer` runs `./watch.sh` every 5 minutes and texts `ALERT_PHONES` through NextSMS when something breaks,
+lasts (every 6 hours) or clears, plus a Monday 08:00 "still watching" text. The rules are `server/watch-rules.sh`;
+`deploy/test/watch-test.sh` proves them.
 
 ## 8. Versions
 
-`server/versions.env` pins Authentik and its build tools, Postgres's major version, Flyway, SeaweedFS, WireMock and
-rclone. Change one there and release; `install-tools.sh` and `install-authentik.sh` install exactly that.
+`server/versions.env` pins Authentik and its build tools, Postgres's major version, Flyway, SeaweedFS, WireMock,
+rclone, and Caddy with its rate-limit module. Change one there and release; `install-tools.sh`, `install-authentik.sh`
+and `install-caddy.sh` install exactly that.
+
+## 9. Rate limits
+
+Caddy is built with `caddy-ratelimit` by `server/install-caddy.sh` (dpkg-divert over the apt binary, so an upgrade
+cannot drop it). Per visitor address a minute: 60 sign-in steps, 30 `/api/public` calls, 600 other `/api` calls.
+`RATE_LIMIT_EXEMPT` in `.env` lists office addresses that skip the sign-in and `/api` limits. Prove changes locally
+with `deploy/test/rate-limit-rehearsal.sh` (Git Bash, Docker) before releasing.

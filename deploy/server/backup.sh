@@ -28,6 +28,8 @@ sudo -u postgres pg_dump -Fc authentik > "$DIR/authentik.dump"
 sudo tar czf - -C /var/lib/seaweedfs . > "$DIR/objects.tar.gz"
 
 cat RELEASED > "$DIR/RELEASE" 2>/dev/null || echo unknown > "$DIR/RELEASE"
+# The dumps are whole (set -e would have stopped otherwise): the watcher looks for this (watch.sh, check_backup).
+touch "$DIR/.complete"
 
 # Seven here; the off-server copies below are the ones that matter for losing the machine.
 ls -1d backups/*/ 2>/dev/null | sort | head -n -7 | xargs -r rm -rf
@@ -36,6 +38,8 @@ if offsite_configured; then
   # Encrypted on the way out (offsite.sh); fetch-backup.sh brings one back.
   rc copy "$DIR" "safe:daily/$STAMP"
   if [ "$(date +%u)" = "7" ]; then rc copy "$DIR" "safe:weekly/$STAMP"; fi
+  # The off-server copy went: the watcher's check_backup reads this file's age.
+  touch backups/.offsite-ok
   rc delete --min-age 15d "safe:daily" || true
   rc delete --min-age 57d "safe:weekly" || true
 else

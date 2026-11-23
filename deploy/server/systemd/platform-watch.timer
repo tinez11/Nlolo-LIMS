@@ -1,0 +1,12 @@
+# Every 5 minutes (2026-11-23, deploy/server/watch.sh). Not Persistent: a run missed while the machine was off is not
+# worth making up.
+[Unit]
+Description=Run the platform watcher every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
