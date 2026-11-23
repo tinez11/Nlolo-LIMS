@@ -26,10 +26,10 @@ Spec: "Build order", merge gate. The decision is in ticket 16 of `.scratch/authe
 
 **Status:** ready-for-agent
 
-- [ ] No Keycloak code, configuration or image remains, and the grep finds only history and docs
-- [ ] The full backend suite passes, and the result is reported with counts
-- [ ] The full vitest suite passes
-- [ ] The full e2e suite passes
+- [x] No Keycloak code, configuration or image remains, and the grep finds only history and docs (checked 2026-11-23: only history comments outside docs)
+- [x] The full backend suite passes, and the result is reported with counts (2026-11-21 on daed39af: 3356 run, 0 failures, 0 errors, 1 skipped, BUILD SUCCESS)
+- [x] The full vitest suite passes (2026-11-23: 2022/2023, the one failure a design guard on /reset's code box, fixed fc9a4e7c and re-run green)
+- [x] The full e2e suite passes (2026-11-23: 217/225 in the full run, 5 skipped; the 3 failures were fixed or passed alone, see Comments)
 - [ ] The fresh-bootstrap rehearsal signs in to every workspace
 - [ ] The whole-branch review's findings are fixed or explicitly accepted by the user
 
@@ -45,6 +45,13 @@ Spec: "Build order", merge gate. The decision is in ticket 16 of `.scratch/authe
 - **Two failures older than the cut-over** (details in ticket 09):
   - `staff-underwriting` "a proposal states the contract": it needs a priced product.
   - the seed's customer loan step: a 403, because loans are staff-only.
+
+**2026-11-23, the full e2e run** (`npm run test:e2e`, the documented one worker; `--workers=2` overloads this 7.8 GB box now that every page load signs in silently through Authentik): 217 passed, 3 failed, 5 skipped, 1.9 h.
+- `agents-my-sales` "by month": passed alone (2/2). Sign-in timing.
+- `staff-payouts` "a payout passes two people": dev `staff.finance` had lost `payouts.approve-own` (D2) when ticket 01 rebuilt the staff rows; nothing seeds it. Restored by hand in the dev database; the whole file then passed (one test needed a second try, sign-in timing).
+- `staff-underwriting` "a proposal states the contract": "This product version carries no base rate table" on Demo Term Life. The seed gap named above, older than the cut-over.
+- Before a run, the dev password grant must be present: the production blueprint applied after the dev one had removed it, and every `apiToken` got invalid_grant. Restored through the API.
+- **Fixed the same day:** the seed publishes Demo Term Life with base rates and entry ages, and grants staff.finance `payouts.approve-own`; `scripts/dev/price-demo-term.sh` republishes an already-seeded database's (run on dev); `e2e/globalSetup.ts` stops a run at once, with the fix, when the dev password grant is missing. The seven spec files on Demo Term Life re-ran after the republish: 40 passed, 2 failed on sign-in timing and passed alone.
 
 **2026-11-20, handed on from ticket 10 (native install):**
 - **Still for Keycloak, delete them:**

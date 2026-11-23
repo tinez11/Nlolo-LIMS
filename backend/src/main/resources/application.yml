@@ -287,9 +287,10 @@ management:
   # until a review of this very commit caught that this guidance did not work as written.
   # ActuatorExposureTest now asserts all three, so the guidance and the code cannot drift apart.
   #
-  # infra/app/Dockerfile deliberately still declares only EXPOSE 8080. EXPOSE is metadata, so
-  # nothing breaks -- and ADDING 9090 would be actively harmful, because `docker run -P` publishes
-  # every EXPOSEd port and would hand the management port to the host.
+  # There is no backend container image any more (2026-11-23): the server runs the jar under systemd
+  # (deploy/README.md), where 8080 and 9090 both listen on the machine and only 22, 80 and 443 are
+  # open (deploy/bootstrap-server.sh's firewall). Caddy forwards /api to 8080 only, so the
+  # management port is never reachable from outside.
   server:
     port: 9090
   endpoints:

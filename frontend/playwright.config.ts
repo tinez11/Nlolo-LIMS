@@ -23,8 +23,12 @@ const APP = 'http://localhost:5173';
 
 export default defineConfig({
   testDir: './e2e',
-  // Auth is a real redirect chain through an external IdP; give it room.
-  timeout: 60_000,
+  // Fails the run at once, with the fix, when Authentik no longer allows the dev password grant (e2e/globalSetup.ts).
+  globalSetup: './e2e/globalSetup.ts',
+  // Auth is a real redirect chain through an external IdP; give it room. 90 seconds since Authentik (2026-11-23): its
+  // silent sign-in costs about 3 seconds against Keycloak's under one, every page load makes one, and the sign-in setups
+  // took 36-66 seconds on the first full run at two workers.
+  timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
