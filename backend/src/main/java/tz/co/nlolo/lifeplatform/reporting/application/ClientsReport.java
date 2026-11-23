@@ -33,7 +33,8 @@ public class ClientsReport implements Report {
 
     static final ReportDefinitionView DEFINITION = new ReportDefinitionView("clients", "Clients",
         "Clients by type and KYC status, individuals by age band and sex, and every group or corporate scheme with "
-            + "its lives covered, joiners and leavers.",
+            + "its lives covered, joiners and leavers. Cut by branch, a client counts in every branch they hold a policy"
+        + " in.",
         ReportCategory.MANAGEMENT, DateFilterKind.AS_OF_AND_PERIOD, List.of(), false).comparingPeriods().from("REPORTING_COPY");
 
     private final ReportQueries queries;
@@ -78,7 +79,8 @@ public class ClientsReport implements Report {
             col("newInPeriod", "New in period", COUNT), col("kycVerified", "KYC verified", COUNT),
             col("kycPending", "KYC pending", COUNT), col("kycRejected", "KYC rejected", COUNT),
             col("withoutPolicyInForce", "No policy in force", COUNT));
-        List<Map<String, String>> summaryRows = queries.clientSummary(tenantId, f.asOf(), f.from(), f.to(), f.clientType())
+        List<Map<String, String>> summaryRows = queries.clientSummary(tenantId, f.asOf(), f.from(), f.to(), f.clientType(),
+                f.branchCode())
             .stream().map(r -> {
                 Map<String, String> row = new LinkedHashMap<>();
                 row.put("partyType", r.partyType());
@@ -93,7 +95,7 @@ public class ClientsReport implements Report {
         sections.add(new ReportSection("Clients on " + f.asOf(), summary, summaryRows, Sections.totals(summary, summaryRows)));
 
         if (f.clientType() == null || "INDIVIDUAL".equals(f.clientType())) {
-            List<IndividualRow> people = queries.individuals(tenantId, f.asOf());
+            List<IndividualRow> people = queries.individuals(tenantId, f.asOf(), f.branchCode());
             sections.add(ageAndSex(people, f));
             sections.add(policiesPerClient(people));
         }

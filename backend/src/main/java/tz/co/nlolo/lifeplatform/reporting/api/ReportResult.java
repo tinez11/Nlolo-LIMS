@@ -11,14 +11,24 @@ import java.util.List;
  *                shown above them, never in a footnote (2026-11-09, the solvency reports)
  * @param dataUpTo the newest change the reports' own copy had taken in for this tenant when the report ran
  *                 (2026-11-11, analytics plan 2); null when the report does not read the copy (it reads live)
+ * @param exportSummary the About line of an export (2026-11-23, branch views): as {@code filterSummary}, but a branch
+ *                      by name and code ("Branch: Arusha (ARU)") where the screen says "Arusha branch", and
+ *                      "Company-wide" for a report that cannot be cut by branch
  */
 public record ReportResult(String key, String title, String filterSummary, Instant generatedAt,
                            List<ReportSection> sections, List<ReportFigure> figures, ReportChart chart,
-                           String comparisonLabel, List<String> notices, Instant dataUpTo) {
+                           String comparisonLabel, List<String> notices, Instant dataUpTo, String exportSummary) {
 
     public ReportResult {
         figures = figures == null ? List.of() : List.copyOf(figures);
         notices = notices == null ? List.of() : List.copyOf(notices);
+        if (exportSummary == null) exportSummary = filterSummary;
+    }
+
+    public ReportResult(String key, String title, String filterSummary, Instant generatedAt,
+                        List<ReportSection> sections, List<ReportFigure> figures, ReportChart chart,
+                        String comparisonLabel, List<String> notices, Instant dataUpTo) {
+        this(key, title, filterSummary, generatedAt, sections, figures, chart, comparisonLabel, notices, dataUpTo, null);
     }
 
     public ReportResult(String key, String title, String filterSummary, Instant generatedAt,

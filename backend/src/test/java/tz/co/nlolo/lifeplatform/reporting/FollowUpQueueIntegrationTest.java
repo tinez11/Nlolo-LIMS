@@ -102,7 +102,8 @@ class FollowUpQueueIntegrationTest {
     void setUp() {
         TenantContext.set(tenant);
         queue = new FollowUpQueue(billing, parties, distribution, queries,
-            new LabelsFactory(mock(ProductApi.class), distribution, parties), publisher, reportingClock);
+            new LabelsFactory(mock(ProductApi.class), distribution, parties,
+                mock(tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi.class)), publisher, reportingClock);
         LocalDate sold = today.minusMonths(3);
         events.sell(tenant, Sale.of("FU-SOON", product, sold).agent(myAgent).holder(holder));
         events.sell(tenant, Sale.of("FU-TODAY", product, sold).agent(otherAgent).holder(holder));

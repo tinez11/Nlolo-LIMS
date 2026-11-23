@@ -31,8 +31,12 @@ postings carry no branch, so a branch cut would look whole and be partial).
 
 | Branch choice | Reports |
 |---|---|
-| **Yes** | new-business, policies-in-force, persistency, lapse-rate, free-look, products, clients, premium-collections, commissions, claim-outcomes, claims-incurred, claims-in-progress, claim-turnaround, outstanding-claims, early-claims, approved-vs-paid, claims-net-of-reinsurance, loss-ratio |
-| **Company-wide** | balance-sheet, trial-balance, general-ledger, income-statement, capital-adequacy, solvency-forecast, stress-test, reinsurance |
+| **Yes** | new-business, policies-in-force, persistency, lapse-rate, free-look-and-not-taken-up, products, clients, premium-collections, claim-outcomes, claims-incurred, claims-in-progress, claims-turnaround, claims-outstanding, early-claims, claims-approved-vs-paid, claims-net-of-reinsurance, loss-ratio |
+| **Company-wide** | balance-sheet, trial-balance, general-ledger, income-statement, capital-adequacy, solvency-forecast, stress-tests, reinsurance, **commissions** |
+
+**Commissions moved to company-wide while building (2026-11-23):** an agent is paid by statement across every policy
+they sold, whatever its branch, so only the per-policy commission lines could be cut and the statements could not — a
+branch view would look whole and be partial. Keys corrected to the code's own (`stress-tests`, `claims-turnaround`, …).
 
 The plan verifies each "Yes" report against its source before wiring it; one found to read the ledger moves to
 company-wide rather than being cut partially. **Clients:** a client has no branch, so a client is counted in a branch

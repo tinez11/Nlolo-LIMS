@@ -83,7 +83,7 @@ final class ReportXlsx {
         Sheet sheet = wb.createSheet("Summary");
         int r = BrandedXlsx.letterhead(wb, sheet, letterhead);
         cell(sheet.createRow(r++), 0, result.title(), st.title);
-        if (present(result.filterSummary())) cell(sheet.createRow(r++), 0, result.filterSummary(), null);
+        if (present(result.exportSummary())) cell(sheet.createRow(r++), 0, result.exportSummary(), null);
         if (present(result.comparisonLabel())) cell(sheet.createRow(r++), 0, result.comparisonLabel(), st.muted);
         cell(sheet.createRow(r++), 0, "Prepared" + (present(preparedBy) ? " by " + preparedBy : "") + " on "
             + ReportFormat.stamp(result.generatedAt()), st.muted);
