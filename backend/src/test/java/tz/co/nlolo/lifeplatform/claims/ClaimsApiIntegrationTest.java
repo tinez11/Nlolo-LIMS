@@ -922,4 +922,47 @@ class ClaimsApiIntegrationTest {
 
         assertThat(claimsApi.countOpenDocumentRequests()).isEqualTo(1);
     }
+
+    /**
+     * Branch views (2026-11-23): the dashboard cuts claims by the policy numbers of a branch. Scoped to one claim's
+     * policy, every by-month figure and the open-request count see that claim alone; scoped to none, nothing; unscoped
+     * (null), everything, exactly as before.
+     */
+    @Test
+    void theByMonthFiguresCanBeScopedToSomePolicies() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-SCOPED");
+        UUID a = settleClaimAt(tenantId, fixture, "sc1", "4000000.00", "TZS", Instant.parse("2026-03-04T08:00:00Z"));
+        UUID b = settleClaimAt(tenantId, fixture, "sc2", "6000000.00", "TZS", Instant.parse("2026-03-20T08:00:00Z"));
+        String policyA = jdbc.queryForObject("SELECT policy_number FROM claims.claim WHERE claim_id = ?", String.class, a);
+        String policyB = jdbc.queryForObject("SELECT policy_number FROM claims.claim WHERE claim_id = ?", String.class, b);
+        assertThat(policyA).isNotEqualTo(policyB);
+        YearMonth march = YearMonth.of(2026, 3);
+
+        assertThat(claimsApi.settlementsByMonth(march, march, java.util.Set.of(policyA)))
+            .extracting(m -> m.claims() + " " + m.totalApproved().stripTrailingZeros().toPlainString())
+            .containsExactly("1 4000000");
+        assertThat(claimsApi.settlementsByType(march, march, java.util.Set.of(policyA)))
+            .extracting(t -> t.claims()).containsExactly(1L);
+        assertThat(claimsApi.settlementTurnaroundByMonth(march, march, java.util.Set.of(policyA)))
+            .extracting(t -> t.claims()).containsExactly(1L);
+        assertThat(claimsApi.registrationsByMonth(YearMonth.of(2020, 1), YearMonth.of(2030, 12),
+            java.util.Set.of(policyA))).extracting(r -> r.claims()).containsExactly(1L);
+
+        assertThat(claimsApi.settlementsByMonth(march, march, java.util.Set.of())).isEmpty();
+        assertThat(claimsApi.settlementsByMonth(march, march, null))
+            .extracting(m -> m.claims()).containsExactly(2L);
+
+        // Document requests belong to open claims: two fresh ones, a policy each.
+        UUID c = registerDeathClaim(tenantId, fixture, issuePolicyWithNullUnderwritingCase(tenantId, fixture),
+            "reg-idem-scoped-c");
+        UUID d = registerDeathClaim(tenantId, fixture, issuePolicyWithNullUnderwritingCase(tenantId, fixture),
+            "reg-idem-scoped-d");
+        String policyC = jdbc.queryForObject("SELECT policy_number FROM claims.claim WHERE claim_id = ?", String.class, c);
+        claimJourneyApi.requestDocument(c, "Death certificate", null, "claims-staff", "Claims Staff");
+        claimJourneyApi.requestDocument(d, "Police report", null, "claims-staff", "Claims Staff");
+        assertThat(claimsApi.countOpenDocumentRequests(java.util.Set.of(policyC))).isEqualTo(1);
+        assertThat(claimsApi.countOpenDocumentRequests(java.util.Set.of())).isZero();
+        assertThat(claimsApi.countOpenDocumentRequests((java.util.Set<String>) null)).isEqualTo(2);
+    }
 }

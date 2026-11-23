@@ -517,9 +517,31 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     @Override
     public List<SettlementMonth> settlementsByMonth(java.time.YearMonth from, java.time.YearMonth to) {
+        return settlementsByMonth(from, to, null);
+    }
+
+    /**
+     * The by-month figures for some policies' claims only (2026-11-23, branch views): null means every claim, an empty
+     * set none. SQL's IN needs a value, so an unscoped call passes a placeholder no policy number can equal.
+     */
+    // Not a NUL character: Postgres refuses 0x00 in text. Policy numbers are POL-... and never hold a space.
+    private static final List<String> NO_POLICY = List.of("no policy");
+
+    private static boolean scoped(Set<String> policyNumbers) {
+        return policyNumbers != null;
+    }
+
+    private static java.util.Collection<String> inList(Set<String> policyNumbers) {
+        return policyNumbers == null || policyNumbers.isEmpty() ? NO_POLICY : policyNumbers;
+    }
+
+    @Override
+    public List<SettlementMonth> settlementsByMonth(java.time.YearMonth from, java.time.YearMonth to,
+                                                    Set<String> policyNumbers) {
         Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
         Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
-        return claimRepository.settlementsByMonth(TenantContext.get(), start, end).stream()
+        return claimRepository.settlementsByMonth(TenantContext.get(), start, end, scoped(policyNumbers),
+                inList(policyNumbers)).stream()
             .map(row -> new SettlementMonth(java.time.YearMonth.parse((String) row[0]), (String) row[1],
                 ((Number) row[2]).longValue(), (BigDecimal) row[3]))
             .toList();
@@ -528,7 +550,14 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.claims.api.SettlementByType> settlementsByType(java.time.YearMonth from,
                                                                                        java.time.YearMonth to) {
-        return claimRepository.settlementsByType(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)))
+        return settlementsByType(from, to, null);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.SettlementByType> settlementsByType(java.time.YearMonth from,
+            java.time.YearMonth to, Set<String> policyNumbers) {
+        return claimRepository.settlementsByType(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)),
+                scoped(policyNumbers), inList(policyNumbers))
             .stream()
             .map(row -> new tz.co.nlolo.lifeplatform.claims.api.SettlementByType((String) row[0], (String) row[1],
                 ((Number) row[2]).longValue(), (BigDecimal) row[3]))
@@ -538,8 +567,14 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> settlementTurnaroundByMonth(java.time.YearMonth from,
                                                                                            java.time.YearMonth to) {
+        return settlementTurnaroundByMonth(from, to, null);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> settlementTurnaroundByMonth(java.time.YearMonth from,
+            java.time.YearMonth to, Set<String> policyNumbers) {
         return claimRepository.settlementTurnaroundByMonth(TenantContext.get(), civilStart(from),
-                civilStart(to.plusMonths(1))).stream()
+                civilStart(to.plusMonths(1)), scoped(policyNumbers), inList(policyNumbers)).stream()
             .map(row -> new tz.co.nlolo.lifeplatform.claims.api.ClaimMonth(java.time.YearMonth.parse((String) row[0]),
                 ((Number) row[1]).longValue(), (BigDecimal) row[2]))
             .toList();
@@ -548,7 +583,14 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> registrationsByMonth(java.time.YearMonth from,
                                                                                     java.time.YearMonth to) {
-        return claimRepository.registrationsByMonth(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)))
+        return registrationsByMonth(from, to, null);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> registrationsByMonth(java.time.YearMonth from,
+            java.time.YearMonth to, Set<String> policyNumbers) {
+        return claimRepository.registrationsByMonth(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)),
+                scoped(policyNumbers), inList(policyNumbers))
             .stream()
             .map(row -> new tz.co.nlolo.lifeplatform.claims.api.ClaimMonth(java.time.YearMonth.parse((String) row[0]),
                 ((Number) row[1]).longValue(), null))
@@ -563,6 +605,12 @@ public class ClaimsApiImpl implements ClaimsApi {
     public long countOpenDocumentRequests() {
         return claimDocumentRequestRepository.countByTenantIdAndStatus(TenantContext.get(),
             ClaimDocumentRequest.Status.OPEN.name());
+    }
+
+    @Override
+    public long countOpenDocumentRequests(Set<String> policyNumbers) {
+        if (policyNumbers == null) return countOpenDocumentRequests();
+        return claimRepository.countOpenDocumentRequests(TenantContext.get(), true, inList(policyNumbers));
     }
 
     @Override

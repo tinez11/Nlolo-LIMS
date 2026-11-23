@@ -77,6 +77,8 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
         + "     OR (c.decisionDecidedAt IS NOT NULL AND c.decisionDecidedAt < :decidedTo)) "
         + "AND (:applicantPartyId IS NULL OR c.applicantPartyId = :applicantPartyId) "
         + "AND (:applicantPartyIds IS NULL OR c.applicantPartyId IN :applicantPartyIds) "
+        // The branch the sale belongs to (2026-11-23, branch views): the controlled code, not the free-text branch.
+        + "AND (:branchCode IS NULL OR c.branchCode = :branchCode) "
         // Where it came from (2026-10-29), as CaseSource.of reads it: the portal with or without an amount, an agent's
         // quotation or agent of record, or the office.
         + "AND (:source IS NULL "
@@ -97,6 +99,7 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
                                    @Param("decidedTo") Instant decidedTo,
                                    @Param("applicantPartyId") UUID applicantPartyId,
                                    @Param("applicantPartyIds") Set<UUID> applicantPartyIds,
+                                   @Param("branchCode") String branchCode,
                                    @Param("source") String source,
                                    Pageable pageable);
 
@@ -110,6 +113,11 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
 
     @Query(AWAITING_ISSUE)
     Page<UnderwritingCase> awaitingIssue(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /** As {@link #awaitingIssue}, one branch's (2026-11-23, branch views). */
+    @Query(AWAITING_ISSUE + " AND c.branchCode = :branchCode")
+    Page<UnderwritingCase> awaitingIssueInBranch(@Param("tenantId") UUID tenantId, @Param("branchCode") String branchCode,
+                                                 Pageable pageable);
 
     /** As {@link #awaitingIssue}, narrowed to proposal numbers containing {@code pattern} (lower case, with wildcards). */
     @Query(AWAITING_ISSUE + " AND LOWER(c.proposalNumber) LIKE :pattern")
@@ -132,11 +140,12 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
          WHERE c.tenant_id = :tenantId
            AND c.decision_decided_at IS NOT NULL
            AND c.decision_decided_at >= :from AND c.decision_decided_at < :to
+           AND (CAST(:branchCode AS text) IS NULL OR c.branch_code = :branchCode)
          GROUP BY month, c.decision_outcome
          ORDER BY month, c.decision_outcome
         """, nativeQuery = true)
     List<Object[]> decisionsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                     @Param("to") Instant to);
+                                     @Param("to") Instant to, @Param("branchCode") String branchCode);
 
     /** Decisions per civil month, every outcome, with the summed days unrounded (2026-10-23). */
     @Query(value = """
@@ -147,9 +156,10 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
          WHERE c.tenant_id = :tenantId
            AND c.decision_decided_at IS NOT NULL
            AND c.decision_decided_at >= :from AND c.decision_decided_at < :to
+           AND (CAST(:branchCode AS text) IS NULL OR c.branch_code = :branchCode)
          GROUP BY month
          ORDER BY month
         """, nativeQuery = true)
     List<Object[]> decisionTurnaroundByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                              @Param("to") Instant to);
+                                              @Param("to") Instant to, @Param("branchCode") String branchCode);
 }

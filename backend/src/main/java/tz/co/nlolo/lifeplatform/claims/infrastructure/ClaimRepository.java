@@ -97,11 +97,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
            AND c.settled_at IS NOT NULL
            AND c.approved_currency IS NOT NULL
            AND c.settled_at >= :from AND c.settled_at < :to
+           AND (:scoped = false OR c.policy_number IN (:policyNumbers))
          GROUP BY month, c.approved_currency
          ORDER BY month, c.approved_currency
         """, nativeQuery = true)
     List<Object[]> settlementsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                       @Param("to") Instant to);
+                                       @Param("to") Instant to, @Param("scoped") boolean scoped,
+                                       @Param("policyNumbers") Collection<String> policyNumbers);
 
     /** Settled claims over a span, per type and currency (2026-10-23). Currency-less rows excluded, as above. */
     @Query(value = """
@@ -111,11 +113,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
            AND c.settled_at IS NOT NULL
            AND c.approved_currency IS NOT NULL
            AND c.settled_at >= :from AND c.settled_at < :to
+           AND (:scoped = false OR c.policy_number IN (:policyNumbers))
          GROUP BY c.claim_type, c.approved_currency
          ORDER BY total_approved DESC, c.claim_type
         """, nativeQuery = true)
     List<Object[]> settlementsByType(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                      @Param("to") Instant to);
+                                      @Param("to") Instant to, @Param("scoped") boolean scoped,
+                                      @Param("policyNumbers") Collection<String> policyNumbers);
 
     /** Settled claims per civil month with their summed days from registration, unrounded (2026-10-23). */
     @Query(value = """
@@ -126,11 +130,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
          WHERE c.tenant_id = :tenantId
            AND c.settled_at IS NOT NULL
            AND c.settled_at >= :from AND c.settled_at < :to
+           AND (:scoped = false OR c.policy_number IN (:policyNumbers))
          GROUP BY month
          ORDER BY month
         """, nativeQuery = true)
     List<Object[]> settlementTurnaroundByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                                @Param("to") Instant to);
+                                                @Param("to") Instant to, @Param("scoped") boolean scoped,
+                                                @Param("policyNumbers") Collection<String> policyNumbers);
 
     /** Claims registered per civil month (2026-10-23). */
     @Query(value = """
@@ -138,11 +144,26 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
           FROM claims.claim c
          WHERE c.tenant_id = :tenantId
            AND c.created_at >= :from AND c.created_at < :to
+           AND (:scoped = false OR c.policy_number IN (:policyNumbers))
          GROUP BY month
          ORDER BY month
         """, nativeQuery = true)
     List<Object[]> registrationsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
-                                         @Param("to") Instant to);
+                                         @Param("to") Instant to, @Param("scoped") boolean scoped,
+                                         @Param("policyNumbers") Collection<String> policyNumbers);
+
+    /**
+     * Open document requests on these policies' claims (2026-11-23, branch views). {@code scoped} false means every
+     * claim; {@code policyNumbers} is then a placeholder, because SQL's IN needs at least one value.
+     */
+    @Query(value = """
+        SELECT COUNT(*) FROM claims.claim_document_request r
+          JOIN claims.claim c ON c.claim_id = r.claim_id AND c.tenant_id = r.tenant_id
+         WHERE r.tenant_id = :tenantId AND r.status = 'OPEN'
+           AND (:scoped = false OR c.policy_number IN (:policyNumbers))
+        """, nativeQuery = true)
+    long countOpenDocumentRequests(@Param("tenantId") UUID tenantId, @Param("scoped") boolean scoped,
+                                   @Param("policyNumbers") Collection<String> policyNumbers);
 
     /** Backs claims/V3's partial unique index on (tenant_id, registration_idempotency_key) --
      * ClaimsApiImpl.registerClaim re-queries this on a caught unique-constraint violation to

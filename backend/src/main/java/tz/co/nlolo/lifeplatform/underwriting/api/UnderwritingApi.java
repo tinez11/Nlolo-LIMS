@@ -234,8 +234,17 @@ public interface UnderwritingApi {
      */
     List<DecisionMonth> decisionsByMonth(YearMonth from, YearMonth to);
 
+    /** As {@link #decisionsByMonth(YearMonth, YearMonth)}, one branch's cases; null for every branch (2026-11-23). */
+    List<DecisionMonth> decisionsByMonth(YearMonth from, YearMonth to, String branchCode);
+
     /** Decisions per month, every outcome together, with their summed days. A month with none is absent. */
     List<DecisionTurnaround> decisionTurnaroundByMonth(YearMonth from, YearMonth to);
+
+    /** As {@link #decisionTurnaroundByMonth(YearMonth, YearMonth)}, one branch's; null for every branch (2026-11-23). */
+    List<DecisionTurnaround> decisionTurnaroundByMonth(YearMonth from, YearMonth to, String branchCode);
+
+    /** How many decided cases of one branch await issue (2026-11-23, branch views): the dashboard's count. */
+    long countCasesAwaitingIssueInBranch(String branchCode);
 
     /**
      * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined

@@ -96,6 +96,19 @@ public interface ClaimsApi {
     /** How many document requests are still outstanding across every claim in the tenant. */
     long countOpenDocumentRequests();
 
+    // ---- one set of policies' claims (2026-11-23, branch views): the dashboard cuts by branch through the policy
+    // numbers the reports' copy holds for it. Null means every claim; an empty set means none. ----
+
+    List<SettlementMonth> settlementsByMonth(YearMonth from, YearMonth to, Set<String> policyNumbers);
+
+    List<SettlementByType> settlementsByType(YearMonth from, YearMonth to, Set<String> policyNumbers);
+
+    List<ClaimMonth> settlementTurnaroundByMonth(YearMonth from, YearMonth to, Set<String> policyNumbers);
+
+    List<ClaimMonth> registrationsByMonth(YearMonth from, YearMonth to, Set<String> policyNumbers);
+
+    long countOpenDocumentRequests(Set<String> policyNumbers);
+
     /**
      * @param assessedBy the assessor's identity-provider subject -- what separation of duties
      *     compares against the decider, so it must be the stable identifier, never a name.
