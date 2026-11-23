@@ -55,8 +55,10 @@ says so.
     decision" = underwriting cases of that branch (case's own branch) + open claims of that branch (projections).
   - **Underwriting:** the underwriting API's queue, open/in-review counts, decisions by month and turnaround take an
     optional branch, filtering on `underwriting_case.branch_code`.
-  - **Claims:** counts, settlement months and the work queue from `reporting.report_claim` joined to `report_policy`
-    by policy number, through a new reporting API method; the queue's claim ids then open as today.
+  - **Claims:** the branch's policy numbers come from a new reporting API method over `report_policy`; the claims
+    API's own queries take them (`searchClaims` already does; the by-month figures and the open-document-request count
+    gain an overload), so claim statuses stay the claims module's own rules rather than being re-derived from the
+    reporting copy's dates. (Refined while planning, 2026-11-23.)
   - Each view gains `branch` (code and name, or null) and, per figure that still has no branch source, a flag the
     screen shows as "All branches". None is expected; the flag stops a quietly wrong figure.
 - **`/me/access`** gains `homeBranch` (the staff record's) and `headOfficeBranch` (organisation settings), and
