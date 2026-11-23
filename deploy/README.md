@@ -86,5 +86,13 @@ sudo journalctl -u platform-backend -f     # or authentik-server, authentik-work
 
 ## 8. Versions
 
-`server/versions.env` pins Authentik and its build tools, Postgres's major version, Flyway, SeaweedFS, WireMock and
-rclone. Change one there and release; `install-tools.sh` and `install-authentik.sh` install exactly that.
+`server/versions.env` pins Authentik and its build tools, Postgres's major version, Flyway, SeaweedFS, WireMock,
+rclone, and Caddy with its rate-limit module. Change one there and release; `install-tools.sh`, `install-authentik.sh`
+and `install-caddy.sh` install exactly that.
+
+## 9. Rate limits
+
+Caddy is built with `caddy-ratelimit` by `server/install-caddy.sh` (dpkg-divert over the apt binary, so an upgrade
+cannot drop it). Per visitor address a minute: 60 sign-in steps, 30 `/api/public` calls, 600 other `/api` calls.
+`RATE_LIMIT_EXEMPT` in `.env` lists office addresses that skip the sign-in and `/api` limits. Prove changes locally
+with `deploy/test/rate-limit-rehearsal.sh` (Git Bash, Docker) before releasing.

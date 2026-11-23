@@ -145,6 +145,7 @@ The generated secrets are already there; leave them alone. Fill in the rest:
 | `FIRST_ADMIN_PHONE` | The first administrator's mobile, `+255...` | Their sign-in code is texted here |
 | `FIRST_ADMIN_HOME_BRANCH` | Their branch code, e.g. `DSM` | Staff need a branch to post accounting entries |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_S3_BUCKET` | From your backup storage | Sends an encrypted copy of every backup off the server |
+| `RATE_LIMIT_EXEMPT` | Optional: the insurer's office addresses, in quotes, space-separated | Staff sharing one office address are not slowed by the sign-in limit. See Step 8 |
 
 **Leave as they are:** `MAIL_ENABLED=false` (email is not used; everything goes by SMS), `STAFF_SIGN_IN_CODE=true`,
 `SMS_GATEWAY_LIVE=true`, `PUBLIC_QUOTE_ENABLED=false` (the public quote link stays off until the insurer wants it),
@@ -206,7 +207,7 @@ few minutes. It prints a heading for each stage:
 | `== building` | Builds the backend and the console on your computer |
 | `== staging`, `== copying` | Sends them, the database changes, the sign-in configuration and the server scripts up |
 | `== backup before` | Backs up the current data (skipped on the very first release, when there is none) |
-| `== installing` | Puts the release in place, installs the pinned tools, writes each service its settings |
+| `== installing` | Puts the release in place, installs the pinned tools, writes each service its settings, builds the web server with its rate limits if this version is new (a few minutes) and checks it can load its configuration |
 | `== database` | Creates the database the first time, then creates or updates every table |
 | `== data services` | Starts the document store |
 | `== identity` | Builds Authentik if this version is new (**the long part, the first time**), starts it, applies its configuration, starts the web server |
@@ -258,8 +259,12 @@ Work through this list on the live server. Each item has caught a real problem b
 - [ ] **A rollback works:** after your second release, `deploy/release.sh --rollback v1.0.0`, then release the newer
       version again.
 - [ ] **An uptime monitor** (UptimeRobot, free) on both addresses, alerting someone by SMS or phone.
-- [ ] **Rate limiting:** put Cloudflare (free plan) in front of both addresses. It slows down anyone trying many
-      passwords across many accounts.
+- [ ] **Office addresses for the rate limits:** the web server limits each visitor address: 60 sign-in steps a
+      minute (about 15 people signing in), 30 public-page calls and 600 console calls. An office where many staff
+      share one internet address should be listed in `RATE_LIMIT_EXEMPT` in `.env`, in quotes and space-separated
+      (e.g. `"196.41.0.10 41.59.12.0/28"`), then applied with a release or
+      `ssh deploy@SERVER_IP 'cd platform && ./remote-release.sh --rollback "$(cat RELEASED)"'`. Ask the office's
+      internet provider for its fixed address. The public pages stay limited for everyone.
 
 ---
 
