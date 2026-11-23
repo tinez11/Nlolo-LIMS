@@ -61,7 +61,8 @@ so an empty list is valid configuration rather than an empty matcher. `remote-re
   The console already shows a problem's title and detail (`frontend/src/lib/apiError.ts`).
 - **The auth domain:** 429 with `Retry-After` and the same words as plain text. Authentik's page shows its own error
   box; rewording it would mean changing Authentik, which this does not do.
-- Each 429 is in Caddy's journal with the address, for the monitoring piece to count.
+- Counting 429s (which addresses, how often) is left to the monitoring piece: Caddy does not log a handled error by
+  default, and turning on an access log for every request is that piece's decision.
 
 ## Failure behaviour
 
@@ -69,6 +70,8 @@ so an empty list is valid configuration rather than an empty matcher. `remote-re
 - `remote-release.sh` runs `caddy validate` on the new Caddyfile before restarting Caddy. A Caddyfile the binary cannot
   load stops the release, and the previous one keeps serving.
 - `smoke.sh` fails a release when `caddy list-modules` does not list `http.handlers.rate_limit`.
+- A rollback puts back that release's own Caddy build: `install-caddy.sh` takes the pins from the caller's environment
+  (the rolled-back release's `versions.env`) before its own folder's.
 
 ## Testing
 
