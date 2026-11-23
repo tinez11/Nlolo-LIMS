@@ -128,7 +128,7 @@ public class AccessService implements AccessApi {
             BuiltInRoles.APPROVE_OWN_WORK.forEach(p -> permissions.add(p.code()));
         }
         return new AccessView(identity.userId(), identity.displayName(), true, roles,
-            roles.isEmpty() ? null : roles.get(0), permissions);
+            roles.isEmpty() ? null : roles.get(0), permissions, null);
     }
 
     private AccessView load(StaffIdentity identity) {
@@ -136,11 +136,11 @@ public class AccessService implements AccessApi {
         MapSqlParameterSource p = new MapSqlParameterSource()
             .addValue("tenant", identity.tenantId()).addValue("user", identity.userId());
         List<Map<String, Object>> user = jdbc.queryForList(
-            "SELECT display_name, active FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user", p);
+            "SELECT display_name, active, home_branch FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user", p);
         if (user.isEmpty()) {
             importFromToken(identity);
             user = jdbc.queryForList(
-                "SELECT display_name, active FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user", p);
+                "SELECT display_name, active, home_branch FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user", p);
         }
         // When they were last here, for the Users screen -- at most once every five minutes, it is not an audit trail.
         jdbc.update("UPDATE iam.staff_user SET last_seen_at = now() WHERE tenant_id = :tenant AND user_id = :user "
@@ -166,7 +166,7 @@ public class AccessService implements AccessApi {
 
         return new AccessView(identity.userId(), displayName != null ? displayName : identity.displayName(), active,
             List.copyOf(roles), active && !roles.isEmpty() ? roles.get(0) : null,
-            active ? permissions : Set.of());
+            active ? permissions : Set.of(), (String) user.get(0).get("home_branch"));
     }
 
     /** For the Roles screen, which may be the first thing a new tenant's administrator opens. */

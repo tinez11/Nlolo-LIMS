@@ -20,8 +20,12 @@ public interface AccessApi {
      * What one staff member holds. {@code primaryRole} is the one the console's badge shows beneath their name -- the
      * first they hold in the built-in precedence (Administrator first), or null when they hold none.
      */
+    /**
+     * @param homeBranch the branch the staff member is based at, a branch code; null when none is set (2026-11-23,
+     *                   branch views: the console starts the dashboards and reports on it unless it is the head office)
+     */
     record AccessView(UUID userId, String displayName, boolean active, List<RoleRef> roles, RoleRef primaryRole,
-                      Set<String> permissions) {
+                      Set<String> permissions, String homeBranch) {
 
         public boolean can(Permission permission) {
             return active && permissions.contains(permission.code());

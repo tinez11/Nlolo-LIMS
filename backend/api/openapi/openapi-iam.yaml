@@ -284,8 +284,13 @@ components:
         name: { type: string, example: Underwriter }
     MyAccess:
       type: object
-      required: [userId, displayName, active, roles, primaryRole, permissions]
+      required: [userId, displayName, active, roles, primaryRole, permissions, homeBranch]
       properties:
+        homeBranch:
+          type: [string, "null"]
+          description: >-
+            Where they are based, a branch code; null when none is set (2026-11-23, branch views). The console starts
+            the dashboards and reports on it unless it is the head office.
         userId: { type: string, format: uuid }
         displayName: { type: [string, "null"] }
         active: { type: boolean }

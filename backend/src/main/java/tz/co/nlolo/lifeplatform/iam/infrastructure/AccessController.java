@@ -22,8 +22,9 @@ public class AccessController {
         static RoleDto from(AccessApi.RoleRef r) { return r == null ? null : new RoleDto(r.code(), r.name()); }
     }
 
+    /** @param homeBranch where they are based, a branch code or null (2026-11-23, branch views) */
     public record MyAccessDto(UUID userId, String displayName, boolean active, List<RoleDto> roles, RoleDto primaryRole,
-                              List<String> permissions) {}
+                              List<String> permissions, String homeBranch) {}
 
     /** One staff member's name, by their token subject (2026-10-27). */
     public record StaffNameDto(String subject, String name) {}
@@ -42,7 +43,7 @@ public class AccessController {
         AccessApi.AccessView view = access.current();
         return ResponseEntity.ok(new MyAccessDto(view.userId(), view.displayName(), view.active(),
             view.roles().stream().map(RoleDto::from).toList(), RoleDto.from(view.primaryRole()),
-            List.copyOf(view.permissions())));
+            List.copyOf(view.permissions()), view.homeBranch()));
     }
 
     /**
