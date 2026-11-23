@@ -15,6 +15,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/BranchCode'
       summary: The underwriter's dashboard (UNDERWRITER)
       security:
         - staffAuth: []
@@ -30,6 +31,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/BranchCode'
       summary: The claims dashboard (CLAIMS_ASSESSOR or CLAIMS_MANAGER)
       description: The queue is the settlement decisions for a manager and the unassessed claims for an assessor.
       security:
@@ -65,6 +67,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/BranchCode'
       summary: The management overview (overview.view -- the Management role and administrators)
       description: >
         Premiums collected and new policies against the same months a year earlier; policies in force and lapsed;
@@ -131,6 +134,14 @@ components:
         Last month of the range, inclusive, never after the current month. Defaults to the current month. A range
         that runs backwards, ends in the future or covers more than 36 months is a 400.
       schema: { $ref: '#/components/schemas/Month' }
+    BranchCode:
+      name: branchCode
+      in: query
+      required: false
+      description: >-
+        One branch (2026-11-23, branch views): every figure is that branch's, by the sale's branch (a claim's is its
+        policy's). Absent or blank: every branch, exactly as before. Views, not walls: any branch may be asked for.
+      schema: { type: string }
   responses:
     Problem:
       description: An error, as RFC 7807 problem details
@@ -213,6 +224,25 @@ components:
         amount: { $ref: '#/components/schemas/Money' }
         count: { $ref: '#/components/schemas/Count' }
         percent: { $ref: '#/components/schemas/Percent' }
+    BranchScopeOrAll:
+      description: >-
+        The branch the dashboard was cut by (2026-11-23, branch views); null (or absent) for every branch.
+      anyOf:
+        - $ref: '#/components/schemas/BranchScope'
+        - { type: "null" }
+    BranchScope:
+      type: object
+      additionalProperties: false
+      required: [code, name, allBranches]
+      properties:
+        code: { type: string }
+        name: { type: string, description: "From the company's branch register; the code when it is not there" }
+        allBranches:
+          type: array
+          description: >-
+            Keys of the figures that could not be cut by branch and still cover every branch -- the console says "All
+            branches" under each.
+          items: { type: string }
     UnderwritingDashboardView:
       type: object
       additionalProperties: false
@@ -220,6 +250,7 @@ components:
                  recentActivity, period, decided, decidedBefore, decidedChangePercent, acceptanceRate, averageDays,
                  outcomeTotals, outcomeSeries, turnaroundSeries]
       properties:
+        branch: { $ref: '#/components/schemas/BranchScopeOrAll' }
         openCases: { $ref: '#/components/schemas/Count' }
         casesInReview: { $ref: '#/components/schemas/Count' }
         casesAwaitingIssue: { $ref: '#/components/schemas/Count' }
@@ -286,6 +317,7 @@ components:
                  paid, paidBefore, paidChangePercent, paidSeries, paidByType, settledInPeriod, registeredInPeriod,
                  registeredSeries, settledSeries, averageDaysToSettle, turnaroundSeries]
       properties:
+        branch: { $ref: '#/components/schemas/BranchScopeOrAll' }
         registered: { $ref: '#/components/schemas/Count' }
         underAssessment: { $ref: '#/components/schemas/Count' }
         settlementRequested: { $ref: '#/components/schemas/Count' }
@@ -481,6 +513,7 @@ components:
                  newPoliciesChangePercent, policiesInForce, collections, lapsed, claimsPaid, openClaims, casesToDecide,
                  claimsToDecide]
       properties:
+        branch: { $ref: '#/components/schemas/BranchScopeOrAll' }
         period: { $ref: '#/components/schemas/Period' }
         collected: { $ref: '#/components/schemas/Money' }
         collectedBefore: { $ref: '#/components/schemas/Money' }

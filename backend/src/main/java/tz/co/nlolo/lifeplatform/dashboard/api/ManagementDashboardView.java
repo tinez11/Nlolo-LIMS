@@ -21,4 +21,16 @@ public record ManagementDashboardView(
     CollectionFigures collections,
     Long lapsed,
     Money claimsPaid, Long openClaims,
-    Long casesToDecide, Long claimsToDecide) {}
+    Long casesToDecide, Long claimsToDecide,
+    BranchScope branch) {
+
+    /** Every branch (the overview before 2026-11-23). */
+    public ManagementDashboardView(Period period, Money collected, Money collectedBefore, String collectedChangePercent,
+                                   Long newPolicies, Long newPoliciesBefore, String newPoliciesChangePercent,
+                                   Long policiesInForce, CollectionFigures collections, Long lapsed, Money claimsPaid,
+                                   Long openClaims, Long casesToDecide, Long claimsToDecide) {
+        this(period, collected, collectedBefore, collectedChangePercent, newPolicies, newPoliciesBefore,
+            newPoliciesChangePercent, policiesInForce, collections, lapsed, claimsPaid, openClaims, casesToDecide,
+            claimsToDecide, null);
+    }
+}

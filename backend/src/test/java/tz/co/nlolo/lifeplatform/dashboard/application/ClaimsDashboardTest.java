@@ -31,6 +31,33 @@ class ClaimsDashboardTest {
     /** A fixed civil day, so "the last complete month" is a known month. */
     private static final java.time.LocalDate TODAY = java.time.LocalDate.of(2026, 10, 14);
 
+    /**
+     * Branch views (2026-11-23): a claim's branch is its policy's. Every count, the queue and the by-month figures are
+     * the claims API's own, on the branch's policies.
+     */
+    @Test
+    void aBranchsDashboardCountsTheClaimsOnThatBranchsPolicies() {
+        java.util.Set<String> arusha = java.util.Set.of("P-ARU-1", "P-ARU-2");
+        when(claims.searchClaims(any(), isNull(), eq(arusha), isNull(), any()))
+            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 1), 3));
+        when(claims.countOpenDocumentRequests(arusha)).thenReturn(1L);
+        when(claims.settlementsByMonth(any(), any(), eq(arusha))).thenReturn(List.of());
+        when(claims.settlementsByType(any(), any(), eq(arusha))).thenReturn(List.of());
+        when(claims.settlementTurnaroundByMonth(any(), any(), eq(arusha))).thenReturn(List.of());
+        when(claims.registrationsByMonth(any(), any(), eq(arusha))).thenReturn(List.of());
+
+        ClaimsDashboardView v = dashboard.build(true, DashboardPeriod.of(null, null, TODAY), TODAY, "ARU", "Arusha",
+            arusha);
+
+        assertThat(v.registered()).isEqualTo(3L);
+        assertThat(v.openDocumentRequests()).isEqualTo(1L);
+        assertThat(v.branch().code()).isEqualTo("ARU");
+        assertThat(v.branch().allBranches()).containsExactly("recentActivity");
+        verify(claims, org.mockito.Mockito.never()).searchClaims(any(), any(), isNull(), any(), any());
+        verify(claims, org.mockito.Mockito.never()).countOpenDocumentRequests();
+        verify(claims, org.mockito.Mockito.never()).settlementsByMonth(any(), any());
+    }
+
     private void count(ClaimStatus status, long n) {
         when(claims.searchClaims(eq(status), isNull(), isNull(), isNull(), argThat(p -> p != null && p.getPageSize() == 1)))
             .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 1), n));

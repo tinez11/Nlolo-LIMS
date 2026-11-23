@@ -48,24 +48,41 @@ public class ClaimsDashboard {
 
     /** @param period the months the ranged figures cover (2026-10-23); counts by status and the queue stay "now" */
     public ClaimsDashboardView build(boolean manager, DashboardPeriod period, LocalDate today) {
+        return build(manager, period, today, null, null, null);
+    }
+
+    /**
+     * One branch's claims (2026-11-23, branch views). A claim records no branch, so the branch is its policy's:
+     * {@code policyNumbers} are the branch's policies, read from the reports' copy by the caller, and the claims
+     * module counts its own claims on them by its own status rules. With no branch the reads are exactly the
+     * every-branch ones.
+     *
+     * @param policyNumbers the branch's policy numbers; null for every branch
+     */
+    public ClaimsDashboardView build(boolean manager, DashboardPeriod period, LocalDate today, String branchCode,
+                                     String branchName, java.util.Set<String> policyNumbers) {
+        java.util.Set<String> pn = branchCode == null ? null : policyNumbers;
+        boolean all = pn == null;
         // A manager decides a claim once it is assessed: UNDER_ASSESSMENT. SETTLEMENT_REQUESTED is already approved,
         // its payment on the way -- the queue listed those as "awaiting your decision" until 2026-11-04.
         ClaimStatus queueStatus = manager ? ClaimStatus.UNDER_ASSESSMENT : ClaimStatus.REGISTERED;
         List<QueuedClaim> queue = Safely.read("the " + queueStatus + " queue", () -> claims.searchClaims(
-                queueStatus, null, null, null, PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt")))
+                queueStatus, null, pn, null, PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt")))
             .map(c -> new QueuedClaim(c.claimId(), c.policyNumber(), c.claimantPartyId(), c.claimType().name(),
                 c.dateOfEvent(), c.status().name()))
             .getContent());
 
         // The question no per-claim screen could answer: how many claims are waiting on a document, desk-wide.
-        Long openRequests = Safely.read("open document requests", claims::countOpenDocumentRequests);
+        Long openRequests = Safely.read("open document requests",
+            () -> all ? claims.countOpenDocumentRequests() : claims.countOpenDocumentRequests(pn));
 
         // TWELVE complete months ending with the last complete one (phase 3): one read serving the card, which
         // shows the last complete month, and the chart, which shows all twelve. The current month is in neither --
         // a part-month total of benefits paid invites comparison with full months and loses it.
         YearMonth lastComplete = YearMonth.from(today).minusMonths(1);
         List<SettlementMonth> twelve = Safely.read("settlements by month", () ->
-            claims.settlementsByMonth(lastComplete.minusMonths(11), lastComplete).stream()
+            (all ? claims.settlementsByMonth(lastComplete.minusMonths(11), lastComplete)
+                : claims.settlementsByMonth(lastComplete.minusMonths(11), lastComplete, pn)).stream()
                 .map(s -> new SettlementMonth(s.month().toString(), s.currency(), s.claims(),
                     Money.of(s.totalApproved(), s.currency())))
                 .toList());
@@ -80,7 +97,8 @@ public class ClaimsDashboard {
 
         // ---- the ranged figures (2026-10-23). Money in the working currency only, never added across currencies ----
         Map<YearMonth, BigDecimal> paidByMonth = Safely.read("benefits paid", () ->
-            claims.settlementsByMonth(period.compareFrom(), period.to()).stream()
+            (all ? claims.settlementsByMonth(period.compareFrom(), period.to())
+                : claims.settlementsByMonth(period.compareFrom(), period.to(), pn)).stream()
                 .filter(s -> WORKING_CURRENCY.equals(s.currency()))
                 .collect(Collectors.toMap(tz.co.nlolo.lifeplatform.claims.api.SettlementMonth::month,
                     tz.co.nlolo.lifeplatform.claims.api.SettlementMonth::totalApproved, BigDecimal::add)));
@@ -90,17 +108,20 @@ public class ClaimsDashboard {
             .map(m -> new MonthPoint(m.toString(), Money.of(paidByMonth.getOrDefault(m, BigDecimal.ZERO), WORKING_CURRENCY)))
             .toList();
         List<Share> byType = Safely.read("benefits paid by type", () -> {
-            var rows = claims.settlementsByType(period.from(), period.to()).stream()
+            var rows = (all ? claims.settlementsByType(period.from(), period.to())
+                    : claims.settlementsByType(period.from(), period.to(), pn)).stream()
                 .filter(s -> WORKING_CURRENCY.equals(s.currency())).toList();
             return DashboardPeriod.shares(rows.stream()
                     .map(s -> new DashboardPeriod.Slice(s.claimType(), s.totalApproved())).toList(),
                 v -> Money.of(v, WORKING_CURRENCY), null);
         });
         Map<YearMonth, ClaimMonth> settledByMonth = Safely.read("settlement turnaround", () ->
-            claims.settlementTurnaroundByMonth(period.from(), period.to()).stream()
+            (all ? claims.settlementTurnaroundByMonth(period.from(), period.to())
+                : claims.settlementTurnaroundByMonth(period.from(), period.to(), pn)).stream()
                 .collect(Collectors.toMap(ClaimMonth::month, c -> c)));
         Map<YearMonth, ClaimMonth> registeredByMonth = Safely.read("claims registered", () ->
-            claims.registrationsByMonth(period.from(), period.to()).stream()
+            (all ? claims.registrationsByMonth(period.from(), period.to())
+                : claims.registrationsByMonth(period.from(), period.to(), pn)).stream()
                 .collect(Collectors.toMap(ClaimMonth::month, c -> c)));
         Long settledNow = settledByMonth == null ? null
             : settledByMonth.values().stream().mapToLong(ClaimMonth::claims).sum();
@@ -110,9 +131,9 @@ public class ClaimsDashboard {
             settledByMonth.values().stream().map(ClaimMonth::totalDays).reduce(BigDecimal.ZERO, BigDecimal::add),
             settledNow);
 
-        return new ClaimsDashboardView(count(ClaimStatus.REGISTERED), count(ClaimStatus.UNDER_ASSESSMENT),
-            count(ClaimStatus.SETTLEMENT_REQUESTED), count(ClaimStatus.APPROVED), count(ClaimStatus.REOPENED),
-            count(ClaimStatus.SETTLED), openRequests,
+        return new ClaimsDashboardView(count(ClaimStatus.REGISTERED, pn), count(ClaimStatus.UNDER_ASSESSMENT, pn),
+            count(ClaimStatus.SETTLEMENT_REQUESTED, pn), count(ClaimStatus.APPROVED, pn), count(ClaimStatus.REOPENED, pn),
+            count(ClaimStatus.SETTLED, pn), openRequests,
             settlements, settlementSeries,
             queueStatus.name(), queue == null ? List.of() : queue,
             recent == null ? List.of() : recent,
@@ -124,7 +145,10 @@ public class ClaimsDashboard {
             settledByMonth == null ? List.of() : period.months().stream().map(m -> {
                 ClaimMonth c = settledByMonth.get(m);
                 return new DaysPoint(m.toString(), c == null ? null : DashboardPeriod.average(c.totalDays(), c.claims()));
-            }).toList());
+            }).toList(),
+            // Recent activity is the activity log's, which records no branch.
+            all ? null : new tz.co.nlolo.lifeplatform.dashboard.api.BranchScope(branchCode, branchName,
+                List.of("recentActivity")));
     }
 
     /** PRODUCT.md: "Working currency is TZS." */
@@ -141,8 +165,8 @@ public class ClaimsDashboard {
             .toList();
     }
 
-    private Long count(ClaimStatus status) {
+    private Long count(ClaimStatus status, java.util.Set<String> policyNumbers) {
         return Safely.read(status + " claims",
-            () -> claims.searchClaims(status, null, null, null, TOTAL_ONLY).getTotalElements());
+            () -> claims.searchClaims(status, null, policyNumbers, null, TOTAL_ONLY).getTotalElements());
     }
 }
