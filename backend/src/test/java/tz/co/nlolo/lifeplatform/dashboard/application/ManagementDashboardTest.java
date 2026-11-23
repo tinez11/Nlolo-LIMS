@@ -44,6 +44,66 @@ class ManagementDashboardTest {
         return new ReportFigure(key, key, value, null, null, null, null, true, "COUNT");
     }
 
+    /**
+     * Branch views (2026-11-23): with a branch, every figure is read with that branch from the report or dashboard
+     * its card opens -- premiums and new policies from their reports, not the company-wide finance dashboard -- and
+     * the view names the branch and the one block that stays the company's.
+     */
+    @Test
+    void aBranchsOverviewReadsEveryFigureWithThatBranch() {
+        DashboardPeriod period = DashboardPeriod.of("2026-07", "2026-09", TODAY);
+        when(reporting.branchName("ARU")).thenReturn("Arusha");
+        when(reporting.policyNumbersInBranch("ARU")).thenReturn(java.util.Set.of("P-ARU-1"));
+        ReportResult collected = figures(new ReportFigure("amount", "Premiums collected", "300000.00", null, null,
+            null, null, true, "MONEY"));
+        ReportResult activated = figures(count("policies", "3"));
+        when(reporting.run(eq("premium-collections"), any())).thenReturn(collected);
+        when(reporting.run(eq("new-business"), any())).thenReturn(activated);
+        // Built before the stubbing that returns them: Mockito refuses a mock made inside another's when().
+        ReportResult inForce = figures(count("policies", "12"), count("lapsed", "1"));
+        ReportResult inProgress = figures(count("open", "2"));
+        when(reporting.run(eq("policies-in-force"), any())).thenReturn(inForce);
+        when(reporting.run(eq("claims-in-progress"), any())).thenReturn(inProgress);
+        ClaimsDashboardView claimsView = mock(ClaimsDashboardView.class);
+        when(claimsView.paid()).thenReturn(new Money("100000.00", "TZS"));
+        when(claimsView.registered()).thenReturn(1L);
+        when(claimsView.underAssessment()).thenReturn(0L);
+        when(claimsView.reopened()).thenReturn(0L);
+        when(claims.build(eq(true), any(), any(), eq("ARU"), eq("Arusha"), eq(java.util.Set.of("P-ARU-1"))))
+            .thenReturn(claimsView);
+        UnderwritingDashboardView cases = mock(UnderwritingDashboardView.class);
+        when(cases.openCases()).thenReturn(2L);
+        when(cases.casesInReview()).thenReturn(1L);
+        when(underwriting.build(any(DashboardPeriod.class), any(), eq("ARU"), eq("Arusha"))).thenReturn(cases);
+
+        ManagementDashboardView v = dashboard.build(period, TODAY, "ARU");
+
+        assertThat(v.branch().code()).isEqualTo("ARU");
+        assertThat(v.branch().name()).isEqualTo("Arusha");
+        assertThat(v.branch().allBranches()).containsExactly("collections");
+        assertThat(v.collected().amount()).isEqualTo("300000.00");
+        assertThat(v.newPolicies()).isEqualTo(3L);
+        assertThat(v.policiesInForce()).isEqualTo(12L);
+        assertThat(v.claimsPaid().amount()).isEqualTo("100000.00");
+        assertThat(v.openClaims()).isEqualTo(2L);
+        assertThat(v.casesToDecide()).isEqualTo(3L);
+        assertThat(v.claimsToDecide()).isEqualTo(1L);
+        ArgumentCaptor<ReportFilter> filters = ArgumentCaptor.forClass(ReportFilter.class);
+        verify(reporting, org.mockito.Mockito.atLeast(6)).run(any(), filters.capture());
+        assertThat(filters.getAllValues()).allSatisfy(f -> assertThat(f.branchCode()).isEqualTo("ARU"));
+    }
+
+    @Test
+    void withNoBranchTheOverviewIsTheCompanysExactlyAsBefore() {
+        DashboardPeriod period = DashboardPeriod.of("2026-07", "2026-09", TODAY);
+        when(finance.build(any(), any())).thenReturn(mock(FinanceDashboardView.class));
+        when(claims.build(anyBoolean(), any(), any())).thenReturn(mock(ClaimsDashboardView.class));
+        when(underwriting.build(any(DashboardPeriod.class), any())).thenReturn(mock(UnderwritingDashboardView.class));
+
+        assertThat(dashboard.build(period, TODAY, null).branch()).isNull();
+        verify(reporting, org.mockito.Mockito.never()).policyNumbersInBranch(any());
+    }
+
     @Test
     void everyFigureIsItsOwnersAndLapsedIsThePeriods() {
         DashboardPeriod period = DashboardPeriod.of("2026-07", "2026-09", TODAY);

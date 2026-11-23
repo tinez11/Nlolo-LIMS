@@ -13,7 +13,8 @@ vi.mock('@/api/agentSales');
 vi.mock('@/api/distribution');
 
 const REPORT = {
-  key: 'my-sales', title: 'My sales', filterSummary: '1 Jan 2025 to 12 Nov 2026', generatedAt: '2026-11-12T08:00:00Z',
+  key: 'my-sales', title: 'My sales', filterSummary: '1 Jan 2025 to 12 Nov 2026',
+  exportSummary: '1 Jan 2025 to 12 Nov 2026', generatedAt: '2026-11-12T08:00:00Z',
   figures: [{
     key: 'premiumAYear', label: 'Premium sold a year', value: '1200000.00', prior: '600000.00', change: '600000.00',
     changePercent: '100.0', goodWhen: 'UP', lead: true, unit: 'MONEY',

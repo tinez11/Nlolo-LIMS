@@ -20,6 +20,7 @@ import { reportAreas } from './reportAreas';
 import { BridgeChart } from '@/components/charts/BridgeChart';
 import { stateFromSearch, toParams, validateFilters } from './reportParams';
 import { freshnessLine } from './freshness';
+import { chosenBranch, useBranchRegister } from './branchChoice';
 
 /**
  * One page for every report. The filters live in the address bar, so a report can be bookmarked or sent to
@@ -40,7 +41,14 @@ export function ReportPage() {
 
   const definition = catalogue.data?.find((d) => d.key === reportKey) ?? null;
   const today = useMemo(() => new Date(), []);
-  const filters = definition ? stateFromSearch(definition, search, today) : null;
+  const branches = useBranchRegister();
+  // The branch (2026-11-23, branch views): the address's, else the starting rule -- once the register can say whether
+  // the person's branch is the head office. Until then nothing runs, so head-office staff never see one branch first.
+  const fromSearch = definition ? stateFromSearch(definition, search, today) : null;
+  const filters = !definition || !fromSearch ? null
+    : definition.companyWide || fromSearch.branch ? fromSearch
+    : branches.ready ? { ...fromSearch, branch: chosenBranch(null, branches.homeBranch, branches.headOffice) }
+    : null;
   const params = definition && filters ? toParams(definition, filters) : null;
   const paramsKey = params ? new URLSearchParams(params).toString() : '';
 
@@ -84,8 +92,14 @@ export function ReportPage() {
         breadcrumb={[{ label: 'Reports', to: '/staff/reports' }]}
         description={current ? [current.filterSummary, current.comparisonLabel].filter(Boolean).join(' · ') : definition.description}
         // How fresh the figures are (2026-11-11, analytics plan 2): a fact about the screen, in its byline.
-        {...(current && freshnessLine(definition.sources, current.dataUpTo)
-          ? { count: <span className="text-subtle-foreground">{freshnessLine(definition.sources, current.dataUpTo)}</span> }
+        {...(current && freshnessLine(definition.sources, current.dataUpTo, definition.companyWide)
+          ? {
+              count: (
+                <span className="text-subtle-foreground">
+                  {freshnessLine(definition.sources, current.dataUpTo, definition.companyWide)}
+                </span>
+              ),
+            }
           : {})}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -105,10 +119,12 @@ export function ReportPage() {
       />
       <div className="space-y-4 px-6 pb-6">
         <ReportFilterBar
-          key={reportKey}
+          // Keyed by the starting branch too: the bar reads `initial` once, and the branch can resolve after it mounts.
+          key={`${reportKey}:${filters?.branch ?? ''}`}
           definition={definition}
           initial={filters ?? stateFromSearch(definition, search, today)}
           onRun={(state) => setSearch(toParams(definition, state))}
+          branchOptions={branches.options}
         />
         {exportError && (
           <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger-fg">

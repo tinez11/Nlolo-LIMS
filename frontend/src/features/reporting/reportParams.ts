@@ -21,6 +21,11 @@ export interface ReportFilterState {
   accountCode: string;
   /** What the figures are compared with (2026-11-09): PRIOR_PERIOD, SAME_PERIOD_LAST_YEAR or NONE. */
   compareWith: string;
+  /**
+   * One branch's figures (2026-11-23, branch views): a branch code, `all`, or empty until the starting rule fills it
+   * (branchChoice.ts). Sent to the server as branchCode by `serverParams`; never for a company-wide report.
+   */
+  branch: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -49,10 +54,11 @@ export function defaultFilters(definition: ReportDefinition, today: Date): Repor
     accountCode: '',
     // A statement opens compared with the period before -- the variance the user asked for (2026-11-09).
     compareWith: definition.comparesPeriods ? 'PRIOR_PERIOD' : '',
+    branch: '',
   };
 }
 
-const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId', 'monthFrom', 'monthTo', 'accountCode', 'compareWith'];
+const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId', 'monthFrom', 'monthTo', 'accountCode', 'compareWith', 'branch'];
 
 export function stateFromSearch(definition: ReportDefinition, search: URLSearchParams, today: Date): ReportFilterState {
   const state = defaultFilters(definition, today);
@@ -94,6 +100,8 @@ export function toParams(definition: ReportDefinition, state: ReportFilterState)
   if (definition.groupByOptions.length > 0) put('groupBy');
   put('clientType');
   put('productId');
+  // A company-wide report refuses a branch (the ledger, solvency, reinsurance and commissions reports).
+  if (!definition.companyWide) put('branch');
   return params;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ReportDefinition } from '@/api/reporting';
+import { serverParams, type ReportDefinition } from '@/api/reporting';
 import { capRows, defaultFilters, formatCell, stateFromSearch, toParams, validateFilters } from './reportParams';
 
 describe('capRows', () => {
@@ -25,9 +25,31 @@ const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparab
   comparable,
   requiresAccount: false,
   comparesPeriods: false,
+  companyWide: false,
 });
 
 const TODAY = new Date(2026, 9, 11); // 11 October 2026, local time
+
+describe('the branch (2026-11-23, branch views)', () => {
+  it('carries the address branch for a report that can be cut by branch, every branch included', () => {
+    const d = definition('PERIOD');
+    const arusha = stateFromSearch(d, new URLSearchParams('branch=ARU'), TODAY);
+    expect(toParams(d, arusha).branch).toBe('ARU');
+    const all = stateFromSearch(d, new URLSearchParams('branch=all'), TODAY);
+    expect(toParams(d, all).branch).toBe('all');
+  });
+
+  it('never sends a branch to a company-wide report', () => {
+    const d = { ...definition('MONTH'), companyWide: true };
+    expect(toParams(d, stateFromSearch(d, new URLSearchParams('branch=ARU'), TODAY))).not.toHaveProperty('branch');
+  });
+
+  it('the server takes branchCode, and never "all"', () => {
+    expect(serverParams({ from: '2026-01-01', branch: 'ARU' })).toEqual({ from: '2026-01-01', branchCode: 'ARU' });
+    expect(serverParams({ from: '2026-01-01', branch: 'all' })).toEqual({ from: '2026-01-01' });
+    expect(serverParams({ from: '2026-01-01' })).toEqual({ from: '2026-01-01' });
+  });
+});
 
 describe('accounting report filters', () => {
   const ledger = (kind: ReportDefinition['dateFilterKind'], comparable = false): ReportDefinition => ({

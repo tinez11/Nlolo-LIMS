@@ -15,6 +15,15 @@ export type ReportFigure = components['schemas']['ReportFigure'];
 export type ReportChart = components['schemas']['ReportChart'];
 export type ReportParts = components['schemas']['ReportParts'];
 export type ReportParams = Record<string, string>;
+
+/**
+ * The address's filters as the server takes them (2026-11-23, branch views). The address carries `branch` -- a branch
+ * code, or `all` so that choosing every branch survives a reload -- and the server takes `branchCode`, never `all`.
+ */
+export function serverParams(params: ReportParams): ReportParams {
+  const { branch, ...rest } = params;
+  return branch && branch !== 'all' ? { ...rest, branchCode: branch } : rest;
+}
 /** One figure explained, read-only from the code (2026-11-11, decision K1). */
 export type FigureDefinition = components['schemas']['FigureDefinition'];
 export type FigureGroup = components['schemas']['FigureGroup'];
@@ -29,7 +38,9 @@ export function getFigureDefinitions(): Promise<FigureGroup[]> {
  * pages a leaf account's postings.
  */
 export function getReportParts(key: string, lineId: string, params: ReportParams, page = 0): Promise<ReportParts> {
-  return get<ReportParts>(`/reports/${encodeURIComponent(key)}/parts`, { params: { ...params, lineId, page: String(page) } });
+  return get<ReportParts>(`/reports/${encodeURIComponent(key)}/parts`, {
+    params: { ...serverParams(params), lineId, page: String(page) },
+  });
 }
 export type ExportFormat = 'xlsx' | 'csv' | 'pdf';
 
@@ -45,12 +56,12 @@ export function getCatalogue(): Promise<ReportDefinition[]> {
 }
 
 export function runReport(key: string, params: ReportParams): Promise<ReportResult> {
-  return get<ReportResult>(`/reports/${encodeURIComponent(key)}`, { params });
+  return get<ReportResult>(`/reports/${encodeURIComponent(key)}`, { params: serverParams(params) });
 }
 
 export function exportReport(key: string, params: ReportParams, format: ExportFormat): Promise<Blob> {
   return get<Blob>(`/reports/${encodeURIComponent(key)}/export`, {
-    params: { ...params, format },
+    params: { ...serverParams(params), format },
     responseType: 'blob',
     headers: { Accept: ACCEPT[format] },
   });

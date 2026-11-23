@@ -1262,14 +1262,15 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // ClaimsApiImpl.searchClaims.
         boolean narrowed = filter.applicantPartyId() != null || filter.applicantPartyIds() != null
             || filter.outcome() != null || filter.referral() != null
-            || filter.decidedFrom() != null || filter.decidedTo() != null || filter.source() != null;
+            || filter.decidedFrom() != null || filter.decidedTo() != null || filter.source() != null
+            || filter.branchCode() != null;
         if (narrowed) {
             page = underwritingCaseRepository.search(tenantId,
                 filter.status() == null ? null : filter.status().name(),
                 filter.outcome() == null ? null : filter.outcome().name(),
                 filter.referral() == null ? null : filter.referral().name(),
                 filter.decidedFrom(), filter.decidedTo(),
-                filter.applicantPartyId(), filter.applicantPartyIds(),
+                filter.applicantPartyId(), filter.applicantPartyIds(), filter.branchCode(),
                 filter.source() == null ? null : filter.source().name(), pageable);
         } else if (filter.status() != null) {
             page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, filter.status().name(), pageable);
@@ -1284,9 +1285,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
     @Override
     public List<DecisionMonth> decisionsByMonth(java.time.YearMonth from, java.time.YearMonth to) {
+        return decisionsByMonth(from, to, null);
+    }
+
+    @Override
+    public List<DecisionMonth> decisionsByMonth(java.time.YearMonth from, java.time.YearMonth to, String branchCode) {
         java.time.Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
         java.time.Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
-        return underwritingCaseRepository.decisionsByMonth(TenantContext.get(), start, end).stream()
+        return underwritingCaseRepository.decisionsByMonth(TenantContext.get(), start, end, branchCode).stream()
             .map(row -> new DecisionMonth(java.time.YearMonth.parse((String) row[0]),
                 DecisionOutcome.valueOf((String) row[1]), ((Number) row[2]).longValue(),
                 (java.math.BigDecimal) row[3]))
@@ -1296,13 +1302,25 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround> decisionTurnaroundByMonth(
             java.time.YearMonth from, java.time.YearMonth to) {
+        return decisionTurnaroundByMonth(from, to, null);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround> decisionTurnaroundByMonth(
+            java.time.YearMonth from, java.time.YearMonth to, String branchCode) {
         java.time.Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
         java.time.Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
-        return underwritingCaseRepository.decisionTurnaroundByMonth(TenantContext.get(), start, end).stream()
+        return underwritingCaseRepository.decisionTurnaroundByMonth(TenantContext.get(), start, end, branchCode).stream()
             .map(row -> new tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround(
                 java.time.YearMonth.parse((String) row[0]), ((Number) row[1]).longValue(),
                 (java.math.BigDecimal) row[2]))
             .toList();
+    }
+
+    @Override
+    public long countCasesAwaitingIssueInBranch(String branchCode) {
+        return underwritingCaseRepository.awaitingIssueInBranch(TenantContext.get(), branchCode,
+            org.springframework.data.domain.PageRequest.of(0, 1)).getTotalElements();
     }
 
     @Override

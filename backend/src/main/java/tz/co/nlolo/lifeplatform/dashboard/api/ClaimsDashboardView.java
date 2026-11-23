@@ -21,7 +21,23 @@ public record ClaimsDashboardView(Long registered, Long underAssessment, Long se
                                   List<FinanceDashboardView.MonthPoint> paidSeries, List<Share> paidByType,
                                   Long settledInPeriod, Long registeredInPeriod,
                                   List<CountPoint> registeredSeries, List<CountPoint> settledSeries,
-                                  String averageDaysToSettle, List<DaysPoint> turnaroundSeries) {
+                                  String averageDaysToSettle, List<DaysPoint> turnaroundSeries,
+                                  BranchScope branch) {
+
+    /** Every branch (before 2026-11-23). */
+    public ClaimsDashboardView(Long registered, Long underAssessment, Long settlementRequested, Long approved,
+                               Long reopened, Long settled, Long openDocumentRequests, List<SettlementMonth> settlements,
+                               List<SettlementMonth> settlementSeries, String queueStatus, List<QueuedClaim> queue,
+                               List<ActivityItem> recentActivity, Period period, Money paid, Money paidBefore,
+                               String paidChangePercent, List<FinanceDashboardView.MonthPoint> paidSeries,
+                               List<Share> paidByType, Long settledInPeriod, Long registeredInPeriod,
+                               List<CountPoint> registeredSeries, List<CountPoint> settledSeries,
+                               String averageDaysToSettle, List<DaysPoint> turnaroundSeries) {
+        this(registered, underAssessment, settlementRequested, approved, reopened, settled, openDocumentRequests,
+            settlements, settlementSeries, queueStatus, queue, recentActivity, period, paid, paidBefore,
+            paidChangePercent, paidSeries, paidByType, settledInPeriod, registeredInPeriod, registeredSeries,
+            settledSeries, averageDaysToSettle, turnaroundSeries, null);
+    }
 
     public record QueuedClaim(UUID claimId, String policyNumber, UUID claimantPartyId, String claimType,
                               LocalDate dateOfEvent, String status) {}

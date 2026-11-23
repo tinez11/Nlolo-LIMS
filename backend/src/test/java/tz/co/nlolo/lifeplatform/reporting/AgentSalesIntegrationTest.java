@@ -80,7 +80,8 @@ class AgentSalesIntegrationTest {
     void setUp() {
         TenantContext.set(tenant);
         sales = new AgentSales(queries, distribution,
-            new LabelsFactory(mock(ProductApi.class), distribution, mock(PartyApi.class)), clock);
+            new LabelsFactory(mock(ProductApi.class), distribution, mock(PartyApi.class),
+                mock(tz.co.nlolo.lifeplatform.organisation.api.OrganisationApi.class)), clock);
         when(distribution.resolveAgentTeam(party)).thenReturn(List.of(me, downline));
         events.sell(tenant, Sale.of("A-TERM", product, d("2026-10-05")).agent(me).premium("MONTHLY", "100000.00"));
         events.sell(tenant, Sale.of("A-CRL", product, d("2026-10-06")).agent(downline).premium("SINGLE", "500000.00"));

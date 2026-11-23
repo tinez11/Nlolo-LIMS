@@ -519,7 +519,7 @@ components:
       type: object
       additionalProperties: false
       required: [key, title, description, category, dateFilterKind, groupByOptions, comparable, requiresAccount, comparesPeriods,
-                 sources, figures]
+                 sources, figures, companyWide]
       properties:
         sources:
           type: array
@@ -540,6 +540,11 @@ components:
         comparable: { type: boolean, description: "Accepts compareAsOf" }
         requiresAccount: { type: boolean, description: "The report is about ONE chart account and cannot run without accountCode. Ask for it beside the other filters rather than submitting and showing the refusal." }
         comparesPeriods: { type: boolean, description: "Takes compareWith: the prior period or the same period last year (2026-11-09)" }
+        companyWide:
+          type: boolean
+          description: >-
+            About the whole company: cannot be cut by branch, and refuses branchCode with 400 rather than ignoring it
+            (2026-11-23, branch views). The ledger, solvency, reinsurance and commissions reports.
     ReportColumn:
       type: object
       additionalProperties: false
@@ -573,11 +578,16 @@ components:
     ReportResult:
       type: object
       additionalProperties: false
-      required: [key, title, filterSummary, generatedAt, sections, figures, notices]
+      required: [key, title, filterSummary, generatedAt, sections, figures, notices, exportSummary]
       properties:
         key: { type: string }
         title: { type: string }
-        filterSummary: { type: string }
+        filterSummary: { type: string, description: "The line under the title; a branch by name: 'Arusha branch'" }
+        exportSummary:
+          type: string
+          description: >-
+            The About line of an export (2026-11-23): a branch by name and code, 'Branch: Arusha (ARU)', and
+            'Company-wide' for a company-wide report.
         generatedAt: { type: string, format: date-time }
         sections: { type: array, items: { $ref: '#/components/schemas/ReportSection' } }
         figures: { type: array, items: { $ref: '#/components/schemas/ReportFigure' } }

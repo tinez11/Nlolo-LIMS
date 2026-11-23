@@ -112,7 +112,18 @@ public class ReportingApiImpl implements ReportingApi {
             ? queries.lastAppliedAt(TenantContext.get()) : null;
         return new ReportResult(key, report.definition().title(), FilterSummary.describe(report.definition(), filter, labels),
             Instant.now(clock), body.sections(), body.figures(), body.chart(), body.comparisonLabel(), body.notices(),
-            dataUpTo);
+            dataUpTo, FilterSummary.describe(report.definition(), filter, labels, true));
+    }
+
+    @Override
+    public Set<String> policyNumbersInBranch(String branchCode) {
+        if (branchCode == null || branchCode.isBlank()) throw new IllegalArgumentException("A branch code is required");
+        return queries.policyNumbersInBranch(TenantContext.get(), branchCode);
+    }
+
+    @Override
+    public String branchName(String branchCode) {
+        return labelsFactory.create().branch(branchCode);
     }
 
     @Override

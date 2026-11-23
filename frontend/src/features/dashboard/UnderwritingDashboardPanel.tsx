@@ -20,6 +20,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectUnderwriting, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import type { PanelProps } from './DashboardPage';
+import { ALL_BRANCHES } from '../reporting/branchChoice';
 import { DashboardRail } from './DashboardRail';
 import { describeRange } from './range';
 import { lastDayOf } from './reportLinks';
@@ -45,14 +46,16 @@ function decidedLink(from: string, to: string, outcome?: string): string {
  * The underwriter's dashboard (2026-10-14; ranged and charted 2026-10-23). Counts link to their queue; every total,
  * rate and average over the range is the server's.
  */
-export function UnderwritingDashboardPanel({ range }: PanelProps) {
+export function UnderwritingDashboardPanel({ range, branch }: PanelProps) {
   const resource = useDashboardStore(selectUnderwriting);
   const load = useDashboardStore((s) => s.load);
   const { from, to } = range;
+  // One branch (2026-11-23, branch views); `all` and no choice both read every branch.
+  const branchCode = branch && branch !== ALL_BRANCHES ? branch : undefined;
 
   useEffect(() => {
-    void load('underwriting', { from, to });
-  }, [load, from, to]);
+    void load('underwriting', { from, to }, branchCode);
+  }, [load, from, to, branchCode]);
 
   const [backFromAgents, setBackFromAgents] = useState<number | null>(null);
   useEffect(() => {
@@ -282,7 +285,8 @@ export function UnderwritingDashboardPanel({ range }: PanelProps) {
           />
         </div>
         <div className="xl:col-span-12">
-          <ActivityFeed items={view.recentActivity} />
+          <ActivityFeed items={view.recentActivity}
+            everyBranch={view.branch?.allBranches.includes('recentActivity') ?? false} />
         </div>
       </div>
     </div>

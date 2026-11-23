@@ -1008,6 +1008,31 @@ class UnderwritingApiIntegrationTest {
             .getContent().get(0).caseId());
     }
 
+    /**
+     * Branch views (2026-11-23): the dashboard's underwriting figures cut by the sale's controlled branch code -- the
+     * case list, the decisions and turnaround by month, and the cases awaiting issue.
+     */
+    @Test
+    void cutsCasesAndDecisionFiguresByBranch() {
+        UUID arusha = decidedCase(DecisionOutcome.ACCEPT);
+        UUID dar = decidedCase(DecisionOutcome.ACCEPT);
+        jdbc.update("UPDATE underwriting.underwriting_case SET branch_code = 'ARU' WHERE case_id = ?", arusha);
+        jdbc.update("UPDATE underwriting.underwriting_case SET branch_code = 'DSM' WHERE case_id = ?", dar);
+        java.time.YearMonth thisMonth = java.time.YearMonth.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+
+        assertEquals(List.of(arusha), underwritingApi
+            .listCases(CaseFilter.none().withOutcome(DecisionOutcome.ACCEPT).withBranch("ARU"), PAGE)
+            .getContent().stream().map(UnderwritingCaseView::caseId).toList());
+        assertEquals(1L, underwritingApi.decisionsByMonth(thisMonth, thisMonth, "ARU").stream()
+            .mapToLong(tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth::cases).sum());
+        assertEquals(2L, underwritingApi.decisionsByMonth(thisMonth, thisMonth, null).stream()
+            .mapToLong(tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth::cases).sum());
+        assertEquals(1L, underwritingApi.decisionTurnaroundByMonth(thisMonth, thisMonth, "ARU").stream()
+            .mapToLong(tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround::cases).sum());
+        assertEquals(1L, underwritingApi.countCasesAwaitingIssueInBranch("ARU"));
+        assertEquals(0L, underwritingApi.countCasesAwaitingIssueInBranch("MOS"));
+    }
+
     @Test
     void filtersCasesWaitingOnASeniorUnderwriter() {
         UUID referred = openTestCase(new BigDecimal("1000000"));

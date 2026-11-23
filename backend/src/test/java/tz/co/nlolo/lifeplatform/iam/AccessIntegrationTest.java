@@ -71,6 +71,23 @@ class AccessIntegrationTest {
                 .claim("preferred_username", "staff." + user.toString().substring(0, 6)).claim("name", "Neema Staff"));
     }
 
+    /** Branch views (2026-11-23): where the staff member is based, as the Users screen set it; null when unset. */
+    @Test
+    void myAccessSaysWhereTheStaffMemberIsBased() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        mockMvc.perform(get("/me/access").with(staff(tenant, user, "UNDERWRITER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.homeBranch").doesNotExist())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+
+        jdbc.update("UPDATE iam.staff_user SET home_branch = 'ARU' WHERE tenant_id = ? AND user_id = ?", tenant, user);
+        accessService.evict(tenant, user);
+        mockMvc.perform(get("/me/access").with(staff(tenant, user, "UNDERWRITER")))
+            .andExpect(jsonPath("$.homeBranch").value("ARU"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+    }
+
     @Test
     void firstSightImportsTheKeycloakRolesOnceAndThePlatformDecidesAfterThat() throws Exception {
         UUID tenant = UUID.randomUUID();

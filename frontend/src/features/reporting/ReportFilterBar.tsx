@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ProductFilter } from '@/components/ProductFilter';
 import { validateFilters, type ReportFilterState } from './reportParams';
+import { ALL_BRANCHES, type BranchOption } from './branchChoice';
+import { ReportBranchSelect } from './BranchSelect';
 
 const GROUP_LABELS: Record<string, string> = {
   PRODUCT: 'Product',
@@ -28,10 +30,13 @@ export function ReportFilterBar({
   definition,
   initial,
   onRun,
+  branchOptions = [],
 }: {
   definition: ReportDefinition;
   initial: ReportFilterState;
   onRun: (state: ReportFilterState) => void;
+  /** The register's branches for the Branch filter (2026-11-23, branch views); see branchChoice.ts. */
+  branchOptions?: readonly BranchOption[];
 }) {
   const [state, setState] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -182,6 +187,15 @@ export function ReportFilterBar({
               <option value="GROUP">Groups</option>
             </select>
           </label>
+        )}
+        {/* One branch's figures (2026-11-23, branch views). A company-wide report offers no branch: it would be a
+            filter that does nothing, and the server refuses one. */}
+        {!definition.companyWide && (
+          <ReportBranchSelect
+            value={state.branch || ALL_BRANCHES}
+            options={branchOptions}
+            onChange={(branch) => setState((s) => ({ ...s, branch }))}
+          />
         )}
         <Button type="submit" size="sm" variant="primary">
           Run report

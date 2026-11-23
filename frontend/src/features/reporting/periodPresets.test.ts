@@ -7,7 +7,7 @@ const byId = (presets: ReturnType<typeof periodPresets>, id: string) => presets.
 
 const blank: ReportFilterState = {
   asOf: '', compareAsOf: '', from: '', to: '', cohortFrom: '', cohortTo: '', groupBy: '', clientType: '',
-  productId: '', monthFrom: '', monthTo: '', accountCode: '', compareWith: '',
+  productId: '', monthFrom: '', monthTo: '', accountCode: '', compareWith: '', branch: '',
 };
 
 describe('periodPresets', () => {

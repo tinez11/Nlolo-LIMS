@@ -71,7 +71,8 @@ describe('UnderwritingDashboardPanel', () => {
       'href',
       '/staff/underwriting?decidedFrom=2026-07-01&decidedTo=2026-09-30',
     );
-    expect(getUnderwritingDashboard).toHaveBeenCalledWith(RANGE);
+    // No branch chosen: every branch (2026-11-23, branch views).
+    expect(getUnderwritingDashboard).toHaveBeenCalledWith(RANGE, undefined);
   });
 
   it("shows the server's rate and average, never its own", async () => {

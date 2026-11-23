@@ -13,6 +13,15 @@ public interface ReportingApi {
     /** @throws ReportNotFoundException for an unknown key; @throws ReportParameterException for a filter the report cannot take */
     ReportResult run(String key, ReportFilter filter);
 
+    /**
+     * The policy numbers sold through one branch (2026-11-23, branch views), from the reports' own copy: how the
+     * dashboards cut figures whose owning module records no branch (claims), without that module re-deriving anything.
+     */
+    Set<String> policyNumbersInBranch(String branchCode);
+
+    /** A branch's name from the company's register; the code when it is not there (2026-11-23). */
+    String branchName(String branchCode);
+
     /** What one line of a report is made of -- the computation tree (2026-11-09). 404 for a line it does not have. */
     ReportParts parts(String key, String lineId, ReportFilter filter, int page);
 

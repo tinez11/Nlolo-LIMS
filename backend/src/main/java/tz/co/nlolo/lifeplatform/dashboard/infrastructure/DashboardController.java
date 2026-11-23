@@ -45,11 +45,14 @@ public class DashboardController {
     private final AgentDashboard agent;
     private final ManagementDashboard management;
     private final CurrentAccess currentAccess;
+    private final tz.co.nlolo.lifeplatform.reporting.api.ReportingApi reporting;
 
     public DashboardController(UnderwritingDashboard underwriting, ClaimsDashboard claims, FinanceDashboard finance,
-                               AgentDashboard agent, ManagementDashboard management, CurrentAccess currentAccess) {
+                               AgentDashboard agent, ManagementDashboard management, CurrentAccess currentAccess,
+                               tz.co.nlolo.lifeplatform.reporting.api.ReportingApi reporting) {
         this.management = management;
         this.currentAccess = currentAccess;
+        this.reporting = reporting;
         this.underwriting = underwriting;
         this.claims = claims;
         this.finance = finance;
@@ -63,17 +66,33 @@ public class DashboardController {
     @GetMapping("/dashboards/overview")
     @PreAuthorize("@access.can('overview.view')")
     public ResponseEntity<ManagementDashboardView> overview(@RequestParam(required = false) String from,
-                                                            @RequestParam(required = false) String to) {
+                                                            @RequestParam(required = false) String to,
+                                                            @RequestParam(required = false) String branchCode) {
         LocalDate today = LocalDate.now(CIVIL);
-        return ResponseEntity.ok(management.build(DashboardPeriod.of(from, to, today), today));
+        String b = branch(branchCode);
+        // No branch: exactly the every-branch read, unchanged.
+        if (b == null) return ResponseEntity.ok(management.build(DashboardPeriod.of(from, to, today), today));
+        return ResponseEntity.ok(management.build(DashboardPeriod.of(from, to, today), today, b));
+    }
+
+    /**
+     * Branch views (2026-11-23): a branch code cuts the dashboard by the sales' branch; absent or blank, every branch.
+     * Views, not walls -- anyone who may read the dashboard may read any branch's.
+     */
+    private static String branch(String branchCode) {
+        return branchCode == null || branchCode.isBlank() ? null : branchCode.trim();
     }
 
     @GetMapping("/dashboards/underwriting")
     @PreAuthorize("@access.canAny('underwriting.assess', 'underwriting.decide')")
     public ResponseEntity<UnderwritingDashboardView> underwriting(@RequestParam(required = false) String from,
-                                                                  @RequestParam(required = false) String to) {
+                                                                  @RequestParam(required = false) String to,
+                                                                  @RequestParam(required = false) String branchCode) {
         LocalDate today = LocalDate.now(CIVIL);
-        return ResponseEntity.ok(underwriting.build(DashboardPeriod.of(from, to, today), today));
+        String b = branch(branchCode);
+        if (b == null) return ResponseEntity.ok(underwriting.build(DashboardPeriod.of(from, to, today), today));
+        return ResponseEntity.ok(underwriting.build(DashboardPeriod.of(from, to, today), today, b,
+            reporting.branchName(b)));
     }
 
     /**
@@ -84,10 +103,15 @@ public class DashboardController {
     @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimsDashboardView> claims(Authentication authentication,
                                                       @RequestParam(required = false) String from,
-                                                      @RequestParam(required = false) String to) {
+                                                      @RequestParam(required = false) String to,
+                                                      @RequestParam(required = false) String branchCode) {
         boolean manager = currentAccess.can(Permission.CLAIMS_SETTLE);
         LocalDate today = LocalDate.now(CIVIL);
-        return ResponseEntity.ok(claims.build(manager, DashboardPeriod.of(from, to, today), today));
+        String b = branch(branchCode);
+        if (b == null) return ResponseEntity.ok(claims.build(manager, DashboardPeriod.of(from, to, today), today));
+        // A claim's branch is its policy's: the branch's policies from the reports' copy.
+        return ResponseEntity.ok(claims.build(manager, DashboardPeriod.of(from, to, today), today, b,
+            reporting.branchName(b), reporting.policyNumbersInBranch(b)));
     }
 
     /** The same expression as every finance endpoint (39 of them) and the reports. */

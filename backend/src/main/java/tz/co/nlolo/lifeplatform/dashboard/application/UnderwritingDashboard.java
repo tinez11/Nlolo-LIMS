@@ -52,17 +52,35 @@ public class UnderwritingDashboard {
 
     /** @param period the months the ranged figures cover (2026-10-23); counts and the queue stay "now" */
     public UnderwritingDashboardView build(DashboardPeriod period, LocalDate today) {
-        Long open = Safely.read("open cases",
-            () -> underwriting.listCases(UnderwritingCaseStatus.OPEN, null, null, TOTAL_ONLY).getTotalElements());
-        Long inReview = Safely.read("cases in review",
-            () -> underwriting.listCases(UnderwritingCaseStatus.IN_REVIEW, null, null, TOTAL_ONLY).getTotalElements());
-        Long awaitingIssue = Safely.read("cases awaiting issue",
-            () -> underwriting.listCasesAwaitingIssue(null, TOTAL_ONLY).getTotalElements());
+        return build(period, today, null, null);
+    }
+
+    /**
+     * One branch's cases (2026-11-23, branch views): every count, the queue and the decision figures read the sale's
+     * own branch code. With no branch, the reads are exactly the every-branch ones above.
+     *
+     * @param branchCode the branch, or null for every branch
+     * @param branchName its name, for the view; null with no branch
+     */
+    public UnderwritingDashboardView build(DashboardPeriod period, LocalDate today, String branchCode, String branchName) {
+        String b = branchCode;
+        Long open = Safely.read("open cases", () -> b == null
+            ? underwriting.listCases(UnderwritingCaseStatus.OPEN, null, null, TOTAL_ONLY).getTotalElements()
+            : underwriting.listCases(CaseFilter.status(UnderwritingCaseStatus.OPEN).withBranch(b), TOTAL_ONLY)
+                .getTotalElements());
+        Long inReview = Safely.read("cases in review", () -> b == null
+            ? underwriting.listCases(UnderwritingCaseStatus.IN_REVIEW, null, null, TOTAL_ONLY).getTotalElements()
+            : underwriting.listCases(CaseFilter.status(UnderwritingCaseStatus.IN_REVIEW).withBranch(b), TOTAL_ONLY)
+                .getTotalElements());
+        Long awaitingIssue = Safely.read("cases awaiting issue", () -> b == null
+            ? underwriting.listCasesAwaitingIssue(null, TOTAL_ONLY).getTotalElements()
+            : underwriting.countCasesAwaitingIssueInBranch(b));
 
         // Oldest first: "next in your queue" means what has waited longest, where the queue PAGE sorts newest first.
-        List<QueuedCase> queue = Safely.read("the open-case queue", () -> underwriting.listCases(
-                UnderwritingCaseStatus.OPEN, null, null,
-                PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt")))
+        PageRequest oldestFirst = PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt"));
+        List<QueuedCase> queue = Safely.read("the open-case queue", () -> (b == null
+                ? underwriting.listCases(UnderwritingCaseStatus.OPEN, null, null, oldestFirst)
+                : underwriting.listCases(CaseFilter.status(UnderwritingCaseStatus.OPEN).withBranch(b), oldestFirst))
             .map(c -> new QueuedCase(c.caseId(), c.applicantPartyId(), c.lifeAssuredPartyId(), c.productId(),
                 Money.of(c.sumAssuredAmount(), c.sumAssuredCurrency()), c.status().name()))
             .getContent());
@@ -70,7 +88,8 @@ public class UnderwritingDashboard {
         // Waiting on a senior. Referral is tracked independently of the decision, so this is its own dimension
         // rather than a status: a referred case is still OPEN.
         Long referred = Safely.read("cases referred to a senior", () -> underwriting.listCases(
-            CaseFilter.none().withReferral(ReferralStatus.REFERRED_TO_SENIOR), TOTAL_ONLY).getTotalElements());
+            CaseFilter.none().withReferral(ReferralStatus.REFERRED_TO_SENIOR).withBranch(b), TOTAL_ONLY)
+            .getTotalElements());
 
         // TWELVE complete months, ending with the last complete one (phase 3). ONE read serves both the cards and
         // the chart: the cards show the last complete month, the chart all twelve. The current month is never in
@@ -78,7 +97,8 @@ public class UnderwritingDashboard {
         // full month's.
         YearMonth lastComplete = YearMonth.from(today).minusMonths(1);
         List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth> twelve = Safely.read("decisions by month",
-            () -> underwriting.decisionsByMonth(lastComplete.minusMonths(11), lastComplete));
+            () -> b == null ? underwriting.decisionsByMonth(lastComplete.minusMonths(11), lastComplete)
+                : underwriting.decisionsByMonth(lastComplete.minusMonths(11), lastComplete, b));
         List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth> rows = twelve == null ? List.of() : twelve;
 
         List<DecisionMonth> decisions = rows.stream()
@@ -93,12 +113,15 @@ public class UnderwritingDashboard {
 
         // ---- the ranged figures (2026-10-23): one read each for the period and its comparison months ----
         List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth> inPeriod = Safely.read("decisions in the period",
-            () -> underwriting.decisionsByMonth(period.from(), period.to()));
+            () -> b == null ? underwriting.decisionsByMonth(period.from(), period.to())
+                : underwriting.decisionsByMonth(period.from(), period.to(), b));
         Long decidedBefore = Safely.read("decisions a year earlier",
-            () -> underwriting.decisionsByMonth(period.compareFrom(), period.compareTo()).stream()
+            () -> (b == null ? underwriting.decisionsByMonth(period.compareFrom(), period.compareTo())
+                    : underwriting.decisionsByMonth(period.compareFrom(), period.compareTo(), b)).stream()
                 .mapToLong(tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth::cases).sum());
         Map<YearMonth, DecisionTurnaround> days = Safely.read("decision turnaround", () ->
-            underwriting.decisionTurnaroundByMonth(period.from(), period.to()).stream()
+            (b == null ? underwriting.decisionTurnaroundByMonth(period.from(), period.to())
+                    : underwriting.decisionTurnaroundByMonth(period.from(), period.to(), b)).stream()
                 .collect(Collectors.toMap(DecisionTurnaround::month, d -> d)));
 
         Long decided = null;
@@ -151,7 +174,10 @@ public class UnderwritingDashboard {
             period.toView(), decidedNow, decidedBefore,
             decidedNow == null || decidedBefore == null ? null
                 : DashboardPeriod.changePercent(BigDecimal.valueOf(decidedNow), BigDecimal.valueOf(decidedBefore)),
-            acceptance, averageDays, totals, outcomes, turnaround);
+            acceptance, averageDays, totals, outcomes, turnaround,
+            // Recent activity is the activity log's, which records no branch.
+            b == null ? null : new tz.co.nlolo.lifeplatform.dashboard.api.BranchScope(b, branchName,
+                List.of("recentActivity")));
     }
 
     /**

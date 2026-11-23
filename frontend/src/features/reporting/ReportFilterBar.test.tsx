@@ -21,6 +21,45 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('ReportFilterBar', () => {
+  /** Branch views (2026-11-23): Branch after the other filters, the register's names, and the choice runs with Run. */
+  it('offers the branches by name, your own marked, and runs with the one chosen', async () => {
+    const onRun = vi.fn();
+    const user = userEvent.setup();
+    const initial = { ...defaultFilters(PERIOD_REPORT, new Date()), branch: 'ARU' };
+    renderScreen(
+      <ReportFilterBar
+        definition={{ ...PERIOD_REPORT, companyWide: false }}
+        initial={initial}
+        onRun={onRun}
+        branchOptions={[
+          { code: 'DSM', name: 'Dar es Salaam', label: 'Dar es Salaam' },
+          { code: 'ARU', name: 'Arusha', label: 'Arusha (your branch)' },
+        ]}
+      />,
+    );
+
+    const branch = screen.getByLabelText('Branch');
+    expect(branch).toHaveValue('ARU');
+    expect(within(branch).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(['All branches', 'Dar es Salaam', 'Arusha (your branch)']);
+
+    await user.selectOptions(branch, 'all');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onRun).toHaveBeenCalledWith(expect.objectContaining({ branch: 'all' }));
+  });
+
+  it('offers no branch on a company-wide report', () => {
+    renderScreen(
+      <ReportFilterBar
+        definition={{ ...PERIOD_REPORT, companyWide: true }}
+        initial={defaultFilters(PERIOD_REPORT, new Date())}
+        onRun={vi.fn()}
+        branchOptions={[{ code: 'ARU', name: 'Arusha', label: 'Arusha' }]}
+      />,
+    );
+    expect(screen.queryByLabelText('Branch')).toBeNull();
+  });
+
   it('fills the dates from a period choice, and runs only on Run', async () => {
     const onRun = vi.fn();
     const user = userEvent.setup();

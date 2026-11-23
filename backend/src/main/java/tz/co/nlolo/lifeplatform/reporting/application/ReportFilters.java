@@ -64,6 +64,10 @@ final class ReportFilters {
             && !d.comparesPeriods(), "compareWith does not apply to " + key);
         refuse(f.groupBy() != null && !d.groupByOptions().contains(f.groupBy()),
             key + " cannot be grouped by " + f.groupBy());
+        // Branch views (2026-11-23): a company-wide report refuses a branch -- answering with the whole company's
+        // figures under a branch's name would be the silent ignoring this class exists to prevent.
+        refuse(f.branchCode() != null && d.companyWide(),
+            d.title() + " is company-wide; it cannot be cut by branch");
         refuse(f.clientType() != null && !CLIENT_TYPES.contains(f.clientType()),
             "clientType must be one of " + CLIENT_TYPES);
         refuse(f.accountCode() != null && !ACCOUNT_CODE.matcher(f.accountCode()).matches(),

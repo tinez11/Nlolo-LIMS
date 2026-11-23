@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
@@ -9,13 +9,15 @@ import { RANGE_LABEL, rangeFor, type RangeKey } from './range';
  * The months a dashboard covers (2026-10-23): four presets ending this month, and any months the reader names. One
  * row above the figures, so every chart below reads the same range.
  */
-export function RangePicker({ value, current, onChange, compareText }: {
+export function RangePicker({ value, current, onChange, compareText, scope }: {
   value: { key: RangeKey; range: Required<MonthRange> };
   /** This month, "YYYY-MM": a range may not end after it. */
   current: string;
   onChange: (range: Required<MonthRange>) => void;
   /** What the figures are compared with, said once beside the buttons. */
   compareText?: string;
+  /** A second scope choice on the same row, after the months (2026-11-23: the branch). */
+  scope?: ReactNode;
 }) {
   const [customOpen, setCustomOpen] = useState(value.key === 'custom');
   const [from, setFrom] = useState(value.range.from);
@@ -87,6 +89,7 @@ export function RangePicker({ value, current, onChange, compareText }: {
           </Button>
         </form>
       )}
+      {scope}
       {compareText && <span className="text-xs text-muted-foreground">{compareText}</span>}
     </div>
   );

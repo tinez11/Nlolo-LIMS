@@ -22,7 +22,20 @@ public record UnderwritingDashboardView(Long openCases, Long casesInReview, Long
                                         List<QueuedCase> queue, List<ActivityItem> recentActivity,
                                         Period period, Long decided, Long decidedBefore, String decidedChangePercent,
                                         String acceptanceRate, String averageDays, List<Share> outcomeTotals,
-                                        List<OutcomeSeriesPoint> outcomeSeries, List<DaysPoint> turnaroundSeries) {
+                                        List<OutcomeSeriesPoint> outcomeSeries, List<DaysPoint> turnaroundSeries,
+                                        BranchScope branch) {
+
+    /** Every branch (before 2026-11-23). */
+    public UnderwritingDashboardView(Long openCases, Long casesInReview, Long casesAwaitingIssue, Long casesReferred,
+                                     List<DecisionMonth> decisions, List<DecisionSeriesPoint> decisionSeries,
+                                     List<QueuedCase> queue, List<ActivityItem> recentActivity, Period period,
+                                     Long decided, Long decidedBefore, String decidedChangePercent,
+                                     String acceptanceRate, String averageDays, List<Share> outcomeTotals,
+                                     List<OutcomeSeriesPoint> outcomeSeries, List<DaysPoint> turnaroundSeries) {
+        this(openCases, casesInReview, casesAwaitingIssue, casesReferred, decisions, decisionSeries, queue,
+            recentActivity, period, decided, decidedBefore, decidedChangePercent, acceptanceRate, averageDays,
+            outcomeTotals, outcomeSeries, turnaroundSeries, null);
+    }
 
     /** One month of the ranged decisions chart. Grouped on the server, as {@link DecisionSeriesPoint} is. */
     public record OutcomeSeriesPoint(String month, long accepted, long postponed, long declined) {}

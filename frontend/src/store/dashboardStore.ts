@@ -29,7 +29,8 @@ interface DashboardState {
   finance: Resource<FinanceDashboard>;
   agent: Resource<AgentDashboard>;
   overview: Resource<ManagementDashboard>;
-  load: (kind: DashboardKind, range?: AgentRange) => Promise<void>;
+  /** @param branchCode one branch (2026-11-23, branch views) for the overview, underwriting and claims dashboards */
+  load: (kind: DashboardKind, range?: AgentRange, branchCode?: string) => Promise<void>;
 }
 
 export const useDashboardStore = create<DashboardState>((set, getState) => ({
@@ -39,20 +40,20 @@ export const useDashboardStore = create<DashboardState>((set, getState) => ({
   agent: idle(),
   overview: idle(),
 
-  load: (kind, range) => {
+  load: (kind, range, branchCode) => {
     switch (kind) {
       case 'underwriting':
         return track('dashboard.underwriting', getState().underwriting, (next) => set({ underwriting: next }),
-          () => getUnderwritingDashboard(range));
+          () => getUnderwritingDashboard(range, branchCode));
       case 'claims':
         return track('dashboard.claims', getState().claims, (next) => set({ claims: next }),
-          () => getClaimsDashboard(range));
+          () => getClaimsDashboard(range, branchCode));
       case 'finance':
         return track('dashboard.finance', getState().finance, (next) => set({ finance: next }),
           () => getFinanceDashboard(range));
       case 'overview':
         return track('dashboard.overview', getState().overview, (next) => set({ overview: next }),
-          () => getManagementDashboard(range));
+          () => getManagementDashboard(range, branchCode));
       case 'agent':
         return track('dashboard.agent', getState().agent, (next) => set({ agent: next }),
           () => getAgentDashboard(range));

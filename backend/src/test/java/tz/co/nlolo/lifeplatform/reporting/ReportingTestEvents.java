@@ -42,6 +42,12 @@ public class ReportingTestEvents {
                 channel, branch, holder, portfolio, groupScheme, lives);
         }
 
+        /** Sold through this branch (2026-11-23, branch views). */
+        public Sale branch(String code) {
+            return new Sale(policyNumber, productId, category, frequency, premium, sumAssured, activatedOn, agentId,
+                channel, code, holderPartyId, portfolio, groupScheme, lives);
+        }
+
         public Sale portfolio(String code) {
             return new Sale(policyNumber, productId, category, frequency, premium, sumAssured, activatedOn, agentId,
                 channel, branch, holderPartyId, code, groupScheme, lives);

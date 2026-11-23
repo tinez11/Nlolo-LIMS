@@ -70,6 +70,12 @@ public record ReportFilter(LocalDate asOf, LocalDate compareAsOf, LocalDate from
             salesChannel, branchCode, type, groupBy, monthFrom, monthTo, accountCode, compareWith);
     }
 
+    /** One branch's policies (2026-11-23, branch views); null for every branch. */
+    public ReportFilter withBranchCode(String code) {
+        return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, productId, productCategory, agentId,
+            salesChannel, code, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);
+    }
+
     public ReportFilter withProductId(UUID id) {
         return new ReportFilter(asOf, compareAsOf, from, to, cohortFrom, cohortTo, id, productCategory, agentId,
             salesChannel, branchCode, clientType, groupBy, monthFrom, monthTo, accountCode, compareWith);

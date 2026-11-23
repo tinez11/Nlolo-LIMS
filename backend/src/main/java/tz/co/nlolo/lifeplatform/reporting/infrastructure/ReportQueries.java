@@ -122,6 +122,13 @@ public class ReportQueries {
      * The newest change the reports' own copy has taken in for this tenant (2026-11-11, analytics plan 2): the latest
      * applied event. Null when it has taken in nothing yet.
      */
+    /** The policies sold through one branch (2026-11-23, branch views). */
+    public Set<String> policyNumbersInBranch(UUID tenantId, String branchCode) {
+        return new java.util.HashSet<>(jdbc.queryForList(
+            "SELECT policy_number FROM reporting.report_policy WHERE tenant_id = ? AND branch_code = ?",
+            String.class, tenantId, branchCode));
+    }
+
     public Instant lastAppliedAt(UUID tenantId) {
         java.sql.Timestamp at = jdbc.queryForObject(
             "SELECT max(applied_at) FROM reporting.applied_event WHERE tenant_id = ?", java.sql.Timestamp.class, tenantId);
@@ -421,6 +428,18 @@ public class ReportQueries {
         + " WHERE p.tenant_id = ? AND p.holder_party_id IS NOT NULL AND l.to_status IN " + IN_FORCE_STATUSES + ")";
 
     public List<ClientSummaryRow> clientSummary(UUID tenantId, LocalDate asOf, LocalDate from, LocalDate to, String clientType) {
+        return clientSummary(tenantId, asOf, from, to, clientType, null);
+    }
+
+    /**
+     * A client has no branch: one is counted in a branch when they hold a policy sold there (2026-11-23, branch views),
+     * so a client with policies in two branches is counted in both.
+     */
+    static final String HOLDS_IN_BRANCH = " AND EXISTS (SELECT 1 FROM reporting.report_policy bp WHERE bp.tenant_id ="
+        + " c.tenant_id AND bp.holder_party_id = c.party_id AND bp.branch_code = ?)";
+
+    public List<ClientSummaryRow> clientSummary(UUID tenantId, LocalDate asOf, LocalDate from, LocalDate to,
+                                                String clientType, String branchCode) {
         List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf, from, to, asOf, asOf, asOf, asOf, tenantId));
         StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + HELD_CTE + " SELECT c.party_type,"
             + " COUNT(*) FILTER (WHERE c.registered_on <= ?) AS total,"
@@ -434,6 +453,10 @@ public class ReportQueries {
             sql.append(" AND c.party_type = ?");
             args.add(clientType);
         }
+        if (branchCode != null) {
+            sql.append(HOLDS_IN_BRANCH);
+            args.add(branchCode);
+        }
         sql.append(" GROUP BY c.party_type ORDER BY c.party_type");
         return jdbc.query(sql.toString(), (rs, i) -> new ClientSummaryRow(rs.getString("party_type"), rs.getLong("total"),
             rs.getLong("new_in_period"), rs.getLong("verified"), rs.getLong("pending"), rs.getLong("rejected"),
@@ -441,14 +464,25 @@ public class ReportQueries {
     }
 
     public List<IndividualRow> individuals(UUID tenantId, LocalDate asOf) {
-        return jdbc.query("WITH " + LAST_CHANGE_CTE + ", in_force AS (SELECT p.holder_party_id, COUNT(*) AS n"
+        return individuals(tenantId, asOf, null);
+    }
+
+    /** @param branchCode the clients holding a policy sold through this branch, or null for all (2026-11-23) */
+    public List<IndividualRow> individuals(UUID tenantId, LocalDate asOf, String branchCode) {
+        List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, tenantId, asOf));
+        StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + ", in_force AS (SELECT p.holder_party_id, COUNT(*) AS n"
                 + " FROM reporting.report_policy p JOIN last_change l ON l.policy_number = p.policy_number"
                 + " WHERE p.tenant_id = ? AND l.to_status IN " + IN_FORCE_STATUSES + " GROUP BY p.holder_party_id)"
                 + " SELECT c.date_of_birth, c.sex, COALESCE(i.n, 0) AS n FROM reporting.report_client c"
                 + " LEFT JOIN in_force i ON i.holder_party_id = c.party_id"
-                + " WHERE c.tenant_id = ? AND c.party_type = 'INDIVIDUAL' AND c.registered_on <= ?",
+                + " WHERE c.tenant_id = ? AND c.party_type = 'INDIVIDUAL' AND c.registered_on <= ?");
+        if (branchCode != null) {
+            sql.append(HOLDS_IN_BRANCH);
+            args.add(branchCode);
+        }
+        return jdbc.query(sql.toString(),
             (rs, i) -> new IndividualRow(rs.getObject("date_of_birth", LocalDate.class), rs.getString("sex"), rs.getLong("n")),
-            tenantId, asOf, tenantId, tenantId, asOf);
+            args.toArray());
     }
 
     public List<SchemeRow> schemes(UUID tenantId, LocalDate asOf, LocalDate from, LocalDate to, ReportFilter f) {

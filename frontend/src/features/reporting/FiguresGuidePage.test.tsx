@@ -16,7 +16,7 @@ vi.mock('@/api/reporting', async (original) => ({
 const collections = {
   key: 'premium-collections', title: 'Premium collections', description: 'Premiums collected in the period.',
   category: 'MANAGEMENT', dateFilterKind: 'PERIOD', groupByOptions: [], comparable: false, requiresAccount: false,
-  comparesPeriods: true, sources: ['REPORTING_COPY', 'BILLING'], figures: [],
+  comparesPeriods: true, sources: ['REPORTING_COPY', 'BILLING'], figures: [], companyWide: false,
 } as ReportDefinition;
 
 beforeEach(() => {

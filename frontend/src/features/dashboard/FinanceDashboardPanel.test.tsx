@@ -86,7 +86,8 @@ describe('FinanceDashboardPanel', () => {
     renderScreen(<FinanceDashboardPanel range={RANGE} />);
 
     const tile = await screen.findByRole('link', { name: /Premiums collected/ });
-    expect(tile).toHaveAttribute('href', '/staff/reports/premium-collections?from=2026-07-01&to=2026-09-30');
+    // Every branch: the finance figures are company-wide (2026-11-23, branch views).
+    expect(tile).toHaveAttribute('href', '/staff/reports/premium-collections?from=2026-07-01&to=2026-09-30&branch=all');
     expect(within(tile).getByText('TZS 150M')).toBeInTheDocument();
     expect(tile.querySelector('[data-delta="good"]')).toHaveTextContent('50.0%');
     expect(within(tile).getByText('vs Jul to Sep 2025')).toBeInTheDocument();
@@ -96,7 +97,7 @@ describe('FinanceDashboardPanel', () => {
     renderScreen(<FinanceDashboardPanel range={RANGE} />);
 
     expect(await screen.findByRole('link', { name: /New policies/ })).toHaveAttribute(
-      'href', '/staff/reports/new-business?from=2026-07-01&to=2026-09-30');
+      'href', '/staff/reports/new-business?from=2026-07-01&to=2026-09-30&branch=all');
   });
 
   it('marks fewer new policies as bad news, in words as well as colour', async () => {

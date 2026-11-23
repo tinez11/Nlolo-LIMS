@@ -70,6 +70,66 @@ public class ManagementDashboard {
             claimsView == null ? null : sum(claimsView.registered(), claimsView.underAssessment(), claimsView.reopened()));
     }
 
+    /**
+     * One branch's overview (2026-11-23, branch views). Every figure is the branch's own, read from the report or
+     * dashboard its card opens with the same branch: premiums collected and new policies from the premium-collections
+     * and new-business reports (the finance dashboard is company-wide), policies in force, lapsed and open claims from
+     * their reports, claims paid and waiting from the branch's claims dashboard, cases waiting from the branch's
+     * underwriting dashboard. The collections block stays the company's and is named under {@code allBranches}.
+     * With no branch, exactly {@link #build(DashboardPeriod, LocalDate)}.
+     */
+    public ManagementDashboardView build(DashboardPeriod period, LocalDate today, String branchCode) {
+        if (branchCode == null) return build(period, today);
+        String b = branchCode;
+        LocalDate end = period.to().atEndOfMonth().isAfter(today) ? today : period.to().atEndOfMonth();
+        LocalDate start = period.from().atDay(1);
+        LocalDate dayBefore = start.minusDays(1);
+        LocalDate compareStart = period.compareFrom().atDay(1);
+        LocalDate compareEnd = period.compareTo().atEndOfMonth();
+        String name = Safely.read("the branch's name", () -> reporting.branchName(b));
+
+        BigDecimal collectedNow = figure("premiums collected", "premium-collections", "amount",
+            ReportFilter.period(start, end).withBranchCode(b));
+        BigDecimal collectedBefore = figure("premiums collected a year earlier", "premium-collections", "amount",
+            ReportFilter.period(compareStart, compareEnd).withBranchCode(b));
+        BigDecimal newNow = figure("new policies", "new-business", "policies",
+            ReportFilter.period(start, end).withBranchCode(b));
+        BigDecimal newBefore = figure("new policies a year earlier", "new-business", "policies",
+            ReportFilter.period(compareStart, compareEnd).withBranchCode(b));
+
+        // A claim's branch is its policy's. Unread, the claims figures stay unknown rather than becoming everyone's.
+        java.util.Set<String> policies = Safely.read("the branch's policies", () -> reporting.policyNumbersInBranch(b));
+        ClaimsDashboardView claimsView = policies == null ? null : Safely.read("the branch's claims dashboard",
+            () -> claims.build(true, period, today, b, name, policies));
+        UnderwritingDashboardView cases = Safely.read("the branch's underwriting dashboard",
+            () -> underwriting.build(period, today, b, name));
+        ReportResult inForce = Safely.read("policies in force",
+            () -> reporting.run("policies-in-force", ReportFilter.asOf(end).withCompareAsOf(dayBefore).withBranchCode(b)));
+        ReportResult inProgress = Safely.read("claims in progress",
+            () -> reporting.run("claims-in-progress", ReportFilter.asOf(end).withBranchCode(b)));
+        FinanceDashboardView money = Safely.read("the finance dashboard", () -> finance.build(period, today));
+
+        return new ManagementDashboardView(
+            period.toView(),
+            tz.co.nlolo.lifeplatform.dashboard.api.Money.of(collectedNow, ClaimsDashboard.WORKING_CURRENCY),
+            tz.co.nlolo.lifeplatform.dashboard.api.Money.of(collectedBefore, ClaimsDashboard.WORKING_CURRENCY),
+            DashboardPeriod.changePercent(collectedNow, collectedBefore),
+            whole(newNow), whole(newBefore), DashboardPeriod.changePercent(newNow, newBefore),
+            whole(ReportFigures.figure(inForce, "policies")),
+            money == null ? null : money.collections(),
+            whole(ReportFigures.figure(inForce, "lapsed")),
+            claimsView == null ? null : claimsView.paid(),
+            whole(ReportFigures.figure(inProgress, "open")),
+            cases == null ? null : sum(cases.openCases(), cases.casesInReview()),
+            claimsView == null ? null : sum(claimsView.registered(), claimsView.underAssessment(), claimsView.reopened()),
+            new tz.co.nlolo.lifeplatform.dashboard.api.BranchScope(b, name, java.util.List.of("collections")));
+    }
+
+    private BigDecimal figure(String what, String report, String key, ReportFilter filter) {
+        ReportResult result = Safely.read(what, () -> reporting.run(report, filter));
+        return ReportFigures.figure(result, key);
+    }
+
     private static Long whole(BigDecimal value) {
         return value == null ? null : value.longValueExact();
     }

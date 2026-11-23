@@ -42,7 +42,7 @@ public class CapitalAdequacyReport implements Report {
         "Capital adequacy (RBC)",
         "Available capital against the capital the risks require, the ratio, and how it stands against the minimum"
             + " (MCR), solvency (SCR) and prescribed (PCR) levels.",
-        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), true).comparingPeriods().from("LEDGER");
+        ReportCategory.SOLVENCY, DateFilterKind.MONTH, List.of(), true).comparingPeriods().from("LEDGER").aboutTheWholeCompany();
 
     private final SolvencyReports solvency;
     private final ShareRegisterApi register;

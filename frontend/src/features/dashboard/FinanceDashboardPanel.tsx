@@ -21,6 +21,7 @@ import type { CollectionFiguresView } from '@/api/dashboard';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/dates';
 import { lastDayOf, reportLink } from './reportLinks';
+import { ALL_BRANCHES } from '../reporting/branchChoice';
 import { donutParts, monthCategories, moneyPoints, trendOf, versus } from './series';
 import { StatRow, type Stat } from './StatTile';
 
@@ -171,7 +172,9 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
       versus: versus(p),
       hint: span,
       trend: trendOf(collected),
-      to: reportLink('premium-collections', { from: `${p.from}-01`, to: lastDayOf(p.to) }),
+      // The finance figures are company-wide, so the report they open is too -- not the reader's own branch, which a
+      // report would otherwise start on (2026-11-23, branch views).
+      to: reportLink('premium-collections', { from: `${p.from}-01`, to: lastDayOf(p.to) }, ALL_BRANCHES),
     },
     {
       label: 'Owed today',
@@ -193,7 +196,7 @@ export function FinanceDashboardPanel({ range, onRange }: PanelProps) {
       hint: span,
       trend: v.newPoliciesSeries.map((c) => c.count),
       // The policies it counted, for the same months (2026-11-11, analytics plan 2).
-      to: reportLink('new-business', { from: `${p.from}-01`, to: lastDayOf(p.to) }),
+      to: reportLink('new-business', { from: `${p.from}-01`, to: lastDayOf(p.to) }, ALL_BRANCHES),
     },
     {
       label: 'Net result, year to date',

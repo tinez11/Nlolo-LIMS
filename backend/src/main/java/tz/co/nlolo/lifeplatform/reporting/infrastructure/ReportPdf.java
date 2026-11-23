@@ -33,7 +33,7 @@ final class ReportPdf {
 
     static BrandedDocument document(ReportResult result, String preparedBy) {
         List<String> subtitle = new ArrayList<>();
-        if (present(result.filterSummary())) subtitle.add(result.filterSummary());
+        if (present(result.exportSummary())) subtitle.add(result.exportSummary());
         if (present(result.comparisonLabel())) subtitle.add(result.comparisonLabel());
         subtitle.add("Prepared" + (present(preparedBy) ? " by " + preparedBy : "") + " on "
             + ReportFormat.stamp(result.generatedAt()));

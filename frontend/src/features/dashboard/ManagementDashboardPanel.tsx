@@ -8,6 +8,7 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectOverview, useDashboardStore } from '@/store/dashboardStore';
 import type { PanelProps } from './DashboardPage';
+import { ALL_BRANCHES } from '../reporting/branchChoice';
 import { describeRange } from './range';
 import { versus } from './series';
 import { StatRow, type Stat } from './StatTile';
@@ -30,18 +31,20 @@ function Change({ percent, against }: { percent: string | null | undefined; agai
  * figure is the server's, read there from the report that owns it; each is said once, and the months once, in the
  * subtitle (the user, 2026-11-12: "too much explanation and info").
  */
-export function ManagementDashboardPanel({ range }: PanelProps) {
+export function ManagementDashboardPanel({ range, branch }: PanelProps) {
   const resource = useDashboardStore(selectOverview);
   const load = useDashboardStore((s) => s.load);
   const { from, to } = range;
+  // One branch (2026-11-23, branch views); `all` and no choice both read every branch.
+  const branchCode = branch && branch !== ALL_BRANCHES ? branch : undefined;
 
   useEffect(() => {
-    void load('overview', { from, to });
-  }, [load, from, to]);
+    void load('overview', { from, to }, branchCode);
+  }, [load, from, to, branchCode]);
 
   if (isInitialLoad(resource)) return <LoadingBlock label="Reading the business" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
-    return <ErrorPanel error={resource.error} onRetry={() => void load('overview', { from, to })} />;
+    return <ErrorPanel error={resource.error} onRetry={() => void load('overview', { from, to }, branchCode)} />;
   }
   const v = resource.data;
   if (!v) return null;
@@ -49,6 +52,10 @@ export function ManagementDashboardPanel({ range }: PanelProps) {
   const p = v.period;
   const against = versus(p);
   const collections = v.collections;
+  // A card opens its report on the same branch the figure was read for.
+  const report = (key: string) => (branch ? `/staff/reports/${key}?branch=${encodeURIComponent(branch)}` : `/staff/reports/${key}`);
+  // A figure the server could not cut by branch says so, in words, under its label.
+  const everyBranch = (key: string) => v.branch?.allBranches.includes(key) ?? false;
 
   // In full: a manager checks premiums against the bank to the shilling.
   const band: { label: string; value: string; note?: ReactNode; to: string }[] = [
@@ -56,18 +63,18 @@ export function ManagementDashboardPanel({ range }: PanelProps) {
       label: 'Premiums collected',
       value: v.collected ? formatMoney(v.collected) : 'Not available',
       note: <Change percent={v.collectedChangePercent} against={against} />,
-      to: '/staff/reports/premium-collections',
+      to: report('premium-collections'),
     },
     {
       label: 'New policies',
       value: countValue(v.newPolicies) ?? 'Not available',
       note: <Change percent={v.newPoliciesChangePercent} against={against} />,
-      to: '/staff/reports/new-business',
+      to: report('new-business'),
     },
     {
       label: 'Policies in force',
       value: countValue(v.policiesInForce) ?? 'Not available',
-      to: '/staff/reports/policies-in-force',
+      to: report('policies-in-force'),
     },
   ];
 
@@ -79,7 +86,10 @@ export function ManagementDashboardPanel({ range }: PanelProps) {
       color: 'chart-1',
       value: collections?.ratePercent ? `${collections.ratePercent}%` : null,
       ...(collections
-        ? { hint: `${formatMoney({ amount: collections.overdueOwed.toFixed(2), currencyCode: collections.currency })} overdue` }
+        ? {
+            hint: `${formatMoney({ amount: collections.overdueOwed.toFixed(2), currencyCode: collections.currency })} overdue`
+              + (everyBranch('collections') ? ' · All branches' : ''),
+          }
         : {}),
       to: '/staff/follow-up',
     },
@@ -88,7 +98,7 @@ export function ManagementDashboardPanel({ range }: PanelProps) {
       icon: TrendingDown,
       color: 'chart-3',
       value: countValue(v.lapsed),
-      to: '/staff/reports/policies-in-force',
+      to: report('policies-in-force'),
     },
     {
       label: 'Claims paid',
@@ -96,7 +106,7 @@ export function ManagementDashboardPanel({ range }: PanelProps) {
       color: 'chart-2',
       value: v.claimsPaid ? formatMoney(v.claimsPaid) : null,
       ...(v.openClaims == null ? {} : { hint: `${countValue(v.openClaims)} still open` }),
-      to: '/staff/reports/claims-in-progress',
+      to: report('claims-in-progress'),
     },
     {
       label: 'Waiting for a decision',

@@ -44,6 +44,29 @@ class UnderwritingDashboardTest {
         return new PageImpl<>(List.of(), PageRequest.of(0, 1), n);
     }
 
+    /** Branch views (2026-11-23): every count, the queue and the decision figures are read for the branch alone. */
+    @Test
+    void aBranchsDashboardReadsEveryFigureForThatBranch() {
+        when(underwriting.listCases(any(tz.co.nlolo.lifeplatform.underwriting.api.CaseFilter.class), any()))
+            .thenReturn(total(2));
+        when(underwriting.countCasesAwaitingIssueInBranch("ARU")).thenReturn(1L);
+        when(underwriting.decisionsByMonth(any(), any(), eq("ARU"))).thenReturn(List.of());
+        when(underwriting.decisionTurnaroundByMonth(any(), any(), eq("ARU"))).thenReturn(List.of());
+
+        var v = dashboard.build(DashboardPeriod.of(null, null, TODAY), TODAY, "ARU", "Arusha");
+
+        assertThat(v.openCases()).isEqualTo(2L);
+        assertThat(v.casesAwaitingIssue()).isEqualTo(1L);
+        assertThat(v.branch().code()).isEqualTo("ARU");
+        assertThat(v.branch().name()).isEqualTo("Arusha");
+        assertThat(v.branch().allBranches()).containsExactly("recentActivity");
+        verify(underwriting, org.mockito.Mockito.times(4)).listCases(
+            org.mockito.ArgumentMatchers.<tz.co.nlolo.lifeplatform.underwriting.api.CaseFilter>argThat(
+                f -> f != null && "ARU".equals(f.branchCode())), any());
+        verify(underwriting, org.mockito.Mockito.never()).listCases(any(), any(), any(), any());
+        verify(underwriting, org.mockito.Mockito.never()).decisionsByMonth(any(), any());
+    }
+
     @Test
     void countsEachQueueByItsOwnStatusAndListsTheOldestOpenCasesFirst() {
         UUID caseId = UUID.randomUUID();
