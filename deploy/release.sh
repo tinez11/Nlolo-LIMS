@@ -68,7 +68,7 @@ cp -r deploy/authentik/branding "$R/authentik/branding"
 # The scripts the operator runs, in ~/platform.
 cp deploy/server/*.sh deploy/server/versions.env "$STAGE/"
 # A Windows checkout's CRLF makes every one of these unrunnable on the server, with "not found" as the only clue.
-find "$STAGE" \( -name '*.sh' -o -name '*.env' -o -name '*.service' -o -name '*.conf' -o -name 'Caddyfile' \) \
+find "$STAGE" \( -name '*.sh' -o -name '*.env' -o -name '*.service' -o -name '*.timer' -o -name '*.conf' -o -name 'Caddyfile' \) \
   -exec sed -i 's/\r$//' {} +
 
 echo "== copying to $DEPLOY_HOST"
