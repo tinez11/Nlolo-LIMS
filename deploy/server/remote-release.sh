@@ -247,7 +247,7 @@ install_units "$RELEASE_DIR/server"
 
 echo "== database"
 database_up
-(cd "$RELEASE_DIR" && sudo env POSTGRES_PASSWORD="$POSTGRES_PASSWORD" FLYWAY_VERSION="$FLYWAY_VERSION" \
+(cd "$RELEASE_DIR" && sudo env POSTGRES_PASSWORD="$POSTGRES_PASSWORD" FLYWAY_CLI="$TOOLS/flyway-$FLYWAY_VERSION/flyway" \
    scripts/migrate.sh native)
 (cd "$RELEASE_DIR" && sudo scripts/configure-db.sh native)
 
