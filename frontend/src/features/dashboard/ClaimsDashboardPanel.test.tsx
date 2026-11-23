@@ -68,7 +68,8 @@ describe('ClaimsDashboardPanel', () => {
       'href',
       '/staff/claims?status=UNDER_ASSESSMENT',
     );
-    expect(getClaimsDashboard).toHaveBeenCalledWith(RANGE);
+    // No branch chosen: every branch (2026-11-23, branch views).
+    expect(getClaimsDashboard).toHaveBeenCalledWith(RANGE, undefined);
   });
 
   /** The card opens the claims it counted, for the same months (2026-11-11, analytics plan 2). */

@@ -19,6 +19,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaims, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import type { PanelProps } from './DashboardPage';
+import { ALL_BRANCHES } from '../reporting/branchChoice';
 import { DashboardRail } from './DashboardRail';
 import { describeRange } from './range';
 import { lastDayOf } from './reportLinks';
@@ -36,14 +37,16 @@ const CLAIM_TYPE: Record<string, string> = {
  * The claims dashboard (2026-10-14; ranged and charted 2026-10-23). Stages are a count of one status, now; what was
  * paid and how long it took are over the range, the server's own totals and averages. The queue is the reader's work.
  */
-export function ClaimsDashboardPanel({ range }: PanelProps) {
+export function ClaimsDashboardPanel({ range, branch }: PanelProps) {
   const resource = useDashboardStore(selectClaims);
   const load = useDashboardStore((s) => s.load);
   const { from, to } = range;
+  // One branch (2026-11-23, branch views); `all` and no choice both read every branch.
+  const branchCode = branch && branch !== ALL_BRANCHES ? branch : undefined;
 
   useEffect(() => {
-    void load('claims', { from, to });
-  }, [load, from, to]);
+    void load('claims', { from, to }, branchCode);
+  }, [load, from, to, branchCode]);
 
   if (isInitialLoad(resource)) return <LoadingBlock label="Counting claims" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
@@ -273,7 +276,8 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
           />
         </div>
         <div className="xl:col-span-12">
-          <ActivityFeed items={view.recentActivity} />
+          <ActivityFeed items={view.recentActivity}
+            everyBranch={view.branch?.allBranches.includes('recentActivity') ?? false} />
         </div>
       </div>
     </div>

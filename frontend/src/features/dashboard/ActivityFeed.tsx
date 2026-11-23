@@ -9,9 +9,16 @@ import { describeActivity } from './activity';
  * This module's latest events (2026-10-14), from the audit log. It records what happened and when -- not who: the log
  * carries no actor, and the subtitle says so rather than letting the feed pass for an audit trail of people.
  */
-export function ActivityFeed({ items }: { items: ActivityItem[] }) {
+/**
+ * @param everyBranch the dashboard is cut by a branch the log cannot follow (2026-11-23, branch views): the log records
+ *                    no branch, so the feed says it still covers every branch
+ */
+export function ActivityFeed({ items, everyBranch = false }: { items: ActivityItem[]; everyBranch?: boolean }) {
   return (
-    <Panel title="Recent activity" subtitle="Newest first. The log records what happened, not who did it.">
+    <Panel
+      title="Recent activity"
+      subtitle={`Newest first. The log records what happened, not who did it.${everyBranch ? ' All branches.' : ''}`}
+    >
       {items.length === 0 ? (
         <p className="px-4 pb-4 text-xs text-muted-foreground">Nothing recorded yet.</p>
       ) : (

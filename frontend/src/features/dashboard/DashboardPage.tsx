@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/PageHeader';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { EmptyState } from '@/components/states';
 import type { DashboardKind } from '@/store/dashboardStore';
+import { ALL_BRANCHES, branchWords, chosenBranch, useBranchRegister } from '../reporting/branchChoice';
+import { ReportBranchSelect } from '../reporting/BranchSelect';
 import { AgentDashboardPanel } from './AgentDashboardPanel';
 import { ManagementDashboardPanel } from './ManagementDashboardPanel';
 import { ClaimsDashboardPanel } from './ClaimsDashboardPanel';
@@ -16,8 +18,15 @@ import { keyFor, monthOf, rangeFor } from './range';
 import { RangePicker } from './RangePicker';
 import { UnderwritingDashboardPanel } from './UnderwritingDashboardPanel';
 
-/** `onRange` sets the one dashboard range -- the picker's, in the URL; a panel never keeps a second one. */
-export type PanelProps = { range: Required<MonthRange>; onRange?: (range: Required<MonthRange>) => void };
+/**
+ * `onRange` sets the one dashboard range -- the picker's, in the URL; a panel never keeps a second one. `branch` is the
+ * one branch choice (2026-11-23, branch views): a code or `all`, in the URL beside the range.
+ */
+export type PanelProps = {
+  range: Required<MonthRange>;
+  onRange?: (range: Required<MonthRange>) => void;
+  branch?: string;
+};
 
 const PANEL: Record<DashboardKind, (props: PanelProps) => ReactElement | null> = {
   underwriting: UnderwritingDashboardPanel,
@@ -27,7 +36,11 @@ const PANEL: Record<DashboardKind, (props: PanelProps) => ReactElement | null> =
   overview: ManagementDashboardPanel,
 };
 
+/** The dashboards that can be cut by branch; finance stays company-wide, as the ledger does. */
+const BY_BRANCH: readonly DashboardKind[] = ['overview', 'underwriting', 'claims'];
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const COMPARED = 'Compared with the same months a year earlier';
 
 /**
  * Where a working role lands (2026-10-14). Replaces "Today": its work-waiting counts are now each dashboard's work
@@ -38,13 +51,16 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
  * The tab lives in the URL, so a link can open on the right one.
  *
  * The range (2026-10-23) lives in the URL too, as two months, and one picker above the tabs serves them all: switching
- * tab keeps the months the reader chose.
+ * tab keeps the months the reader chose. So does the branch (2026-11-23): one choice on the same row, starting on the
+ * person's home branch unless it is the head office, and said in words in the comparison note -- or "Company-wide" on
+ * a tab that cannot be cut by branch.
  */
 export function DashboardPage({ realm }: { realm: 'staff' | 'agents' }) {
   const auth = useAuth();
   const kinds = dashboardsFor(realm, readIdentity(auth.user?.access_token));
   const [params, setParams] = useSearchParams();
   const current = monthOf(new Date());
+  const register = useBranchRegister();
 
   const from = params.get('from');
   const to = params.get('to');
@@ -59,9 +75,34 @@ export function DashboardPage({ realm }: { realm: 'staff' | 'agents' }) {
     setParams(p, { replace: true });
   };
 
+  const offersBranch = realm === 'staff' && kinds.some((k) => BY_BRANCH.includes(k));
+  // Until the register says whether a home branch is the head office, the panels wait (undefined) rather than load one
+  // branch and then every branch.
+  const branch = !offersBranch ? undefined
+    : (params.get('branch') || register.ready)
+      ? chosenBranch(params.get('branch'), register.homeBranch, register.headOffice)
+      : undefined;
+  const setBranch = (next: string) => {
+    const p = new URLSearchParams(params);
+    p.set('branch', next);
+    setParams(p, { replace: true });
+  };
+
+  const activeKind = (params.get('dashboard') as DashboardKind | null) ?? kinds[0];
+  const words = branch ? branchWords(branch, register.options) : null;
+  const compareText = !words ? COMPARED
+    : activeKind && BY_BRANCH.includes(activeKind) ? `${words} · ${COMPARED}`
+    : `Company-wide · ${COMPARED}`;
+
   const tabs: TabDef[] = kinds.map((kind) => {
     const Panel = PANEL[kind];
-    return { value: kind, label: DASHBOARD_LABEL[kind], content: <Panel range={range} onRange={setRange} /> };
+    const panelBranch = BY_BRANCH.includes(kind) ? branch : undefined;
+    const waiting = offersBranch && BY_BRANCH.includes(kind) && branch === undefined;
+    return {
+      value: kind,
+      label: DASHBOARD_LABEL[kind],
+      content: waiting ? null : <Panel range={range} onRange={setRange} {...(panelBranch ? { branch: panelBranch } : {})} />,
+    };
   });
 
   return (
@@ -73,7 +114,19 @@ export function DashboardPage({ realm }: { realm: 'staff' | 'agents' }) {
             value={{ key: keyFor(range, current), range }}
             current={current}
             onChange={setRange}
-            compareText="Compared with the same months a year earlier"
+            compareText={compareText}
+            {...(offersBranch
+              ? {
+                  scope: (
+                    <ReportBranchSelect
+                      layout="inline"
+                      value={branch ?? ALL_BRANCHES}
+                      options={register.options}
+                      onChange={setBranch}
+                    />
+                  ),
+                }
+              : {})}
           />
         )}
         {kinds.length === 0 ? (

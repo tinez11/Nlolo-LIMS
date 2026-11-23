@@ -7,6 +7,11 @@ describe('freshnessLine', () => {
     expect(line).toMatch(/^Last change taken in: .+ · billing read live$/);
   });
 
+  it('says first that a company-wide report is company-wide (2026-11-23)', () => {
+    expect(freshnessLine(['LEDGER'], null, true)).toBe('Company-wide · Read live from the ledger');
+    expect(freshnessLine([], null, true)).toBe('Company-wide');
+  });
+
   it('says a ledger report reads live', () => {
     expect(freshnessLine(['LEDGER'], null)).toBe('Read live from the ledger');
   });

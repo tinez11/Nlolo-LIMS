@@ -17,14 +17,22 @@ const joined = (words: string[]) =>
 /**
  * How fresh a report's figures are, in one line: the newest change the reports' copy had taken in, and what is read
  * live. Null when the report says nothing of either (no sources declared).
+ *
+ * @param companyWide a report that cannot be cut by branch says so first (2026-11-23, branch views), where the branch
+ *                    choice would otherwise be: "Company-wide · Read live from the ledger"
  */
-export function freshnessLine(sources: readonly string[], dataUpTo: string | null | undefined): string | null {
+export function freshnessLine(sources: readonly string[], dataUpTo: string | null | undefined,
+  companyWide = false): string | null {
   const live = joined(sources.filter((s) => s in LIVE_WORDS).map((s) => LIVE_WORDS[s]!));
+  let line: string | null;
   if (sources.includes('REPORTING_COPY')) {
     const copy = dataUpTo ? `Last change taken in: ${formatInstant(dataUpTo)}` : 'Nothing taken in yet';
-    return live ? `${copy} · ${live} read live` : copy;
+    line = live ? `${copy} · ${live} read live` : copy;
+  } else {
+    line = live ? `Read live from ${live}` : null;
   }
-  return live ? `Read live from ${live}` : null;
+  if (!companyWide) return line;
+  return line ? `Company-wide · ${line}` : 'Company-wide';
 }
 
 /** Where a report's figures come from, in words, for "What the figures mean". */

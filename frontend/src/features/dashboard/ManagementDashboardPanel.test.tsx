@@ -45,7 +45,30 @@ describe('ManagementDashboardPanel', () => {
     expect(screen.getByText(/25.0% down/)).toBeInTheDocument();
     expect(screen.getByText('412')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Policies in force' })).toHaveAttribute('href', '/staff/reports/policies-in-force');
-    expect(getManagementDashboard).toHaveBeenCalledWith(RANGE);
+    // No branch chosen: every branch (2026-11-23, branch views).
+    expect(getManagementDashboard).toHaveBeenCalledWith(RANGE, undefined);
+  });
+
+  /** Branch views (2026-11-23): one branch's figures, its cards opening that branch's reports, and what is not cut said. */
+  it('reads one branch, opens its reports on that branch, and says which figure covers every branch', async () => {
+    vi.mocked(getManagementDashboard).mockResolvedValue({
+      ...VIEW, branch: { code: 'ARU', name: 'Arusha', allBranches: ['collections'] },
+    });
+    renderScreen(<ManagementDashboardPanel range={RANGE} branch="ARU" />);
+
+    expect(await screen.findByText('TZS 250,000.00 overdue · All branches')).toBeInTheDocument();
+    expect(getManagementDashboard).toHaveBeenCalledWith(RANGE, 'ARU');
+    expect(screen.getByRole('link', { name: 'Policies in force' }))
+      .toHaveAttribute('href', '/staff/reports/policies-in-force?branch=ARU');
+  });
+
+  it('reads every branch when every branch is chosen', async () => {
+    renderScreen(<ManagementDashboardPanel range={RANGE} branch="all" />);
+
+    expect(await screen.findByText('TZS 250,000.00 overdue')).toBeInTheDocument();
+    expect(getManagementDashboard).toHaveBeenCalledWith(RANGE, undefined);
+    expect(screen.getByRole('link', { name: 'Policies in force' }))
+      .toHaveAttribute('href', '/staff/reports/policies-in-force?branch=all');
   });
 
   it('opens what each card counted', async () => {
