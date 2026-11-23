@@ -105,6 +105,7 @@ APP_DOMAIN=$APP_DOMAIN
 AUTH_DOMAIN=$AUTH_DOMAIN
 ACME_EMAIL=$ACME_EMAIL
 CADDY_GLOBAL_OPTIONS=$CADDY_GLOBAL_OPTIONS
+RATE_LIMIT_EXEMPT=${RATE_LIMIT_EXEMPT:-192.0.2.255/32}
 ENV
 
   sudo install -m 0640 -o root -g seaweedfs /dev/stdin "$ETC/seaweedfs-s3.json" <<JSON
@@ -136,6 +137,21 @@ install_units() {
   sudo install -m 0644 "$src/systemd/postgresql-platform.conf" "/etc/postgresql/$POSTGRES_MAJOR/main/conf.d/platform.conf"
   sudo install -m 0644 "$src/Caddyfile" /etc/caddy/Caddyfile
   sudo systemctl daemon-reload
+}
+
+# --- Caddy: the pinned build with rate limiting, and a Caddyfile it can load -----------------------------------------
+# Validated BEFORE install_units copies it into place, with the settings Caddy itself will read (systemd-run reads
+# caddy.env the way the unit does), so a Caddyfile this Caddy cannot load stops the release while the previous one
+# keeps serving. The pins reach install-caddy.sh through the environment: platform-lib.sh exports versions.env, and a
+# rollback has sourced that release's own.
+caddy_ready() {   # caddy_ready <caddyfile>
+  ./install-caddy.sh
+  if ! out=$(sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile="$ETC/caddy.env" \
+               /usr/bin/caddy validate --config "$1" --adapter caddyfile 2>&1); then
+    printf '%s\n' "$out" | tail -20 >&2
+    echo "Caddy cannot load $1 -- the release stops here" >&2
+    exit 1
+  fi
 }
 
 # --- the database, from nothing on the first release ---------------------------------------------------------------
@@ -213,6 +229,7 @@ if [ "${1:-}" = "--rollback" ]; then
   # The settings are rendered again, so a rollback to the version already running is also how an edit to .env reaches
   # the services (DEPLOYMENT-GUIDE.md, Part 5).
   render_settings
+  caddy_ready "$RELEASE_DIR/server/Caddyfile"
   install_units "$RELEASE_DIR/server"
   authentik_up
   sudo systemctl restart platform-mock-mobile-money caddy
@@ -243,6 +260,7 @@ sudo chown -R root:root "$RELEASE_DIR"
 sudo chmod -R go+rX "$RELEASE_DIR"
 ./install-tools.sh
 render_settings
+caddy_ready "$RELEASE_DIR/server/Caddyfile"
 install_units "$RELEASE_DIR/server"
 
 echo "== database"
